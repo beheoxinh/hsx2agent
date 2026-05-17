@@ -1521,11 +1521,6 @@ class ChatToolWindowContent(
         return controlsToolbar.component
     }
 
-    /**
-     * Single toolbar slot that shows as Stop while the agent is running, and as Disconnect when idle.
-     * This lets the power/disconnect action occupy the same visual position as the stop button
-     * without needing two separate buttons.
-     */
     private inner class DisconnectOrStopAction : AnAction() {
         private val powerIcon = com.intellij.openapi.util.IconLoader.getIcon(
             "/icons/power.svg", DisconnectOrStopAction::class.java
@@ -1541,7 +1536,7 @@ class ChatToolWindowContent(
             } else {
                 e.presentation.icon = powerIcon
                 e.presentation.text = "Disconnect"
-                e.presentation.description = "Disconnect or manage the current session"
+                e.presentation.description = "Disconnect from the current agent"
             }
             e.presentation.isEnabled = true
         }
@@ -1551,16 +1546,17 @@ class ChatToolWindowContent(
                 promptOrchestrator.stop()
                 setSendingState(false)
             } else {
-                val inputEvent = e.inputEvent ?: return
-                val component = inputEvent.source as? Component ?: return
-                val group = DefaultActionGroup()
-                addSessionManagementSection(group)
-                val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
-                    .createActionGroupPopup(
-                        null, group, e.dataContext,
-                        com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
-                    )
-                popup.showUnderneathOf(component)
+                val result = com.intellij.openapi.ui.Messages.showYesNoDialog(
+                    e.project,
+                    "Are you sure you want to disconnect? The current session will be closed.",
+                    "Disconnect",
+                    "Disconnect",
+                    "Cancel",
+                    com.intellij.openapi.ui.Messages.getQuestionIcon()
+                )
+                if (result == com.intellij.openapi.ui.Messages.YES) {
+                    disconnectFromAgent()
+                }
             }
         }
     }
@@ -1922,17 +1918,6 @@ class ChatToolWindowContent(
             }
         }
         return true
-    }
-
-    private fun addSessionManagementSection(group: DefaultActionGroup) {
-        group.add(object : AnAction(
-            "Disconnect",
-            "Stop the ACP process and return to the connection screen",
-            AllIcons.Actions.Cancel
-        ) {
-            override fun getActionUpdateThread() = ActionUpdateThread.EDT
-            override fun actionPerformed(e: AnActionEvent) = disconnectFromAgent()
-        })
     }
 
     private inner class StatisticsAction : AnAction(
