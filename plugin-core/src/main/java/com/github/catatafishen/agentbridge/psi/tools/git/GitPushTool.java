@@ -106,6 +106,30 @@ public final class GitPushTool extends GitTool {
         String divergenceWarning = divergenceWarning(root, forceFlag);
         PushTarget target = resolvePushTarget(args, root);
 
+        String remoteStr = target.remote() != null ? target.remote() : DEFAULT_REMOTE;
+        String branchStr = target.branch() != null ? target.branch() : "current branch";
+
+        com.google.gson.JsonObject promptArgs = new com.google.gson.JsonObject();
+        promptArgs.addProperty("question", "Agent wants to run `git push` to " + remoteStr + " (" + branchStr + ")"
+            + (forceFlag ? " **WITH FORCE**" : "")
+            + ".\n\nDo you want to proceed?");
+
+        com.google.gson.JsonArray options = new com.google.gson.JsonArray();
+        options.add("Yes, push code");
+        options.add("No, cancel");
+        promptArgs.add("options", options);
+
+        com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool promptTool =
+            new com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool(project);
+
+        String userResponse = promptTool.execute(promptArgs);
+        if (!"Yes, push code".equalsIgnoreCase(userResponse.trim())) {
+            if (userResponse.startsWith("Error:")) {
+                return "Push cancelled: " + userResponse;
+            }
+            return "Push cancelled by user. Response: " + userResponse;
+        }
+
         String result = runGitIn(root, pushCommandArgs(args, forceFlag, target));
         if (result.startsWith("Error")) return fetchNote + result + divergenceWarning;
         return buildPushResponse(result, fetchNote, divergenceWarning, target, root);
