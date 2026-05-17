@@ -97,6 +97,11 @@ public final class GitPushTool extends GitTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        com.github.catatafishen.agentbridge.services.ActiveAgentManager manager = com.github.catatafishen.agentbridge.services.ActiveAgentManager.getInstance(project);
+        if (!manager.isEnableAskForPush()) {
+            return "Error: git push is disabled in settings. You must push manually.";
+        }
+
         String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
         String root = preparePush(repoParam);
         if (root.startsWith("Error")) return root;

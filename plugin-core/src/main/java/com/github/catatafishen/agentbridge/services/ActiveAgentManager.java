@@ -225,6 +225,25 @@ public final class ActiveAgentManager implements Disposable {
         PropertiesComponent.getInstance(project).setValue(KEY_BRANCH_SESSION_AT_STARTUP, enabled, false);
     }
 
+    private static final String KEY_DISABLE_ASK_FOR_COMMIT = "agent.disableAskForCommit";
+    private static final String KEY_ENABLE_ASK_FOR_PUSH = "agent.enableAskForPush";
+
+    public boolean isDisableAskForCommit() {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_DISABLE_ASK_FOR_COMMIT, false);
+    }
+
+    public void setDisableAskForCommit(boolean disable) {
+        PropertiesComponent.getInstance(project).setValue(KEY_DISABLE_ASK_FOR_COMMIT, disable, false);
+    }
+
+    public boolean isEnableAskForPush() {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_ENABLE_ASK_FOR_PUSH, false);
+    }
+
+    public void setEnableAskForPush(boolean enable) {
+        PropertiesComponent.getInstance(project).setValue(KEY_ENABLE_ASK_FOR_PUSH, enable, false);
+    }
+
     /**
      * Returns the agent client, starting it if necessary.
      */

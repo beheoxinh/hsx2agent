@@ -72,6 +72,29 @@ class ClientAgentsGroupConfigurable(private val project: Project) :
                     { manager.isBranchSessionAtStartup = it }
                 )
         }
+
+        separator()
+        lateinit var cbEnablePush: Cell<JBCheckBox>
+        row {
+            checkBox("Disable ask for commit")
+                .comment("If checked, git commit will execute automatically without asking.")
+                .bindSelected(
+                    { manager.isDisableAskForCommit },
+                    { manager.isDisableAskForCommit = it }
+                )
+                .applyToComponent {
+                    addActionListener { cbEnablePush.component.isEnabled = isSelected }
+                }
+        }
+        row {
+            cbEnablePush = checkBox("Enable ask for push (default never push)")
+                .comment("If checked, git push will ask for confirmation. Otherwise, it is disabled.")
+                .bindSelected(
+                    { manager.isEnableAskForPush },
+                    { manager.isEnableAskForPush = it }
+                )
+                .applyToComponent { isEnabled = manager.isDisableAskForCommit }
+        }
         group("Agent Instructions") {
             lateinit var customCheck: Cell<JBCheckBox>
             row {

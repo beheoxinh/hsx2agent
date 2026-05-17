@@ -73,6 +73,30 @@ public final class GitCommitTool extends GitTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
+        com.github.catatafishen.agentbridge.services.ActiveAgentManager manager = com.github.catatafishen.agentbridge.services.ActiveAgentManager.getInstance(project);
+        if (!manager.isDisableAskForCommit()) {
+            JsonObject promptArgs = new JsonObject();
+            String message = requiredMessage(args);
+            boolean isAmend = resolveAmend(args);
+            promptArgs.addProperty("question", "Agent wants to run `git commit" + (isAmend ? " --amend" : "") + "` with message:\n\n`" + message + "`\n\nDo you want to proceed?");
+
+            com.google.gson.JsonArray options = new com.google.gson.JsonArray();
+            options.add("Yes, commit code");
+            options.add("No, cancel");
+            promptArgs.add("options", options);
+
+            com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool promptTool =
+                new com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool(project);
+
+            String userResponse = promptTool.execute(promptArgs);
+            if (!"Yes, commit code".equalsIgnoreCase(userResponse.trim())) {
+                if (userResponse.startsWith("Error:")) {
+                    return "Commit cancelled: " + userResponse;
+                }
+                return "Commit cancelled by user. Response: " + userResponse;
+            }
+        }
+
         String root = prepareCommit(args);
         if (root.startsWith("Error")) return root;
         String message = requiredMessage(args);
