@@ -5,7 +5,7 @@
  * sends structured JSON with pre-rendered markdown, and this module creates
  * the DOM programmatically using custom elements.
  */
-import {decodeBase64, hideRedundantTimestamp} from './helpers';
+import {addMessageActions, decodeBase64, hideRedundantTimestamp} from './helpers';
 
 // ── Batch data types (matching Kotlin serialization) ────────
 
@@ -145,6 +145,9 @@ function _renderUserTurn(turn: UserTurn): HTMLElement {
     bubble.innerHTML = turn.html;
     msg.appendChild(bubble);
 
+    addMessageActions(msg, true, turn.entryId || '', bubble.textContent || '');
+    meta.classList.add('show');
+
     return msg;
 }
 
@@ -189,6 +192,12 @@ function _renderAgentSegment(agent: string, segment: AgentSegment): HTMLElement 
     // Meta and details go before bubbles/subagent sections
     msg.prepend(details);
     msg.prepend(meta);
+
+    // Add actions based on text in bubbles
+    const allBubbles = msg.querySelectorAll('message-bubble');
+    const fullText = Array.from(allBubbles).map(b => b.textContent || '').join('\n');
+    addMessageActions(msg, false, '', fullText);
+    meta.classList.add('show');
 
     return msg;
 }

@@ -1068,7 +1068,7 @@ class ChatToolWindowContent(
     private fun createInputRow(): JBPanel<JBPanel<*>> {
         val row = JBPanel<JBPanel<*>>(BorderLayout())
         row.isOpaque = false
-        val minHeight = JBUI.scale(48)
+        val minHeight = JBUI.scale(230)
         row.minimumSize = JBUI.size(100, minHeight)
         val editorCustomizations = mutableListOf<com.intellij.ui.EditorCustomization>()
         try {
@@ -1080,6 +1080,8 @@ class ChatToolWindowContent(
         }
         promptTextArea = com.intellij.ui.EditorTextFieldProvider.getInstance()
             .getEditorField(com.intellij.openapi.fileTypes.PlainTextLanguage.INSTANCE, project, editorCustomizations)
+        promptTextArea.foreground = JBColor(Color(60, 60, 60), Color(200, 200, 200))
+        promptTextArea.background = com.intellij.util.ui.UIUtil.getTextFieldBackground()
         @Suppress("UsePropertyAccessSyntax") // isOneLineMode getter is protected in EditorTextField
         promptTextArea.setOneLineMode(false)
         // Padding is applied here (not on editor.contentComponent) to avoid interfering with
@@ -1241,9 +1243,13 @@ class ChatToolWindowContent(
             )
     }
 
-    private fun restorePromptText(rawText: String) {
+    private fun restorePromptText(rawText: String, contextItems: List<ContextItemData>) {
         ApplicationManager.getApplication().invokeLater {
             promptTextArea.text = rawText
+            val editor = promptTextArea.editor as? EditorEx
+            if (editor != null && contextItems.isNotEmpty()) {
+                contextManager.restoreInlineChips(editor, contextItems)
+            }
         }
     }
 
@@ -2346,6 +2352,16 @@ class ChatToolWindowContent(
                 if (!consolePanel.consumePendingAskUserResponse(text)) {
                     sendQuickReply(text)
                 }
+            }
+        }
+        consolePanel.onResendMessage = { text ->
+            ApplicationManager.getApplication().invokeLater {
+                restorePromptText(text, emptyList())
+            }
+        }
+        consolePanel.onContinueTurn = { _ ->
+            ApplicationManager.getApplication().invokeLater {
+                submitNudge("Continue")
             }
         }
         com.intellij.openapi.util.Disposer.register(project, consolePanel)

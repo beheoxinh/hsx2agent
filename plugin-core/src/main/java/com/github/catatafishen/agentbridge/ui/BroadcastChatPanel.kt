@@ -67,6 +67,20 @@ class BroadcastChatPanel(
             nativePanel.onStatusMessage = value
         }
 
+    override var onResendMessage: ((String) -> Unit)?
+        get() = jcefPanel.onResendMessage
+        set(value) {
+            jcefPanel.onResendMessage = value
+            nativePanel.onResendMessage = value
+        }
+
+    override var onContinueTurn: ((String) -> Unit)?
+        get() = jcefPanel.onContinueTurn
+        set(value) {
+            jcefPanel.onContinueTurn = value
+            nativePanel.onContinueTurn = value
+        }
+
     // ── Write methods — broadcast to both ─────────────────────────────────────
 
     override fun addPromptEntry(

@@ -387,10 +387,15 @@ public final class PlatformApiCompat {
         @NotNull String title,
         @NotNull String content,
         @NotNull com.intellij.notification.NotificationType type) {
-        com.intellij.notification.NotificationGroupManager.getInstance()
-            .getNotificationGroup("AgentBridge Notifications")
-            .createNotification(title, content, type)
-            .notify(project);
+        com.intellij.notification.NotificationGroup group = resolveNotificationGroup();
+        if (group != null) {
+            group.createNotification(title, content, type).notify(project);
+            return;
+        }
+        com.intellij.notification.Notifications.Bus.notify(
+            new com.intellij.notification.Notification("Hsx2Agent Notifications", title, content, type),
+            project
+        );
     }
 
     /**
@@ -406,9 +411,23 @@ public final class PlatformApiCompat {
         @NotNull String title,
         @NotNull String content,
         @NotNull com.intellij.notification.NotificationType type) {
-        return com.intellij.notification.NotificationGroupManager.getInstance()
-            .getNotificationGroup("AgentBridge Notifications")
-            .createNotification(title, content, type);
+        com.intellij.notification.NotificationGroup group = resolveNotificationGroup();
+        if (group != null) {
+            return group.createNotification(title, content, type);
+        }
+        return new com.intellij.notification.Notification("Hsx2Agent Notifications", title, content, type);
+    }
+
+    /**
+     * Resolves the configured notification group across historical plugin IDs.
+     * Returns null when no group is registered (e.g., during early startup failures).
+     */
+    private static @Nullable com.intellij.notification.NotificationGroup resolveNotificationGroup() {
+        com.intellij.notification.NotificationGroupManager manager =
+            com.intellij.notification.NotificationGroupManager.getInstance();
+        com.intellij.notification.NotificationGroup group = manager.getNotificationGroup("Hsx2Agent Notifications");
+        if (group != null) return group;
+        return manager.getNotificationGroup("AgentBridge Notifications");
     }
 
     /**

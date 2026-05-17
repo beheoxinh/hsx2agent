@@ -74,3 +74,41 @@ export function formatTs(isoOrLegacy: string): string {
         : d.toLocaleDateString([], {month: 'short', day: 'numeric'});
     return `${datePrefix} ${timeStr}`;
 }
+
+export function createActionBtn(title: string, iconHtml: string, onClick: () => void): HTMLElement {
+    const btn = document.createElement('button');
+    btn.className = 'message-action-btn';
+    btn.setAttribute('data-tooltip', title);
+    btn.title = ''; // clear native tooltip
+    btn.innerHTML = iconHtml;
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        onClick();
+    };
+    return btn;
+}
+
+export function addMessageActions(container: HTMLElement, isUser: boolean, turnId: string, text: string): void {
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+
+    const copyIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+    const restoreIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>';
+    const continueIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+
+    actions.appendChild(createActionBtn('Copy to clipboard', copyIcon, () => {
+        (globalThis as any)._bridge?.copyToClipboard?.(text);
+    }));
+
+    if (isUser) {
+        actions.appendChild(createActionBtn('Restore to input', restoreIcon, () => {
+            (globalThis as any)._bridge?.resendMessage?.(text);
+        }));
+    } else {
+        actions.appendChild(createActionBtn('Continue response', continueIcon, () => {
+            (globalThis as any)._bridge?.continueTurn?.(turnId);
+        }));
+    }
+
+    container.appendChild(actions);
+}

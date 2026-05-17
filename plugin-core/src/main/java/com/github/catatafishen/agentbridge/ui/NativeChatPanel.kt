@@ -32,6 +32,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override var onQuickReply: ((String) -> Unit)? = null
     override var onStatusMessage: ((type: String, message: String) -> Unit)? = null
+    override var onResendMessage: ((String) -> Unit)? = null
+    override var onContinueTurn: ((String) -> Unit)? = null
     var onLoadMoreRequested: (() -> Unit)? = null
 
     private val fileNavigator = FileNavigator(project)
@@ -212,9 +214,28 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             val pane = NativeMarkdownPane(fileNavigator)
             allMarkdownPanes += pane
             bubble.add(pane, BorderLayout.CENTER)
+
+            val actionStrip = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
+                isOpaque = false
+                add(createActionIcon(com.intellij.icons.AllIcons.Actions.Copy, "Copy to clipboard") {
+                    val t = pane.getRawText()
+                    com.intellij.openapi.ide.CopyPasteManager.getInstance()
+                        .setContents(java.awt.datatransfer.StringSelection(t))
+                })
+                add(createActionIcon(com.intellij.icons.AllIcons.Actions.Resume, "Continue response") {
+                    onContinueTurn?.invoke("")
+                })
+            }
+
             turn.textBubble = bubble
             turn.markdownPane = pane
             turn.container.add(bubble)
+            turn.container.add(JPanel(BorderLayout()).apply {
+                isOpaque = false
+                alignmentX = Component.LEFT_ALIGNMENT
+                border = JBUI.Borders.emptyTop(JBUI.scale(4))
+                add(actionStrip, BorderLayout.WEST)
+            })
         }
         turn.markdownPane!!.appendMarkdown(text)
         scrollToBottom()
@@ -831,6 +852,40 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         contentPanel.add(Box.createVerticalStrut(JBUI.scale(4)), index + 1)
     }
 
+    private fun createActionIcon(icon: Icon, tooltip: String, onClick: () -> Unit): JBLabel {
+        return object : JBLabel(icon) {
+            private var hovered = false
+
+            init {
+                toolTipText = tooltip
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                addMouseListener(object : MouseAdapter() {
+                    override fun mouseEntered(e: MouseEvent) {
+                        hovered = true; repaint()
+                    }
+
+                    override fun mouseExited(e: MouseEvent) {
+                        hovered = false; repaint()
+                    }
+
+                    override fun mouseClicked(e: MouseEvent) {
+                        onClick()
+                    }
+                })
+            }
+
+            override fun paintComponent(g: Graphics) {
+                val g2 = g.create() as Graphics2D
+                try {
+                    g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, if (hovered) 1.0f else 0.4f)
+                    super.paintComponent(g2)
+                } finally {
+                    g2.dispose()
+                }
+            }
+        }
+    }
+
     private fun addPromptEntryAt(
         text: String,
         contextFiles: List<Triple<String, String, Int>>?,
@@ -848,14 +903,31 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         val (doc, pane) = newTextPane()
         appendToDoc(doc, text)
         bubble.add(pane, BorderLayout.CENTER)
+
+        val southPanel = JPanel(BorderLayout()).apply {
+            isOpaque = false
+        }
         if (!contextFiles.isNullOrEmpty()) {
             val fileList = contextFiles.joinToString(", ") { (name, _, _) -> name }
-            bubble.add(JBLabel("📎 $fileList").apply {
+            southPanel.add(JBLabel("📎 $fileList").apply {
                 foreground = UIUtil.getContextHelpForeground()
                 font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size - 1f)
                 border = JBUI.Borders.emptyTop(JBUI.scale(2))
-            }, BorderLayout.SOUTH)
+            }, BorderLayout.CENTER)
         }
+        val actionStrip = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
+            isOpaque = false
+            add(createActionIcon(com.intellij.icons.AllIcons.Actions.Copy, "Copy to clipboard") {
+                com.intellij.openapi.ide.CopyPasteManager.getInstance()
+                    .setContents(java.awt.datatransfer.StringSelection(text))
+            })
+            add(createActionIcon(com.intellij.icons.AllIcons.Actions.Rollback, "Restore to input") {
+                onResendMessage?.invoke(text)
+            })
+        }
+        southPanel.add(actionStrip, BorderLayout.SOUTH)
+        bubble.add(southPanel, BorderLayout.SOUTH)
+
         val row = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             isOpaque = false

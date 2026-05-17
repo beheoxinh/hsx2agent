@@ -88,6 +88,25 @@ class PromptContextManager(
     }
 
     /**
+     * Restore inline context chips for existing ORC placeholders in the editor.
+     * Matches [items] to ORC characters found in the editor's document by index.
+     */
+    fun restoreInlineChips(editor: EditorEx, items: List<ContextItemData>) {
+        if (items.isEmpty()) return
+        val text = editor.document.charsSequence
+        val orcOffsets = mutableListOf<Int>()
+        for (i in text.indices) {
+            if (text[i] == ORC) orcOffsets.add(i)
+        }
+
+        // Match items to ORCs by index.
+        // We assume the number of items matches the number of ORCs in the document.
+        for (i in 0 until minOf(items.size, orcOffsets.size)) {
+            editor.inlayModel.addInlineElement(orcOffsets[i], true, ContextChipRenderer(items[i]))
+        }
+    }
+
+    /**
      * Replace each ORC in [rawText] with a backtick-wrapped text reference
      * from the corresponding context item, e.g. `` `AuthLoginService.kt:116-170` ``.
      */

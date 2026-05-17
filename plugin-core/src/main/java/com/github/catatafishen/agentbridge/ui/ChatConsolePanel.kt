@@ -41,6 +41,8 @@ class ChatConsolePanel(
     override val component: JComponent get() = this
     override var onQuickReply: ((String) -> Unit)? = null
     override var onStatusMessage: ((type: String, message: String) -> Unit)? = null
+    override var onResendMessage: ((String) -> Unit)? = null
+    override var onContinueTurn: ((String) -> Unit)? = null
     var onCancelNudge: ((String) -> Unit)? = null
     var onCancelQueuedMessage: ((id: String, text: String) -> Unit)? = null
     var onAutoScrollDisabled: (() -> Unit)? = null
@@ -136,6 +138,9 @@ class ChatConsolePanel(
     private var autoScrollDisabledBridgeJs = ""
     private var autoScrollEnabledBridgeJs = ""
     private var openSettingsBridgeJs = ""
+    private var copyToClipboardBridgeJs = ""
+    private var resendMessageBridgeJs = ""
+    private var continueTurnBridgeJs = ""
 
     @Volatile
     private var htmlPageFuture: java.util.concurrent.CompletableFuture<String>? = null
@@ -302,6 +307,27 @@ class ChatConsolePanel(
             extendAskUserQuery.addHandler { reqId -> handleExtendAskUser(reqId); null }
             Disposer.register(this, extendAskUserQuery)
             extendAskUserBridgeJs = extendAskUserQuery.inject("reqId")
+
+            val copyToClipboardQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
+            copyToClipboardQuery.addHandler { text ->
+                ApplicationManager.getApplication().invokeLater {
+                    com.intellij.openapi.ide.CopyPasteManager.getInstance()
+                        .setContents(java.awt.datatransfer.StringSelection(text))
+                }
+                null
+            }
+            Disposer.register(this, copyToClipboardQuery)
+            copyToClipboardBridgeJs = copyToClipboardQuery.inject("text")
+
+            val resendMessageQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
+            resendMessageQuery.addHandler { text -> onResendMessage?.invoke(text); null }
+            Disposer.register(this, resendMessageQuery)
+            resendMessageBridgeJs = resendMessageQuery.inject("text")
+
+            val continueTurnQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
+            continueTurnQuery.addHandler { turnId -> onContinueTurn?.invoke(turnId); null }
+            Disposer.register(this, continueTurnQuery)
+            continueTurnBridgeJs = continueTurnQuery.inject("turnId")
 
             setFrameRate(IDLE_FRAME_RATE)
 
@@ -1923,7 +1949,10 @@ class ChatConsolePanel(
                 autoScrollDisabled: function() { $autoScrollDisabledBridgeJs },
                 autoScrollEnabled: function() { $autoScrollEnabledBridgeJs },
                 extendAskUser: function(reqId) { $extendAskUserBridgeJs },
-                openSettings: function() { $openSettingsBridgeJs }
+                openSettings: function() { $openSettingsBridgeJs },
+                copyToClipboard: function(text) { $copyToClipboardBridgeJs },
+                resendMessage: function(text) { $resendMessageBridgeJs },
+                continueTurn: function(turnId) { $continueTurnBridgeJs }
             };
         """.trimIndent()
         val css = loadResource("/chat/chat.css")

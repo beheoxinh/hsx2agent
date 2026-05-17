@@ -1,4 +1,4 @@
-import {decodeBase64, hideRedundantTimestamp} from './helpers';
+import {addMessageActions, decodeBase64, hideRedundantTimestamp} from './helpers';
 import {renderBatchFragment} from './BatchRenderer';
 import type {TurnContext} from './types';
 
@@ -302,6 +302,8 @@ const ChatController = {
             bubble.textContent = text;
         }
         msg.appendChild(bubble);
+        addMessageActions(meta, true, entryId || '', text);
+        meta.classList.add('show');
         this._insertMsg(msg);
         // scheduleForceScroll() re-enables autoScroll and defers the scroll by two rAFs (Fix 9).
         // Using forceScroll() here caused the DOM mutation and scrollTop write to land in the same
@@ -342,11 +344,15 @@ const ChatController = {
             if (encodedHtml) {
                 if (ctx.textBubble) {
                     (ctx.textBubble as any).finalize(decodeBase64(encodedHtml));
+                    addMessageActions(ctx.meta!, false, turnId, ctx.textBubble.textContent || '');
+                    ctx.meta!.classList.add('show');
                 } else {
                     const c = this._ensureMsg(turnId, agentId);
                     const bubble = document.createElement('message-bubble');
                     c.msg!.appendChild(bubble);
                     (bubble as any).finalize(decodeBase64(encodedHtml));
+                    addMessageActions(c.meta!, false, turnId, bubble.textContent || '');
+                    c.meta!.classList.add('show');
                 }
             } else if (ctx.textBubble) {
                 ctx.textBubble.remove();

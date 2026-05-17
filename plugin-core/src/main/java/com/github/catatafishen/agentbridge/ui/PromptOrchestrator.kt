@@ -38,7 +38,7 @@ data class PromptOrchestratorCallbacks(
     /** Trigger a new prompt execution (used for queued messages). */
     val sendPromptDirectly: (String) -> Unit,
     /** Restore the user's prompt text to the input box on send failure. */
-    val restorePromptText: (rawText: String) -> Unit,
+    val restorePromptText: (rawText: String, contextItems: List<ContextItemData>) -> Unit,
     /** Called after turn completion to mine entries into semantic memory (async, non-blocking). */
     val onTurnMineEntries: (sessionId: String, agentName: String) -> Unit,
     /**
@@ -110,6 +110,7 @@ class PromptOrchestrator(
     private var codeChangeListener: Runnable? = null
 
     private var pendingRawText = ""
+    private var pendingContextItems: List<ContextItemData> = emptyList()
     private var pendingPromptEntryId = ""
 
     /** Executes a prompt on the calling thread (must be called from a background thread). */
@@ -118,6 +119,7 @@ class PromptOrchestrator(
         rawText: String, promptEntryId: String
     ) {
         pendingRawText = rawText
+        pendingContextItems = contextItems
         pendingPromptEntryId = promptEntryId
         stopped = false
         // Clear any stale interrupt flag left by a previous stop() call so it doesn't fire
@@ -553,7 +555,7 @@ class PromptOrchestrator(
         callbacks.appendNewEntries()
 
         consolePanel().addErrorEntry(displayMsg)
-        callbacks.restorePromptText(pendingRawText)
+        callbacks.restorePromptText(pendingRawText, pendingContextItems)
         ApplicationManager.getApplication().invokeLater {
             statusBanner()?.showWarning(displayMsg)
         }
@@ -833,7 +835,7 @@ class PromptOrchestrator(
         callbacks.appendNewEntries()
 
         if (c.shouldRestorePrompt) {
-            callbacks.restorePromptText(pendingRawText)
+            callbacks.restorePromptText(pendingRawText, pendingContextItems)
         }
 
         if (c.isAuthError) {

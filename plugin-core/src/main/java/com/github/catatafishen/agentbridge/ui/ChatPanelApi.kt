@@ -24,6 +24,12 @@ interface ChatPanelApi : Disposable {
     /** Callback invoked when the user clicks a quick-reply button. */
     var onQuickReply: ((String) -> Unit)?
 
+    /** Callback invoked when the user clicks 'Resend' (restore to input). */
+    var onResendMessage: ((String) -> Unit)?
+
+    /** Callback invoked when the user clicks 'Continue' for a turn. */
+    var onContinueTurn: ((String) -> Unit)?
+
     // ── User messages ──────────────────────────────────────────────
 
     fun addPromptEntry(

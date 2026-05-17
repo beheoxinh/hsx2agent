@@ -30,7 +30,15 @@ export interface WebBridge {
 
     autoScrollDisabled?(): void;
 
-    autoScrollEnabled?(): void;
+    extendAskUser?(reqId: string): void;
+
+    openSettings?(): void;
+
+    copyToClipboard?(text: string): void;
+
+    resendMessage?(text: string): void;
+
+    continueTurn?(turnId: string): void;
 }
 
 declare global {

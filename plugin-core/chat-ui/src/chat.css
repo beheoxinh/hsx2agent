@@ -436,6 +436,87 @@ working-indicator.working-countdown--danger {
     display: none;
 }
 
+chat-message {
+    position: relative;
+    display: block;
+}
+
+.message-actions {
+    display: flex;
+    gap: var(--sp-2);
+    justify-content: flex-end;
+    margin-top: 4px;
+    padding-bottom: 8px; /* Give some breathing room */
+}
+
+chat-message[type="agent"] .message-actions {
+    justify-content: flex-start;
+}
+
+/* Remove hover requirement, buttons always visible now */
+/* chat-message:hover .message-actions is removed */
+
+.message-action-btn {
+    position: relative;
+    background: none;
+    border: 1px solid var(--think-a25);
+    border-radius: var(--r-sm);
+    color: var(--think);
+    cursor: pointer;
+    padding: 1px 4px; /* Reduced padding */
+    font-size: 0; /* SVG will control its own size */
+    line-height: 0;
+    opacity: 0.3; /* Low opacity when not hovered so it's not distracting */
+    transition: opacity 0.15s, background 0.15s;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.message-action-btn:hover {
+    opacity: 1;
+    background: var(--think-a08);
+    color: var(--fg);
+}
+
+.message-action-btn:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 4px);
+    right: 0;
+    background: var(--fg);
+    color: var(--bg);
+    padding: 9px 8px;
+    border-radius: var(--r-sm);
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 10;
+    opacity: 1;
+}
+
+chat-message[type="agent"] .message-action-btn:hover::after {
+    left: 0;
+    right: auto;
+}
+
+.message-action-btn:hover::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    right: 12px;
+    border: 4px solid transparent;
+    border-top-color: var(--fg);
+    pointer-events: none;
+    z-index: 10;
+}
+
+chat-message[type="agent"] .message-action-btn:hover::before {
+    left: 12px;
+    right: auto;
+}
+
 /* User message timestamp: align right on its own line */
 .prompt-row .meta .ts {
     text-align: right;
@@ -2935,4 +3016,3 @@ pre.word-wrap code {
 .nudge-settings-link:hover {
     text-decoration: underline;
 }
-

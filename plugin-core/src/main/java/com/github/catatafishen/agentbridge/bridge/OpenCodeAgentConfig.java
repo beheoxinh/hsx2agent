@@ -98,12 +98,45 @@ final class OpenCodeAgentConfig extends ProfileBasedAgentConfig {
 
             String configWithPermissions = mergePermissionsIntoConfig(resolved);
             String finalConfig = convertMcpServersToObject(configWithPermissions);
-            String formatted = formatJsonSafely(finalConfig);
+            String merged = mergeIntoExistingConfig(configPath, finalConfig);
+            String formatted = formatJsonSafely(merged);
 
             Files.writeString(configPath, formatted, StandardCharsets.UTF_8);
             LOG.info("OpenCode config written to " + configPath + " (length: " + formatted.length() + ")");
         } catch (Exception e) {
             LOG.warn("Failed to write OpenCode config file", e);
+        }
+    }
+
+    /**
+     * Merges plugin-managed config into an existing OpenCode config file without deleting
+     * user-managed state (for example "My Services" and its persisted runtime data).
+     *
+     * <p>Behavior:
+     * <ul>
+     *   <li>If no existing file: returns {@code generatedConfigJson} unchanged.</li>
+     *   <li>If existing file is valid JSON object: only keys present in generated config are overwritten.</li>
+     *   <li>Any other existing keys are preserved as-is.</li>
+     * </ul>
+     */
+    @NotNull
+    private static String mergeIntoExistingConfig(@NotNull Path configPath, @NotNull String generatedConfigJson) {
+        try {
+            JsonObject generated = JsonParser.parseString(generatedConfigJson).getAsJsonObject();
+            if (!Files.exists(configPath)) {
+                return new Gson().toJson(generated);
+            }
+
+            String existingRaw = Files.readString(configPath, StandardCharsets.UTF_8);
+            JsonObject existing = JsonParser.parseString(existingRaw).getAsJsonObject();
+
+            for (String key : generated.keySet()) {
+                existing.add(key, generated.get(key));
+            }
+            return new Gson().toJson(existing);
+        } catch (Exception e) {
+            LOG.warn("Failed to merge existing OpenCode config, using generated config only", e);
+            return generatedConfigJson;
         }
     }
 
