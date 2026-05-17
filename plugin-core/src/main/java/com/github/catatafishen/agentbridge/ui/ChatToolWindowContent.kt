@@ -1466,6 +1466,9 @@ class ChatToolWindowContent(
     private fun createSideButtonsPanel(): JComponent {
         val leftGroup = DefaultActionGroup()
 
+        restartSessionGroup = RestartSessionGroup()
+        leftGroup.add(restartSessionGroup!!)
+
         leftGroup.add(object : AnAction(
             "Restart (Keep History)",
             "Start a new agent session while keeping the conversation visible",
@@ -1492,8 +1495,6 @@ class ChatToolWindowContent(
             override fun actionPerformed(e: AnActionEvent) = resetSession()
         })
 
-        restartSessionGroup = RestartSessionGroup()
-        leftGroup.add(restartSessionGroup!!)
         leftGroup.add(AttachContextDropdownAction())
         leftGroup.add(DisconnectOrStopAction())
         leftGroup.add(PauseToggleAction())
