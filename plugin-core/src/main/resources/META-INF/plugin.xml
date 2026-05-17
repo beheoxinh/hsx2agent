@@ -20,11 +20,7 @@
   <li>You see files open and update in real time while they work</li>
 </ul>
 
-<p>The key difference is the feedback loop.</p>
 
-<p>After every edit, the agent receives immediate feedback from the IDE, including errors, warnings, and inspections (e.g. SonarLint). This allows the agent to correct issues as they appear, instead of discovering them later after multiple changes.</p>
-
-<p>This leads to more stable and maintainable code over longer sessions.</p>
 
 <p><b>Supported agents</b><br>
 GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCode, and Hermes Agent</p>
