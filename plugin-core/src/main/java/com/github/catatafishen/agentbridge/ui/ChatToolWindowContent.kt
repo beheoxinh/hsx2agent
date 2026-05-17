@@ -1485,14 +1485,26 @@ class ChatToolWindowContent(
         leftGroup.add(object : AnAction(
             "Clear and Restart",
             "Clear the conversation and start a completely fresh session",
-            AllIcons.Actions.GC
+            AllIcons.General.Remove
         ) {
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
             override fun update(e: AnActionEvent) {
                 e.presentation.isEnabled = !isSending
             }
 
-            override fun actionPerformed(e: AnActionEvent) = resetSession()
+            override fun actionPerformed(e: AnActionEvent) {
+                val result = com.intellij.openapi.ui.Messages.showYesNoDialog(
+                    e.project,
+                    "Are you sure you want to clear the conversation and restart? This cannot be undone.",
+                    "Clear and Restart",
+                    "Clear",
+                    "Cancel",
+                    com.intellij.openapi.ui.Messages.getWarningIcon()
+                )
+                if (result == com.intellij.openapi.ui.Messages.YES) {
+                    resetSession()
+                }
+            }
         })
 
         leftGroup.add(AttachContextDropdownAction())
