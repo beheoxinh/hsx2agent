@@ -1026,7 +1026,7 @@ class ChatToolWindowContent(
         })
     }
 
-    private fun minInputHeight(): Int = JBUI.scale(100)
+    private fun minInputHeight(): Int = JBUI.scale(190)
 
     private fun maxInputHeight(splitPanelHeight: Int): Int =
         (splitPanelHeight - JBUI.scale(80)).coerceAtLeast(minInputHeight())
@@ -1989,46 +1989,10 @@ class ChatToolWindowContent(
                         p
                     }
 
-                // stretch to preserve chat size
-                val stretchable = toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx
-                if (position.isVertical()) {
-                    val currentHeight = rootSplitter.height
-                    if (currentHeight > 0 && stretchable != null && p < 1.0f) {
-                        stretchable.stretchHeight((currentHeight * p / (1.0f - p)).toInt())
-                    }
-                } else {
-                    val currentWidth = rootSplitter.width
-                    if (currentWidth > 0 && stretchable != null && p < 1.0f) {
-                        stretchable.stretchWidth((currentWidth * p / (1.0f - p)).toInt())
-                    }
-                }
-
                 rootSplitter.proportion = targetProportion
                 updateSidePanelLayout()
                 updateSideTabContents(true)
             } else {
-                val p = rootSplitter.proportion
-                val currentWidth = rootSplitter.width
-                val currentHeight = rootSplitter.height
-                val stretchable = toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx
-
-                if (stretchable != null) {
-                    val sideRatio = if (position == SidePanelPosition.RIGHT || position == SidePanelPosition.BOTTOM) {
-                        1.0f - p
-                    } else {
-                        p
-                    }
-                    if (position.isVertical()) {
-                        if (currentHeight > 0) {
-                            stretchable.stretchHeight(-(currentHeight * sideRatio).toInt())
-                        }
-                    } else {
-                        if (currentWidth > 0) {
-                            stretchable.stretchWidth(-(currentWidth * sideRatio).toInt())
-                        }
-                    }
-                }
-
                 sidePanel?.isVisible = false
                 rootSplitter.proportion =
                     if (position == SidePanelPosition.RIGHT || position == SidePanelPosition.BOTTOM) {

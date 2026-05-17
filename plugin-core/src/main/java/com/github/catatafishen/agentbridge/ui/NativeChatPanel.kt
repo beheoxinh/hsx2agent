@@ -853,7 +853,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private fun createActionIcon(icon: Icon, tooltip: String, onClick: () -> Unit): JBLabel {
-        return object : JBLabel(icon) {
+        val scaledIcon = com.intellij.util.IconUtil.scale(icon, null, 0.5f)
+        return object : JBLabel(scaledIcon) {
             private var hovered = false
 
             init {
@@ -904,17 +905,15 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         appendToDoc(doc, text)
         bubble.add(pane, BorderLayout.CENTER)
 
-        val southPanel = JPanel(BorderLayout()).apply {
-            isOpaque = false
-        }
         if (!contextFiles.isNullOrEmpty()) {
             val fileList = contextFiles.joinToString(", ") { (name, _, _) -> name }
-            southPanel.add(JBLabel("📎 $fileList").apply {
+            bubble.add(JBLabel("📎 $fileList").apply {
                 foreground = UIUtil.getContextHelpForeground()
                 font = UIUtil.getLabelFont().deriveFont(Font.PLAIN, UIUtil.getLabelFont().size - 1f)
                 border = JBUI.Borders.emptyTop(JBUI.scale(2))
-            }, BorderLayout.CENTER)
+            }, BorderLayout.SOUTH)
         }
+
         val actionStrip = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
             isOpaque = false
             add(createActionIcon(com.intellij.icons.AllIcons.Actions.Copy, "Copy to clipboard") {
@@ -925,8 +924,6 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 onResendMessage?.invoke(text)
             })
         }
-        southPanel.add(actionStrip, BorderLayout.SOUTH)
-        bubble.add(southPanel, BorderLayout.SOUTH)
 
         val row = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -944,6 +941,12 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         }
         bubbleRow.alignmentX = Component.RIGHT_ALIGNMENT
         row.add(bubbleRow)
+        row.add(JPanel(BorderLayout()).apply {
+            isOpaque = false
+            alignmentX = Component.RIGHT_ALIGNMENT
+            border = JBUI.Borders.emptyTop(JBUI.scale(4))
+            add(actionStrip, BorderLayout.EAST)
+        })
         addFn(row)
         return java.util.UUID.randomUUID().toString()
     }

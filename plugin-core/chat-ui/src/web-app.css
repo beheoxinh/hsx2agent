@@ -131,7 +131,7 @@ chat-container {
     font: inherit;
     resize: none;
     min-height: 36px;
-    max-height: 160px;
+    max-height: 180px;
     overflow-y: auto;
     outline: none;
 }
@@ -1407,8 +1407,15 @@ file-nav {
     user-select: none;
     opacity: 0.8;
 }
-.tcv-load-more:hover { opacity: 1; text-decoration: underline; }
-.tcv-load-more[hidden] { display: none; }
+
+.tcv-load-more:hover {
+    opacity: 1;
+    text-decoration: underline;
+}
+
+.tcv-load-more[hidden] {
+    display: none;
+}
 
 .tcv-detail {
     flex-basis: 100%;

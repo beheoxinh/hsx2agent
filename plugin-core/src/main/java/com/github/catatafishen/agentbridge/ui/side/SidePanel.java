@@ -7,14 +7,11 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.ui.OnePixelSplitter;
-import com.intellij.ui.components.JBLabel;
-import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
-import java.nio.file.Path;
 import java.util.function.Consumer;
 
 /**
@@ -38,25 +35,26 @@ import java.util.function.Consumer;
  */
 public final class SidePanel extends JPanel implements Disposable {
 
-    public static final int TAB_REVIEW = 0;
+    public static final int TAB_MCP = 0;
     public static final int TAB_TODOS = 1;
-    public static final int TAB_MCP = 2;
-    public static final int TAB_PROMPT_DB = 3;
+    public static final int TAB_PROMPT_DB = 2;
 
     /**
      * Display names for each tab, in index order. Unmodifiable.
      */
     public static final java.util.List<String> TAB_NAMES =
-        java.util.List.of("Diff", "Plan", "MCP", "Prompts");
+        java.util.List.of("MCP/Diff", "Plan", "Prompts");
 
     private final CardLayout cardLayout = new CardLayout();
     private final JPanel contentContainer = new JPanel(cardLayout);
-    private int selectedTab = TAB_REVIEW;
+    private int selectedTab = TAB_MCP;
+
     private String planBadge = "";
     private transient @Nullable Consumer<String> onPlanTitleChanged;
 
-    private final OnePixelSplitter mcpSplitter;
-    private final OnePixelSplitter mainSplitter;
+    private final JComponent mcpPanel;
+    private final OnePixelSplitter reviewSplitter;
+    private final OnePixelSplitter reviewStatsSplitter;
     private final SessionStatsPanel statsPanel;
     private final transient Project project;
     private final TodoPanel todoPanel;
@@ -78,17 +76,20 @@ public final class SidePanel extends JPanel implements Disposable {
         Disposer.register(this, promptsPanel);
 
         boolean vertical = !com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().getSidePanelPosition().isVertical();
-        mcpSplitter = buildMcpSplitter(project, vertical);
+        mcpPanel = buildMcpPanel(project);
 
-        contentContainer.add(reviewPanel, String.valueOf(TAB_REVIEW));
+        reviewSplitter = new OnePixelSplitter(vertical, 0.5f);
+        reviewSplitter.setFirstComponent(mcpPanel);
+        reviewSplitter.setSecondComponent(reviewPanel);
+
+        reviewStatsSplitter = new OnePixelSplitter(vertical, 0.8f);
+        reviewStatsSplitter.setFirstComponent(reviewSplitter);
+        reviewStatsSplitter.setSecondComponent(statsPanel);
+
+        contentContainer.add(reviewStatsSplitter, String.valueOf(TAB_MCP));
         contentContainer.add(todoPanel, String.valueOf(TAB_TODOS));
-        contentContainer.add(mcpSplitter, String.valueOf(TAB_MCP));
         contentContainer.add(promptsPanel, String.valueOf(TAB_PROMPT_DB));
-        cardLayout.show(contentContainer, String.valueOf(TAB_REVIEW));
-
-        mainSplitter = new OnePixelSplitter(vertical, 0.66f);
-        mainSplitter.setFirstComponent(contentContainer);
-        mainSplitter.setSecondComponent(statsPanel);
+        cardLayout.show(contentContainer, String.valueOf(TAB_MCP));
 
         todoPanel.setOnProgressChanged(() -> {
             int total = todoPanel.getTotal();
@@ -102,7 +103,8 @@ public final class SidePanel extends JPanel implements Disposable {
             promptsPanel.applySearchParams(params);
         });
 
-        add(mainSplitter, BorderLayout.CENTER);
+        add(contentContainer, BorderLayout.CENTER);
+        updateLayoutOrientation(com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().getSidePanelPosition());
         updateStatsVisibility();
     }
 
@@ -113,10 +115,21 @@ public final class SidePanel extends JPanel implements Disposable {
      */
     public void updateLayoutOrientation(@NotNull com.github.catatafishen.agentbridge.settings.SidePanelPosition position) {
         boolean vertical = !position.isVertical();
-        mainSplitter.setOrientation(vertical);
-        mcpSplitter.setOrientation(vertical);
-        todoPanel.updateLayoutOrientation(position);
+        reviewSplitter.setOrientation(vertical);
+        reviewStatsSplitter.setOrientation(vertical);
+
+        if (position.isVertical()) {
+            // TOP/BOTTOM: MCP 2/7, Diff 4/7, Stats 1/7.
+            reviewSplitter.setProportion(2.0f / 7.0f);
+            reviewStatsSplitter.setProportion(6.0f / 7.0f);
+        } else {
+            // LEFT/RIGHT: keep old stacked proportions.
+            reviewSplitter.setProportion(0.5f);
+            reviewStatsSplitter.setProportion(0.8f);
+        }
+
         reviewPanel.updateLayoutOrientation(position);
+        todoPanel.updateLayoutOrientation(position);
         revalidate();
         repaint();
     }
@@ -135,8 +148,8 @@ public final class SidePanel extends JPanel implements Disposable {
     private void updateStatsVisibility() {
         boolean showStats = selectedTab != TAB_PROMPT_DB;
         statsPanel.setVisible(showStats);
-        mainSplitter.revalidate();
-        mainSplitter.repaint();
+        reviewStatsSplitter.revalidate();
+        reviewStatsSplitter.repaint();
     }
 
     /**
@@ -146,55 +159,28 @@ public final class SidePanel extends JPanel implements Disposable {
         return selectedTab;
     }
 
-    /**
-     * Returns the Plan tab title, including the {@code (done/total)} badge if tasks exist.
-     */
     public @NotNull String getPlanTitle() {
         return "Plan" + planBadge;
     }
 
-    /**
-     * Registers a callback that fires whenever the Plan tab title changes (badge update).
-     * The callback receives the new title string.
-     */
     public void setOnPlanTitleChanged(@Nullable Consumer<String> callback) {
         this.onPlanTitleChanged = callback;
     }
 
     /**
-     * Switches to the Diff tab. Safe to call from the EDT.
+     * Switches to the review tab (merged MCP + Diff + Stats). Safe to call from the EDT.
      */
     public void selectReviewTab() {
-        selectTab(TAB_REVIEW);
+        selectTab(TAB_MCP);
     }
 
     /**
-     * Builds the MCP tab with a resizable vertical split: JCEF tool calls on top,
-     * hooks file browser on the bottom.
+     * Builds the MCP area (tool calls only; hooks pane intentionally hidden).
      */
-    private @NotNull OnePixelSplitter buildMcpSplitter(@NotNull Project project, boolean vertical) {
+    private @NotNull JComponent buildMcpPanel(@NotNull Project project) {
         ToolCallsWebPanel toolCallsPanel = new ToolCallsWebPanel(project);
         Disposer.register(this, toolCallsPanel);
-
-        Path hooksDir = project.getBasePath() != null
-            ? Path.of(project.getBasePath(), ".agentbridge", "hooks")
-            : null;
-
-        JPanel bottomPanel = new JPanel(new BorderLayout());
-        JBLabel hooksLabel = new JBLabel("Hooks");
-        hooksLabel.setFont(UIUtil.getLabelFont().deriveFont(Font.BOLD, 11f));
-        hooksLabel.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
-        bottomPanel.add(hooksLabel, BorderLayout.NORTH);
-
-        if (hooksDir != null) {
-            ProjectFilesPanel hooksPanel = new ProjectFilesPanel(project, hooksDir);
-            bottomPanel.add(hooksPanel, BorderLayout.CENTER);
-        }
-
-        OnePixelSplitter splitter = new OnePixelSplitter(vertical, 0.5f);
-        splitter.setFirstComponent(toolCallsPanel);
-        splitter.setSecondComponent(bottomPanel);
-        return splitter;
+        return toolCallsPanel;
     }
 
     @Override
