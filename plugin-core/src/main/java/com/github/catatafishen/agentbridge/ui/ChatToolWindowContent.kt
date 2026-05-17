@@ -1522,9 +1522,6 @@ class ChatToolWindowContent(
     }
 
     private inner class DisconnectOrStopAction : AnAction() {
-        private val powerIcon = com.intellij.openapi.util.IconLoader.getIcon(
-            "/icons/power.svg", DisconnectOrStopAction::class.java
-        )
 
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
@@ -1534,7 +1531,7 @@ class ChatToolWindowContent(
                 e.presentation.text = "Stop"
                 e.presentation.description = "Stop the agent"
             } else {
-                e.presentation.icon = powerIcon
+                e.presentation.icon = AllIcons.Actions.Exit
                 e.presentation.text = "Disconnect"
                 e.presentation.description = "Disconnect from the current agent"
             }
