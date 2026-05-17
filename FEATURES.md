@@ -1,8 +1,8 @@
-# AgentBridge — Features
+# Hsx2Agent — Features
 
-> **92 tools** across 12 categories — the most comprehensive AI agent integration for JetBrains IDEs.
+> **120+ tools** across 12 categories — the most comprehensive AI agent integration for JetBrains IDEs.
 
-AgentBridge connects ACP-compatible AI agents directly to IntelliJ's internal APIs.
+Hsx2Agent connects ACP-compatible AI agents directly to IntelliJ's internal APIs.
 Every file edit, refactoring, inspection, and git operation goes through IntelliJ's own engine — not
 raw file I/O — so undo, formatting, indexing, and VCS all work correctly.
 
@@ -229,7 +229,7 @@ Guide the agent mid-turn without interrupting its current task, or queue up task
 Monitor and control the agent from any device on your local network — phone, tablet, or second
 screen.
 
-- **Installable PWA** — add to home screen on Android/iOS; launches fullscreen with the AgentBridge
+- **Installable PWA** — add to home screen on Android/iOS; launches fullscreen with the Hsx2Agent
   icon and splash screen
 - **Live chat mirror** — all agent messages and tool chips stream in real time via SSE
 - **Unified Send/Nudge button** — label switches to "Nudge" while the agent is running; sends a
@@ -241,13 +241,13 @@ screen.
 - **Auto-reconnect** — reconnects automatically on network hiccup with full event replay so no
   messages are missed
 - **Settings** — enable/disable and configure the port under
-  _Settings → Tools → AgentBridge → Web Access_
+  _Settings → Tools → Hsx2Agent → Web Access_
 
 ---
 
 ## Cross-Client Session Restore
 
-Switch between AI agents without losing your conversation. AgentBridge maintains a universal
+Switch between AI agents without losing your conversation. Hsx2Agent maintains a universal
 session format that works across all supported clients — so your context travels with you.
 
 - **Seamless agent switching** — switch from GitHub Copilot to Claude, OpenCode, Junie, Kiro, or Hermes Agent
@@ -328,7 +328,7 @@ See the full reference in [docs/INLINE-DIFF-REVIEW.md](docs/INLINE-DIFF-REVIEW.m
   `reset --hard`, rebase, and similar operations so stale baselines never linger
 - **Persistence** — the review list (snapshots, approval state, timestamps, line counts) is
   stored in the workspace file and survives IDE restarts
-- **Unhandled-nudge handling** — `Settings → Tools → AgentBridge → Chat input` lets you
+- **Unhandled-nudge handling** — `Settings → Tools → Hsx2Agent → Chat input` lets you
   choose whether unhandled nudges are *Auto-sent as a new prompt* (default) or
   *Restored into the chat input* (prepended to whatever you were typing)
 

@@ -62,7 +62,7 @@ unzip -q plugin-core/build/distributions/agentbridge-*.zip -d "$PLUGIN_DIR"
 ### 4. Verify
 
 1. Open IntelliJ and a project
-2. **View → Tool Windows → AgentBridge**
+2. **View → Tool Windows → Hsx2Agent**
 3. Select an agent profile from the dropdown
 4. Type a prompt and click Run
 

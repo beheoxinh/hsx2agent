@@ -2,7 +2,7 @@
 
 ## Overview
 
-AgentBridge is an IntelliJ plugin providing ACP/MCP bridge connectivity for AI coding agents,
+Hsx2Agent is an IntelliJ plugin providing ACP/MCP bridge connectivity for AI coding agents,
 with IntelliJ-native tools for code intelligence, formatting, and file operations.
 
 ---
