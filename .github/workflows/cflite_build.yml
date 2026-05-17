@@ -1,0 +1,49 @@
+name: ClusterFuzzLite continuous build
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - '**/*.java'
+      - '**/*.kt'
+      - '**/*.kts'
+      - '.clusterfuzzlite/**'
+      - 'oss-fuzz/build.sh'
+      - '.github/workflows/cflite_build.yml'
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  Build:
+    name: ClusterFuzzLite Continuous Build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [ address ]
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450  # v2.19.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Build Fuzzers (${{ matrix.sanitizer }})
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
+        with:
+          language: jvm
+          sanitizer: ${{ matrix.sanitizer }}
+          upload-build: true

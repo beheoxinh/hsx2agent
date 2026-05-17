@@ -1,0 +1,175 @@
+name: ClusterFuzzLite PR fuzzing
+
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] — intentional; fuzzing requires executing fork code, mitigated by environment gate + reviewer warning
+    paths:
+      - '**/*.java'
+      - '**/*.kt'
+      - '**/*.kts'
+      - '.clusterfuzzlite/**'
+      - 'oss-fuzz/build.sh'
+      - '.github/workflows/cflite_pr.yml'
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  warn-fork-fuzz:
+    name: Security review reminder (fork PR)
+    # Only runs for fork PRs to warn approvers before they approve the fuzzing job.
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450  # v2.19.1
+        with:
+          egress-policy: audit
+
+      - name: Post security review reminder
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          FORK_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          FORK_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "## ⚠️ ClusterFuzzLite — Maintainer Security Review Required
+
+          A maintainer needs to approve the **ClusterFuzzLite PR fuzzing** workflow run for this fork PR.
+
+          **Before approving, please review the code changes from \`${FORK_REPO}@${FORK_SHA:0:8}\`** to confirm there is no code that could:
+          - Exfiltrate the \`CFLITE_STORAGE_REPO_TOKEN\` CI secret
+          - Abuse CI infrastructure or the fuzz corpus storage repository
+
+          The fuzz targets from the fork branch will be **compiled and executed** with access to repository secrets. Rubber-stamping this approval without reviewing the code is a security risk.
+
+          > This comment is posted automatically whenever ClusterFuzzLite is triggered on a fork PR."
+
+  # For fork PRs, this job acts as the explicit approval gate.
+  # It requires a maintainer to approve the 'fuzzing-gate' environment deployment before proceeding.
+  #
+  # Because this job only runs for fork PRs (see `if` condition below), the 'fuzzing-gate'
+  # environment effectively requires approval for forks only — same-repo PRs never reach
+  # this job and are never subject to the environment gate.
+  #
+  # Environment layout:
+  #   fuzzing-gate — required reviewers, no secrets (approval mechanism only)
+  #   fuzzing      — CFLITE_STORAGE_REPO_TOKEN, no required reviewers (secret store)
+  #
+  # IMPORTANT: The 'fuzzing-gate' environment MUST be configured with required reviewers
+  # (Settings → Environments → fuzzing-gate → Required reviewers). Without that setting,
+  # this job runs automatically for fork PRs with no approval, defeating the security model.
+  fork-approval-gate:
+    name: Maintainer approval gate (fork PR)
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    # The environment gate: requires a maintainer to click "Approve and deploy" before
+    # this job (and the dependent PR fuzzing job) can proceed.
+    # Requires 'fuzzing-gate' environment to have required reviewers — see comment above.
+    environment: fuzzing-gate
+    permissions: { }
+    steps:
+      - name: Approval received
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: echo "Maintainer approved fuzzing fork PR $PR_NUMBER from $HEAD_REPO@$HEAD_SHA"
+
+  PR:
+    name: ClusterFuzzLite PR
+    # For fork PRs: wait for maintainer approval via fork-approval-gate.
+    # For same-repo PRs: fork-approval-gate is skipped (result == 'skipped'), run directly.
+    needs: [ fork-approval-gate ]
+    if: |
+      always() && (
+        needs.fork-approval-gate.result == 'success' ||
+        needs.fork-approval-gate.result == 'skipped'
+      )
+    runs-on: ubuntu-latest
+    concurrency:
+      # Use PR number to isolate each PR's concurrency group. With pull_request_target,
+      # github.ref is always the base branch (refs/heads/master), so using github.ref
+      # alone causes ALL PR runs and master push runs to share the same group and
+      # cancel each other. The PR number makes each PR independent while still
+      # cancelling stale runs within the same PR when new commits are pushed.
+      group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    # Provides access to CFLITE_STORAGE_REPO_TOKEN (stored in the 'fuzzing' environment).
+    # No required reviewers on this environment — fork PRs are gated by fork-approval-gate above.
+    environment: fuzzing
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [ address ]
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450  # v2.19.1
+        with:
+          egress-policy: audit
+
+      # Check out the base repository first, then fetch the fork code manually.
+      # This avoids Scorecard's DangerousWorkflowID false-positive, which flags
+      # actions/checkout with ref: github.event.pull_request.head.sha in
+      # pull_request_target workflows regardless of mitigations in place.
+      #
+      # Security model:
+      #   - fork-approval-gate job requires maintainer approval before this job runs (fork PRs)
+      #   - warn-fork-fuzz job posts a security review checklist for fork PRs
+      #   - CFLITE_STORAGE_REPO_TOKEN is a fine-grained PAT scoped to the fuzz corpus
+      #     repo only (catatafishen/agentbridge-cflite-storage) — blast radius is limited
+      #   - persist-credentials: false prevents the checkout token from leaking to fork code
+      #
+      # NOSONAR: S7631 — mitigated by fork-approval-gate job + explicit reviewer warning
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2 NOSONAR
+        with:
+          persist-credentials: false
+
+      - name: Fetch fork code for fuzzing
+        env:
+          FORK_REPO: ${{ github.event.pull_request.head.repo.clone_url }}
+          FORK_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch "$FORK_REPO" "$FORK_SHA"
+          git checkout FETCH_HEAD
+
+      - name: Build Fuzzers (${{ matrix.sanitizer }})
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
+        env:
+          # Override GITHUB_SHA so ClusterFuzz builds the PR branch code instead of master.
+          # In pull_request_target events GITHUB_SHA defaults to the base branch (master) HEAD,
+          # causing the action's internal clone to check out the wrong commit.
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          language: jvm
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: ${{ matrix.sanitizer }}
+          # CFLITE_STORAGE_REPO_TOKEN: stored in the 'fuzzing' environment (not a repo secret).
+          # Fine-grained PAT scoped to catatafishen/agentbridge-cflite-storage only.
+          # Permissions: Read access to metadata; Read and Write access to code.
+          # Blast radius if exfiltrated: write access to the fuzz corpus repo only — not the main codebase.
+          storage-repo: https://${{ secrets.CFLITE_STORAGE_REPO_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages
+
+      - name: Run Fuzzers (${{ matrix.sanitizer }})
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 300
+          mode: 'code-change'
+          sanitizer: ${{ matrix.sanitizer }}
+          output-sarif: true
+          # CFLITE_STORAGE_REPO_TOKEN: see comment above in Build Fuzzers step.
+          storage-repo: https://${{ secrets.CFLITE_STORAGE_REPO_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages

@@ -1,0 +1,344 @@
+package com.github.catatafishen.agentbridge.ui
+
+import com.intellij.ui.JBColor
+import java.awt.Color
+import javax.swing.UIManager
+
+/**
+ * Shared data types and constants for the chat UI — used by both the active
+ * chat panel implementation and [ConversationExporter].
+ */
+
+// ── Theme colors ──────────────────────────────────────────────────────────────
+
+private fun getThemeColor(key: String, lightFallback: Color, darkFallback: Color): Color {
+    return UIManager.getColor(key) ?: JBColor(lightFallback, darkFallback)
+}
+
+internal const val LINK_COLOR_KEY = "Component.linkColor"
+
+internal val USER_COLOR: Color
+    get() = getThemeColor(LINK_COLOR_KEY, Color(0x29, 0x79, 0xFF), Color(0x5C, 0x9D, 0xFF))
+
+internal val TOOL_COLOR: Color
+    get() = getThemeColor("EditorTabs.selectedForeground", Color(0xAE, 0xA0, 0xDC), Color(0xB4, 0xA0, 0xDC))
+
+internal val THINK_COLOR: Color
+    get() = getThemeColor("Label.disabledForeground", Color(0x80, 0x80, 0x80), Color(0xB0, 0xB0, 0xB0))
+
+internal const val ICON_ERROR = "\u274C"
+
+/** Matches `[quick-reply: Option A | Option B | ...]` tags. */
+internal val QUICK_REPLY_TAG_REGEX = Regex("""\[\s*quick-reply:\s*([^\]]+)]""", RegexOption.MULTILINE)
+
+// ── Data model ────────────────────────────────────────────────────────────────
+
+/**
+ * Origin of a nudge message.
+ *
+ * [serialized] is the lowercase string used in JSON/DB/JS so it stays stable
+ * even if enum name conventions change.
+ */
+enum class NudgeSource(val serialized: String) {
+    /** Typed by the user in the nudge input area. */
+    HUMAN("human"),
+
+    /** Auto-generated because the agent used a native tool (bash, grep, read…) instead of an MCP equivalent. */
+    NATIVE_TOOL_REPRIMAND("native_tool_reprimand"),
+
+    /** Auto-generated because the agent misused an MCP tool (wrong tool for the job). */
+    TOOL_ABUSE_REPRIMAND("tool_abuse_reprimand");
+
+    /** True for any auto-generated reprimand source. */
+    val isReprimand: Boolean get() = this == NATIVE_TOOL_REPRIMAND || this == TOOL_ABUSE_REPRIMAND
+
+    companion object {
+        /**
+         * Converts a serialized string to a [NudgeSource].
+         * Falls back to [NATIVE_TOOL_REPRIMAND] for the legacy `"reprimand"` value,
+         * and to [HUMAN] for any other unknown value.
+         */
+        @JvmStatic
+        fun fromSerialized(value: String): NudgeSource = when (value) {
+            "reprimand" -> NATIVE_TOOL_REPRIMAND
+            else -> entries.firstOrNull { it.serialized == value } ?: HUMAN
+        }
+    }
+}
+
+/** Named reference to a file shown in the prompt context area. */
+data class ContextFileRef @JvmOverloads constructor(
+    val name: String,
+    val path: String,
+    val line: Int = 0,
+)
+
+/** Named reference to a file (name + path). */
+data class FileRef(val name: String, val path: String)
+
+sealed class EntryData {
+    abstract val entryId: String
+
+    /** ISO 8601 timestamp; empty string when not applicable (TurnStats, ContextFiles, Status). */
+    open val timestamp: String get() = ""
+
+    data class Prompt @JvmOverloads constructor(
+        val text: String,
+        override val timestamp: String = "",
+        val contextFiles: List<ContextFileRef>? = null,
+        val id: String = "",
+        override val entryId: String = id.ifEmpty { java.util.UUID.randomUUID().toString() },
+    ) : EntryData()
+
+    class Text @JvmOverloads constructor(
+        var raw: String = "",
+        override val timestamp: String = "",
+        val agent: String = "",
+        val model: String = "",
+        override val entryId: String = java.util.UUID.randomUUID().toString()
+    ) : EntryData()
+
+    class Thinking @JvmOverloads constructor(
+        var raw: String = "",
+        override val timestamp: String = "",
+        val agent: String = "",
+        val model: String = "",
+        override val entryId: String = java.util.UUID.randomUUID().toString()
+    ) : EntryData()
+
+    class ToolCall @JvmOverloads constructor(
+        val title: String,
+        val arguments: String? = null,
+        var kind: String = "other",
+        var result: String? = null,
+        var status: String? = null,
+        var description: String? = null,
+        var filePath: String? = null,
+        var autoDenied: Boolean = false,
+        var denialReason: String? = null,
+        var pluginTool: String? = null,
+        override val timestamp: String = "",
+        val agent: String = "",
+        val model: String = "",
+        override val entryId: String = java.util.UUID.randomUUID().toString()
+    ) : EntryData() {
+        /** Set by MCP protocol on completion; null = not yet executed via MCP. */
+        var isMcp: Boolean? = null
+        var inputSizeBytes: Long = 0
+        var outputSizeBytes: Long = 0
+        var durationMs: Long = 0
+        var mcpErrorMessage: String? = null
+
+        /** Human-readable display name from the MCP tool class (e.g. "Read File"). */
+        var mcpDisplayName: String? = null
+
+        /** Canonical tool name from ACP: MCP name for bridged tools, kind for native tools. */
+        var acpName: String? = null
+    }
+
+    class SubAgent @JvmOverloads constructor(
+        val agentType: String,
+        val description: String,
+        val prompt: String? = null,
+        var result: String? = null,
+        var status: String? = null,
+        var colorIndex: Int = 0,
+        val callId: String? = null,
+        var autoDenied: Boolean = false,
+        var denialReason: String? = null,
+        override val timestamp: String = "",
+        val agent: String = "",
+        val model: String = "",
+        override val entryId: String = java.util.UUID.randomUUID().toString()
+    ) : EntryData()
+
+    data class TurnStats @JvmOverloads constructor(
+        val turnId: String,
+        val durationMs: Long = 0,
+        val inputTokens: Long = 0,
+        val outputTokens: Long = 0,
+        val costUsd: Double = 0.0,
+        val toolCallCount: Int = 0,
+        val linesAdded: Int = 0,
+        val linesRemoved: Int = 0,
+        val model: String = "",
+        val multiplier: String = "",
+        val totalDurationMs: Long = 0,
+        val totalInputTokens: Long = 0,
+        val totalOutputTokens: Long = 0,
+        val totalCostUsd: Double = 0.0,
+        val totalToolCalls: Int = 0,
+        val totalLinesAdded: Int = 0,
+        val totalLinesRemoved: Int = 0,
+        override val timestamp: String = "",
+        override val entryId: String = java.util.UUID.randomUUID().toString(),
+        /** Hashes of git commits made during this prompt turn (best-effort: startHash..HEAD range). */
+        val commitHashes: List<String> = emptyList(),
+        /** Git branch active when the prompt was submitted. Null when git is unavailable. */
+        val gitBranchAtStart: String? = null,
+        /** Git branch at turn end (fallback when at_start is missing). Null when git is unavailable. */
+        val gitBranchAtEnd: String? = null,
+    ) : EntryData()
+
+    data class ContextFiles @JvmOverloads constructor(
+        val files: List<FileRef>,
+        override val entryId: String = java.util.UUID.randomUUID().toString()
+    ) : EntryData()
+
+    data class Status @JvmOverloads constructor(
+        val icon: String,
+        val message: String,
+        override val entryId: String = java.util.UUID.randomUUID().toString()
+    ) : EntryData()
+
+    data class SessionSeparator @JvmOverloads constructor(
+        override val timestamp: String,
+        val agent: String = "",
+        override val entryId: String = java.util.UUID.randomUUID().toString()
+    ) : EntryData()
+
+    data class Nudge @JvmOverloads constructor(
+        val text: String,
+        val id: String,
+        val sent: Boolean = false,
+        override val timestamp: String = "",
+        override val entryId: String = java.util.UUID.randomUUID().toString(),
+        /** Origin of this nudge — [NudgeSource.HUMAN] for user-typed nudges, [NudgeSource.NATIVE_TOOL_REPRIMAND] or [NudgeSource.TOOL_ABUSE_REPRIMAND] for auto-generated corrections. Defaults to [NudgeSource.HUMAN] for pre-existing records. */
+        val source: NudgeSource = NudgeSource.HUMAN,
+    ) : EntryData()
+}
+
+// ── Tool / sub-agent metadata ─────────────────────────────────────────────────
+
+internal data class ToolInfo(val displayName: String, val description: String)
+
+/** Sub-agent display name lookup */
+internal data class SubAgentInfo(val displayName: String)
+
+internal const val AGENT_TYPE_GENERAL = "general-purpose"
+
+internal val SUB_AGENT_INFO = mapOf(
+    // Built-in Claude Code agents (current casing from docs)
+    "Explore" to SubAgentInfo("Explore"),
+    "Plan" to SubAgentInfo("Plan"),
+    AGENT_TYPE_GENERAL to SubAgentInfo("General"),
+    // Legacy / lowercase aliases
+    "explore" to SubAgentInfo("Explore"),
+    "task" to SubAgentInfo("Task Agent"),
+    // Custom intellij-* agents (recommended in startup instructions)
+    "intellij-explore" to SubAgentInfo("Explore"),
+    "intellij-edit" to SubAgentInfo("Edit Agent"),
+    "intellij-default" to SubAgentInfo("Agent"),
+    // Other custom agents
+    "code-review" to SubAgentInfo("Code Review"),
+    "ui-reviewer" to SubAgentInfo("UI Review"),
+)
+
+/** JSON key to use as subtitle in the chip label for specific tools */
+internal val TOOL_SUBTITLE_KEY = mapOf(
+    // File operations
+    "read_file" to "path",
+    "write_file" to "path",
+    "edit_text" to "path",
+    "create_file" to "path",
+    "delete_file" to "path",
+    "open_in_editor" to "file",
+    "show_diff" to "file",
+    "get_file_outline" to "path",
+    "format_code" to "path",
+    "optimize_imports" to "path",
+    // Code navigation
+    "search_symbols" to "query",
+    "find_references" to "symbol",
+    "go_to_declaration" to "symbol",
+    "get_type_hierarchy" to "symbol",
+    "get_documentation" to "symbol",
+    "search_text" to "query",
+    // Tests
+    "run_tests" to "target",
+    // Git
+    "git_blame" to "path",
+    "git_commit" to "message",
+    "git_branch" to "name",
+    // Code quality
+    "run_inspections" to "scope",
+    "apply_quickfix" to "inspection_id",
+    "add_to_dictionary" to "word",
+    // Run configs
+    "run_configuration" to "name",
+    "create_run_configuration" to "name",
+    "edit_run_configuration" to "name",
+    // Shell & infrastructure
+    "run_command" to "title",
+    "http_request" to "url",
+    // Agent meta
+    "report_intent" to "intent",
+    "task" to "description",
+    // Built-in CLI tools - lowercase
+    "view" to "path",
+    "edit" to "path",
+    "create" to "path",
+    "grep" to "pattern",
+    "glob" to "pattern",
+    "bash" to "description",
+    "web_search" to "query",
+    "web_fetch" to "url",
+    // OpenCode / Claude agent tools
+    "todowrite" to "todos",
+    "codesearch" to "query",
+    "websearch" to "query",
+    "webfetch" to "url",
+)
+
+/**
+ * Display info for EXTERNAL tools only (not from our MCP plugin).
+ * Our MCP tools define displayName() and description() in their tool classes.
+ * This map is used as a fallback when the tool is not in the registry.
+ */
+internal val TOOL_DISPLAY_INFO = mapOf(
+    // ── Copilot CLI built-in tools ──
+    "view" to ToolInfo("View", "View file or directory contents"),
+    "edit" to ToolInfo("Edit", "Make string replacements in a file"),
+    "create" to ToolInfo("Create", "Create a new file"),
+    "grep" to ToolInfo("Grep", "Search file contents with ripgrep"),
+    "glob" to ToolInfo("Glob", "Find files by name pattern"),
+    "bash" to ToolInfo("Bash", "Run a shell command"),
+    "read_bash" to ToolInfo("Read Bash", "Read output from an async shell command"),
+    "write_bash" to ToolInfo("Write Bash", "Send input to an async shell command"),
+    "stop_bash" to ToolInfo("Stop Bash", "Stop a running shell command"),
+    "list_bash" to ToolInfo("List Bash", "List active shell sessions"),
+    "web_search" to ToolInfo("Web Search", "AI-powered web search"),
+    "web_fetch" to ToolInfo("Fetch URL", "Fetch a web page"),
+    "update_todo" to ToolInfo("Update TODO", "Update the agent's task checklist"),
+    "report_intent" to ToolInfo("Intent", "Report current task intent"),
+    "task" to ToolInfo("Sub-Agent Task", "Launch a sub-agent"),
+
+    // ── OpenCode / Claude built-in tools ──
+    "todowrite" to ToolInfo("Update TODO", "Update the agent's task list"),
+    "codesearch" to ToolInfo("Code Search", "Search external code libraries"),
+    "webfetch" to ToolInfo("Fetch URL", "Fetch a web page"),
+    "websearch" to ToolInfo("Web Search", "Search the web"),
+    "skill" to ToolInfo("Skill", "Use an agent skill"),
+
+    // ── GitHub MCP tools (external server) ──
+    "actions_get" to ToolInfo("GitHub Actions", "Get GitHub Actions resource"),
+    "actions_list" to ToolInfo("GitHub Actions", "List GitHub Actions"),
+    "get_commit" to ToolInfo("Get Commit", "Get GitHub commit details"),
+    "get_file_contents" to ToolInfo("Get File", "Get GitHub file contents"),
+    "get_job_logs" to ToolInfo("Job Logs", "Get GitHub Actions logs"),
+    "issue_read" to ToolInfo("Read Issue", "Get GitHub issue"),
+    "list_branches" to ToolInfo("List Branches", "List GitHub branches"),
+    "list_commits" to ToolInfo("List Commits", "List GitHub commits"),
+    "list_issues" to ToolInfo("List Issues", "List GitHub issues"),
+    "list_pull_requests" to ToolInfo("List PRs", "List GitHub PRs"),
+    "pull_request_read" to ToolInfo("Read PR", "Get GitHub PR"),
+    "search_code" to ToolInfo("Search Code", "Search GitHub code"),
+    "search_issues" to ToolInfo("Search Issues", "Search GitHub issues"),
+    "search_pull_requests" to ToolInfo("Search PRs", "Search GitHub PRs"),
+    "search_repositories" to ToolInfo("Search Repos", "Search GitHub repos"),
+    "search_users" to ToolInfo("Search Users", "Search GitHub users"),
+)
+
+internal fun toolDisplayInfo(name: String): ToolInfo? = TOOL_DISPLAY_INFO[name.lowercase()]
+
+internal fun toolSubtitleKey(name: String): String? = TOOL_SUBTITLE_KEY[name.lowercase()]

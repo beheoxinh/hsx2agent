@@ -1,0 +1,88 @@
+import {collapseAllChips} from '../helpers';
+
+export default class SubagentChip extends HTMLElement {
+    static get observedAttributes(): string[] {
+        return ['label', 'status', 'color-index'];
+    }
+
+    private _init = false;
+    _linkedSection: HTMLElement | null = null;
+
+    connectedCallback(): void {
+        if (this._init) return;
+        this._init = true;
+        const ci = this.getAttribute('color-index') || '0';
+        this.classList.add('turn-chip', 'subagent', 'subagent-c' + ci);
+        this.setAttribute('role', 'button');
+        this.setAttribute('tabindex', '0');
+        this.setAttribute('aria-expanded', 'false');
+        this._render();
+        this.onclick = (e) => {
+            e.stopPropagation();
+            this._toggleExpand();
+        };
+        this.onkeydown = (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                this._toggleExpand();
+            }
+        };
+    }
+
+    private _render(): void {
+        const label = this.getAttribute('label') || '';
+        const rawStatus = this.getAttribute('status') || 'running';
+        const status = rawStatus.replaceAll(/\s+/g, '-');
+        const display = label.length > 50 ? label.substring(0, 47) + '\u2026' : label;
+        this.className = this.className.replaceAll(/\bstatus-\S+/g, '').trim();
+        this.classList.add(`status-${status}`);
+        this.classList.toggle('failed', status === 'failed');
+        const text = label.length > 50 ? '<span>' + display + '</span>' : display;
+        this.innerHTML = '<span class="chip-ring" aria-hidden="true"></span> ' + text;
+    }
+
+    private _resolveLink(): void {
+        if (!this._linkedSection && this.dataset.chipFor) {
+            this._linkedSection = document.getElementById(this.dataset.chipFor);
+        }
+    }
+
+    private _toggleExpand(): void {
+        this._resolveLink();
+        const section = this._linkedSection;
+        if (!section) return;
+        collapseAllChips(this.closest('chat-message'), this);
+        if (section.classList.contains('turn-hidden')) {
+            section.classList.remove('turn-hidden', 'collapsed');
+            section.classList.add('chip-expanded');
+            this.classList.add('chip-dimmed');
+            this.setAttribute('aria-expanded', 'true');
+        } else {
+            this.classList.remove('chip-dimmed');
+            section.classList.add('collapsing');
+            setTimeout(() => {
+                section.classList.remove('collapsing', 'chip-expanded');
+                section.classList.add('turn-hidden', 'collapsed');
+            }, 250);
+            this.setAttribute('aria-expanded', 'false');
+        }
+    }
+
+    linkSection(section: HTMLElement): void {
+        this._linkedSection = section;
+    }
+
+    attributeChangedCallback(name: string): void {
+        if (!this._init) return;
+        if (name === 'status') {
+            // CSS-only update — avoids childList DOM mutations → MutationObserver → scroll deferral.
+            const rawStatus = this.getAttribute('status') || 'running';
+            const status = rawStatus.replaceAll(/\s+/g, '-');
+            this.className = this.className.replaceAll(/\bstatus-\S+/g, '').trim();
+            this.classList.add(`status-${status}`);
+            this.classList.toggle('failed', status === 'failed');
+        } else if (name === 'label') {
+            this._render();
+        }
+    }
+}
