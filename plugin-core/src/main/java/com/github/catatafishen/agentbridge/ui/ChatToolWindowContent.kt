@@ -122,6 +122,9 @@ class ChatToolWindowContent(
     private var isSending = false
 
     @Volatile
+    private var isLastTurnAutoCommit = false
+
+    @Volatile
     private var activeBubbleId: String? = null
 
     /** Human-typed portion of the pending nudge bubble — for restore-to-input when a turn ends unhandled. */
@@ -1223,11 +1226,12 @@ class ChatToolWindowContent(
         submitTurn(rawText, contextItems)
     }
 
-    private fun submitTurn(rawText: String, contextItems: List<ContextItemData>) {
+    private fun submitTurn(rawText: String, contextItems: List<ContextItemData>, isAutoCommit: Boolean = false) {
+        isLastTurnAutoCommit = isAutoCommit
         consolePanel.disableQuickReplies()
         statusBanner?.dismissCurrent()
-        // Auto-clean approved review rows when a brand-new user turn starts (not nudge / queued follow-up).
-        if (com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isAutoCleanReviewOnNewPrompt) {
+        // Auto-clean approved review rows when a brand-new user turn starts (not nudge / queued follow-up / auto-commit).
+        if (!isAutoCommit && com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isAutoCleanReviewOnNewPrompt) {
             try {
                 AgentEditSession.getInstance(project)
                     ?.removeAllApproved()
@@ -1302,6 +1306,7 @@ class ChatToolWindowContent(
 
     /** Submits a human nudge to the pending queue, which triggers the nudge listener to show the bubble. */
     private fun submitNudge(text: String) {
+        isLastTurnAutoCommit = false
         AgentNudgeService.getInstance(project).addNudge(text, NudgeSource.HUMAN, true)
         refreshShortcutHints()
     }
@@ -1466,12 +1471,17 @@ class ChatToolWindowContent(
         val mcp = com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project)
         if (!mcp.isAutoCommit) return
 
+        if (isLastTurnAutoCommit) {
+            isLastTurnAutoCommit = false
+            return
+        }
+
         val session = com.github.catatafishen.agentbridge.psi.review.AgentEditSession.getInstance(project)
         if (session.hasChanges() && !session.hasPendingChanges()) {
             ApplicationManager.getApplication().invokeLater {
                 // If a new turn was started by unhandled nudge, don't interrupt it.
                 if (isSending || project.isDisposed) return@invokeLater
-                submitTurn("Commit my changes", emptyList())
+                submitTurn("Commit all approved changes now. Use a descriptive conventional commit message. No more actions or research needed.", emptyList(), isAutoCommit = true)
             }
         }
     }
