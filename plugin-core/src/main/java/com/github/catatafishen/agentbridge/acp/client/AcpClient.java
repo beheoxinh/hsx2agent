@@ -361,7 +361,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     @Override
-    public final String createSession(String cwd) throws AgentSessionException {
+    public final synchronized String createSession(String cwd) throws AgentSessionException {
         // Reuse the existing session if we already have one for the same working directory.
         // eagerFetchModels() creates a session at startup — avoid a redundant second session/new.
         if (currentSessionId != null && cwd != null && cwd.equals(launchCwd)) {
@@ -751,6 +751,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             throw new AgentPromptException("Prompt execution queueing interrupted", e);
         }
 
+        CompletableFuture<JsonElement> future = null;
         try {
             long turnStartNanos = System.nanoTime();
             lastActivityNanos = turnStartNanos;
@@ -758,13 +759,21 @@ public abstract class AcpClient extends AbstractAgentClient {
             PromptRequest effectiveRequest = beforeSendPrompt(request);
             JsonObject params = gson.toJsonTree(effectiveRequest).getAsJsonObject();
             LOG.debug(displayName() + ": sending session/prompt, sessionId=" + request.sessionId());
-            CompletableFuture<JsonElement> future = transport.sendRequest("session/prompt", params);
+            future = transport.sendRequest("session/prompt", params);
             JsonElement result = waitForPromptResult(future, turnStartNanos);
             return gson.fromJson(result, PromptResponse.class);
         } catch (InterruptedException e) {
+            if (future != null) future.cancel(true);
+            try {
+                // Small sleep to let the backend settle after cancellation before releasing the lock
+                TimeUnit.MILLISECONDS.sleep(500);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
             Thread.currentThread().interrupt();
             throw new AgentPromptException("Prompt interrupted for " + displayName(), e);
         } catch (Exception e) {
+            if (future != null) future.cancel(true);
             // On timeout, cancel the remote session so the agent stops working
             if (e instanceof java.util.concurrent.TimeoutException && currentSessionId != null) {
                 try {

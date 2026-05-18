@@ -210,6 +210,7 @@ class PromptOrchestrator(
         return true
     }
 
+    @Synchronized
     private fun ensureSessionCreated(client: AbstractAgentClient): String {
         if (currentSessionId == null) {
             currentSessionId = client.createSession(project.basePath)
