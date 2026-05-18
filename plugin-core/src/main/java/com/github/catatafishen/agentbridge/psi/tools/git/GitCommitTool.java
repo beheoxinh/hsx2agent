@@ -74,9 +74,8 @@ public final class GitCommitTool extends GitTool {
         flushAndSave();
 
         com.github.catatafishen.agentbridge.services.ActiveAgentManager manager = com.github.catatafishen.agentbridge.services.ActiveAgentManager.getInstance(project);
-        boolean autoApprove = com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isAutoApproveAgentEdits();
 
-        if (autoApprove && !manager.isDisableAskForCommit()) {
+        if (!manager.isDisableAskForCommit()) {
             JsonObject promptArgs = new JsonObject();
             String message = requiredMessage(args);
             boolean isAmend = resolveAmend(args);
