@@ -660,6 +660,7 @@ class AcpConnectPanel(
             }
 
             is SessionChoice.Latest -> {
+                switchCurrentSession(choice.record.id)
                 // Re-export the current session so the JSONL has the correct last-prompt.
                 // Without this, a stale export (e.g. from a previous IDE session) would be
                 // reused and Claude CLI could branch from the wrong message.

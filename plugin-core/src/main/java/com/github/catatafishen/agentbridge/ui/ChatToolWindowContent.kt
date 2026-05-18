@@ -427,10 +427,12 @@ class ChatToolWindowContent(
         ++modelLoadGeneration
         try {
             agentManager.stop()
+            resetSession()
         } catch (e: Exception) {
             LOG.warn("Error stopping agent", e)
         }
         agentManager.isConnected = false
+        chatSessionInitialized = false
         project.messageBus.syncPublisher(ConversationListener.TOPIC).connectionChanged(false)
         loadedModels = emptyList()
         selectedModelIndex = -1
