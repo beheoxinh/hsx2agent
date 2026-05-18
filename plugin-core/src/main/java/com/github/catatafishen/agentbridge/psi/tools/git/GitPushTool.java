@@ -129,6 +129,9 @@ public final class GitPushTool extends GitTool {
 
         String userResponse = promptTool.execute(promptArgs);
         if (!"Yes, push code".equalsIgnoreCase(userResponse.trim())) {
+            if (userResponse.contains("timed out")) {
+                return "Push skipped: user response timed out";
+            }
             if (userResponse.startsWith("Error:")) {
                 return "Push cancelled: " + userResponse;
             }

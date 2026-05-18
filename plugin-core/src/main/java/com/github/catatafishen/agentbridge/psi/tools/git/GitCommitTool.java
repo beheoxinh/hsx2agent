@@ -74,7 +74,9 @@ public final class GitCommitTool extends GitTool {
         flushAndSave();
 
         com.github.catatafishen.agentbridge.services.ActiveAgentManager manager = com.github.catatafishen.agentbridge.services.ActiveAgentManager.getInstance(project);
-        if (!manager.isDisableAskForCommit()) {
+        boolean autoApprove = com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isAutoApproveAgentEdits();
+
+        if (autoApprove && !manager.isDisableAskForCommit()) {
             JsonObject promptArgs = new JsonObject();
             String message = requiredMessage(args);
             boolean isAmend = resolveAmend(args);
@@ -90,6 +92,9 @@ public final class GitCommitTool extends GitTool {
 
             String userResponse = promptTool.execute(promptArgs);
             if (!"Yes, commit code".equalsIgnoreCase(userResponse.trim())) {
+                if (userResponse.contains("timed out")) {
+                    return "Commit skipped: user response timed out";
+                }
                 if (userResponse.startsWith("Error:")) {
                     return "Commit cancelled: " + userResponse;
                 }
