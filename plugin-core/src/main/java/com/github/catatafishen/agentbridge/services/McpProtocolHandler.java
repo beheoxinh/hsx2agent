@@ -679,8 +679,14 @@ public final class McpProtocolHandler {
             }
         });
 
+        // Use a much longer initial timeout for tools that wait for user input.
+        // prompt_user, git_commit, and git_push can block for up to 120s waiting for the user.
+        // We wait 130s before showing the "Still Running" dialog for these tools.
+        boolean isInteractive = "prompt_user".equals(toolName) || "git_commit".equals(toolName) || "git_push".equals(toolName);
+        int timeoutSeconds = isInteractive ? 130 : INITIAL_TIMEOUT_SECONDS;
+
         try {
-            return future.get(INITIAL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return future.get(timeoutSeconds, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
             int elapsedSeconds = (int) ((System.currentTimeMillis() - startMs) / 1000);
             return waitAfterTimeout(future, workerThread, toolName, displayName, elapsedSeconds);
