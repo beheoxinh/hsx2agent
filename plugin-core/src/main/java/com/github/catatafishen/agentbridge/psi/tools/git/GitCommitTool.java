@@ -9,9 +9,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Commits staged changes with a message.
@@ -73,8 +71,12 @@ public final class GitCommitTool extends GitTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
-        com.github.catatafishen.agentbridge.services.ActiveAgentManager manager = com.github.catatafishen.agentbridge.services.ActiveAgentManager.getInstance(project);
+        boolean autoApprove = com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isAutoApproveAgentEdits();
+        if (!autoApprove) {
+            return "Error: git_commit is disabled when Auto-Approve is OFF. Please review and commit your changes manually using the IDE's Git tools (\"commit bằng cơm\").";
+        }
 
+        com.github.catatafishen.agentbridge.services.ActiveAgentManager manager = com.github.catatafishen.agentbridge.services.ActiveAgentManager.getInstance(project);
         if (!manager.isDisableAskForCommit()) {
             JsonObject promptArgs = new JsonObject();
             String message = requiredMessage(args);
@@ -108,8 +110,6 @@ public final class GitCommitTool extends GitTool {
 
         boolean commitAll = resolveCommitAll(args);
         boolean isAmend = resolveAmend(args);
-        String reviewError = awaitCommitReview(root, commitAll, isAmend);
-        if (reviewError != null) return reviewError;
 
         if (commitAll) runGitIn(root, "add", "-A");
         if (!isAmend && hasNoStagedChanges(root)) return buildNothingToCommitHint(root);
@@ -132,13 +132,6 @@ public final class GitCommitTool extends GitTool {
     private static @Nullable String requiredMessage(@NotNull JsonObject args) {
         if (!args.has(PARAM_MESSAGE) || args.get(PARAM_MESSAGE).getAsString().isEmpty()) return null;
         return args.get(PARAM_MESSAGE).getAsString();
-    }
-
-    private String awaitCommitReview(@NotNull String root, boolean commitAll, boolean isAmend) {
-        AgentEditSession session = AgentEditSession.getInstance(project);
-        if (isAmend) return session.awaitReviewCompletion("git commit --amend");
-        Collection<String> filesToCommit = resolveFilesToCommit(commitAll, root);
-        return session.awaitReviewForPaths("git commit", filesToCommit);
     }
 
     private boolean hasNoStagedChanges(@NotNull String root) {
@@ -208,21 +201,6 @@ public final class GitCommitTool extends GitTool {
      */
     static boolean resolveAmend(JsonObject args) {
         return args.has(PARAM_AMEND) && args.get(PARAM_AMEND).getAsBoolean();
-    }
-
-    private Collection<String> resolveFilesToCommit(boolean commitAll, String root) {
-        Set<String> paths = new java.util.HashSet<>();
-        String basePath = project.getBasePath();
-        String rawPaths = commitAll
-            ? runGitInQuiet(root, "status", "--porcelain")
-            : runGitInQuiet(root, "diff", "--cached", NAME_ONLY);
-        if (rawPaths == null) return paths;
-
-        for (String line : rawPaths.split(CRLF_SPLIT)) {
-            String relPath = commitAll ? porcelainPath(line) : stagedPath(line);
-            if (relPath != null) paths.add(toAbsolutePath(relPath, basePath));
-        }
-        return paths;
     }
 
     private static @Nullable String porcelainPath(@NotNull String line) {
