@@ -266,6 +266,23 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     @Override
     public @NotNull List<Model> getAvailableModels() {
         List<String> custom = profile.getCustomCliModels();
+
+        if (profile.isCustomOnly()) {
+            List<Model> customModels = new ArrayList<>();
+            Set<String> seenIds = new HashSet<>();
+            for (String entry : custom) {
+                if (!entry.isBlank()) {
+                    String[] parts = entry.split("=", 2);
+                    String id = parts[0].trim();
+                    String name = parts.length > 1 ? parts[1].trim() : id;
+                    if (seenIds.add(id)) {
+                        customModels.add(new Model(id, name, null, null));
+                    }
+                }
+            }
+            return Collections.unmodifiableList(customModels);
+        }
+
         if (custom.isEmpty()) {
             return KNOWN_MODELS;
         }
@@ -277,10 +294,14 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         }
 
         List<Model> merged = new ArrayList<>(KNOWN_MODELS);
-        for (String id : custom) {
-            if (!id.isBlank() && !knownIds.contains(id.trim())) {
-                merged.add(new Model(
-                    id.trim(), id.trim(), null, null));
+        for (String entry : custom) {
+            if (!entry.isBlank()) {
+                String[] parts = entry.split("=", 2);
+                String id = parts[0].trim();
+                String name = parts.length > 1 ? parts[1].trim() : id;
+                if (!knownIds.contains(id)) {
+                    merged.add(new Model(id, name, null, null));
+                }
             }
         }
         return Collections.unmodifiableList(merged);

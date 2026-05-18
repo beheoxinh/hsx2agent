@@ -128,6 +128,10 @@ html, body {
     overflow: hidden;
 }
 
+button {
+    cursor: pointer;
+}
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -1315,6 +1319,10 @@ hr {
     gap: var(--sp-2);
     align-items: flex-start;
     margin-top: var(--sp-2);
+}
+
+.perm-actions button {
+    cursor: pointer;
 }
 
 .perm-deny {

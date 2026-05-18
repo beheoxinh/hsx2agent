@@ -477,6 +477,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             panel.add(JButton(opt).apply {
                 addActionListener { onQuickReply?.invoke(opt) }
                 font = UIUtil.getLabelFont()
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             })
         }
         addRow(panel)
@@ -512,7 +513,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             "Allow Session" to PermissionResponse.ALLOW_SESSION,
             "Allow Always" to PermissionResponse.ALLOW_ALWAYS
         ).forEach { (text, resp) ->
-            buttons.add(JButton(text).apply { addActionListener { onRespond(resp) } })
+            buttons.add(JButton(text).apply {
+                addActionListener { onRespond(resp) }
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            })
         }
         panel.add(buttons, BorderLayout.SOUTH)
         addRow(panel)
@@ -532,7 +536,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
         val buttons = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply { isOpaque = false }
         options.forEach { opt ->
-            buttons.add(JButton(opt).apply { addActionListener { onRespond(opt) } })
+            buttons.add(JButton(opt).apply {
+                addActionListener { onRespond(opt) }
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            })
         }
 
         val countdownLabel = JBLabel().apply {

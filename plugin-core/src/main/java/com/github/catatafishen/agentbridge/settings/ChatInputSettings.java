@@ -149,6 +149,16 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         myState.pauseOnInputFocus = enabled;
     }
 
+    // ── Notifications ───────────────────────────────────────────────────────
+
+    public boolean isEnableResponseNotifications() {
+        return myState.enableResponseNotifications;
+    }
+
+    public void setEnableResponseNotifications(boolean enabled) {
+        myState.enableResponseNotifications = enabled;
+    }
+
     // ── Side panel position ───────────────────────────────────────────────────
 
     @NotNull
@@ -185,6 +195,7 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         @NotNull
         public ReprimandNudgeMode reprimandNudgeMode = ReprimandNudgeMode.ENABLED; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public boolean pauseOnInputFocus = false; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public boolean enableResponseNotifications = true; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         @NotNull
         public SidePanelPosition sidePanelPosition = SidePanelPosition.TOP; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }

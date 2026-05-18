@@ -127,6 +127,7 @@ public final class AgentProfile {
      * response, so programmatic discovery is unreliable.</p>
      */
     private List<String> customCliModels = new ArrayList<>();
+    private boolean customOnly;
 
     public AgentProfile() {
         this.id = UUID.randomUUID().toString();
@@ -176,6 +177,7 @@ public final class AgentProfile {
         copy.bundledAgentFiles = new ArrayList<>(bundledAgentFiles);
         copy.additionalInstructions = additionalInstructions;
         copy.customCliModels = new ArrayList<>(customCliModels);
+        copy.customOnly = customOnly;
         return copy;
     }
 
@@ -211,6 +213,7 @@ public final class AgentProfile {
         copy.bundledAgentFiles = new ArrayList<>(bundledAgentFiles);
         copy.additionalInstructions = additionalInstructions;
         copy.customCliModels = new ArrayList<>(customCliModels);
+        copy.customOnly = customOnly;
         return copy;
     }
 
@@ -246,6 +249,7 @@ public final class AgentProfile {
         this.bundledAgentFiles = new ArrayList<>(other.bundledAgentFiles);
         this.additionalInstructions = other.additionalInstructions;
         this.customCliModels = new ArrayList<>(other.customCliModels);
+        this.customOnly = other.customOnly;
     }
 
     // ── Getters / Setters ────────────────────────────────────────────────────
@@ -520,6 +524,14 @@ public final class AgentProfile {
 
     public void setCustomCliModels(@NotNull List<String> customCliModels) {
         this.customCliModels = new ArrayList<>(customCliModels);
+    }
+
+    public boolean isCustomOnly() {
+        return customOnly;
+    }
+
+    public void setCustomOnly(boolean customOnly) {
+        this.customOnly = customOnly;
     }
 
     /**

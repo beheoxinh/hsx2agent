@@ -66,6 +66,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         public String customBinaryPath = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public String prependInstructionsTo = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public List<String> customCliModels = new ArrayList<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public boolean isCustomOnly; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public boolean stripNonEssentialPath; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 
@@ -124,6 +125,9 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             if (o.customCliModels != null && !o.customCliModels.isEmpty()) {
                 profile.setCustomCliModels(new ArrayList<>(o.customCliModels));
             }
+            if (o.isCustomOnly) {
+                profile.setCustomOnly(true);
+            }
             if (o.stripNonEssentialPath) {
                 profile.setStripNonEssentialPath(true);
             }
@@ -139,6 +143,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         o.prependInstructionsTo = pit.equals(nullToEmpty(defaults.getPrependInstructionsTo())) ? "" : pit;
         List<String> models = current.getCustomCliModels();
         o.customCliModels = models.equals(defaults.getCustomCliModels()) ? new ArrayList<>() : new ArrayList<>(models);
+        o.isCustomOnly = current.isCustomOnly() != defaults.isCustomOnly() && current.isCustomOnly();
         o.stripNonEssentialPath = current.isStripNonEssentialPath() != defaults.isStripNonEssentialPath()
             && current.isStripNonEssentialPath();
         return o;
@@ -148,6 +153,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         return !o.customBinaryPath.isEmpty()
             || !o.prependInstructionsTo.isEmpty()
             || !o.customCliModels.isEmpty()
+            || o.isCustomOnly
             || o.stripNonEssentialPath;
     }
 

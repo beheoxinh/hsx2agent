@@ -38,8 +38,8 @@ import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.util.SystemProperties;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -54,6 +54,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
@@ -160,6 +161,12 @@ public abstract class AcpClient extends AbstractAgentClient {
      * Nanotime of the last {@code session/update} notification received; used for inactivity detection.
      */
     private volatile long lastActivityNanos = System.nanoTime();
+
+    /**
+     * Serializes session/prompt calls to ensure only one prompt is active per agent process
+     * at a time, preventing rate limit issues with some agents (e.g. Hermes).
+     */
+    private final Semaphore promptSemaphore = new Semaphore(1);
 
     private final AcpMessageParser messageParser = new AcpMessageParser(
         new AcpMessageParser.Delegate() {
@@ -354,7 +361,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     @Override
-    public final String createSession(String cwd) throws AgentSessionException {
+    public final synchronized String createSession(String cwd) throws AgentSessionException {
         // Reuse the existing session if we already have one for the same working directory.
         // eagerFetchModels() creates a session at startup — avoid a redundant second session/new.
         if (currentSessionId != null && cwd != null && cwd.equals(launchCwd)) {
@@ -738,19 +745,35 @@ public abstract class AcpClient extends AbstractAgentClient {
     public final PromptResponse sendPrompt(PromptRequest request,
                                            Consumer<SessionUpdate> onUpdate) throws AgentPromptException {
         try {
+            promptSemaphore.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AgentPromptException("Prompt execution queueing interrupted", e);
+        }
+
+        CompletableFuture<JsonElement> future = null;
+        try {
             long turnStartNanos = System.nanoTime();
             lastActivityNanos = turnStartNanos;
             updateConsumer = onUpdate;
             PromptRequest effectiveRequest = beforeSendPrompt(request);
             JsonObject params = gson.toJsonTree(effectiveRequest).getAsJsonObject();
             LOG.debug(displayName() + ": sending session/prompt, sessionId=" + request.sessionId());
-            CompletableFuture<JsonElement> future = transport.sendRequest("session/prompt", params);
+            future = transport.sendRequest("session/prompt", params);
             JsonElement result = waitForPromptResult(future, turnStartNanos);
             return gson.fromJson(result, PromptResponse.class);
         } catch (InterruptedException e) {
+            if (future != null) future.cancel(true);
+            try {
+                // Small sleep to let the backend settle after cancellation before releasing the lock
+                TimeUnit.MILLISECONDS.sleep(500);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
             Thread.currentThread().interrupt();
             throw new AgentPromptException("Prompt interrupted for " + displayName(), e);
         } catch (Exception e) {
+            if (future != null) future.cancel(true);
             // On timeout, cancel the remote session so the agent stops working
             if (e instanceof java.util.concurrent.TimeoutException && currentSessionId != null) {
                 try {
@@ -767,7 +790,11 @@ public abstract class AcpClient extends AbstractAgentClient {
                 : ERR_PROMPT_FAILED_PREFIX + displayName();
             throw new AgentPromptException(msg, e);
         } finally {
-            afterPromptComplete();
+            try {
+                afterPromptComplete();
+            } finally {
+                promptSemaphore.release();
+            }
         }
     }
 
