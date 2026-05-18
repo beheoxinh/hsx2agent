@@ -853,7 +853,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     }
 
     private fun createActionIcon(icon: Icon, tooltip: String, onClick: () -> Unit): JBLabel {
-        val scaledIcon = com.intellij.util.IconUtil.scale(icon, null, 0.5f)
+        val scaledIcon = com.intellij.util.IconUtil.scale(icon, null, 0.75f)
         return object : JBLabel(scaledIcon) {
             private var hovered = false
 

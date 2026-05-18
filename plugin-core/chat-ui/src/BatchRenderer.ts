@@ -284,6 +284,13 @@ function _appendSubAgent(entry: SubAgentEntry, meta: HTMLElement, msg: HTMLEleme
     msg.appendChild(indent);
 }
 
+/** Format token count: "1.2k", "245", "12.3k" */
+function _formatTokens(n: number): string {
+    if (n < 1000) return String(n);
+    if (n < 10000) return (n / 1000).toFixed(1) + 'k';
+    return Math.round(n / 1000) + 'k';
+}
+
 /**
  * Finds the last agent chat-message in the fragment and appends a turn summary bar.
  * Used to restore turn stats on session resume.
@@ -292,6 +299,18 @@ function _appendStatsToLastAgent(fragment: DocumentFragment, stats: StatsTurn): 
     const agents = fragment.querySelectorAll('chat-message[type="agent"]');
     const lastAgent = agents[agents.length - 1];
     if (!lastAgent) return;
+
+    // Add token usage badge to the actions container
+    const actions = lastAgent.querySelector('.message-actions');
+    if (actions) {
+        actions.querySelector('.token-usage-badge')?.remove();
+        const totalTokens = stats.inputTokens + stats.outputTokens;
+        const badge = document.createElement('span');
+        badge.className = 'token-usage-badge';
+        badge.textContent = `Total: ${_formatTokens(totalTokens)} (In: ${_formatTokens(stats.inputTokens)} | Out: ${_formatTokens(stats.outputTokens)})`;
+        actions.appendChild(badge);
+    }
+
     lastAgent.appendChild(_buildStatBar(stats));
 }
 
@@ -315,11 +334,6 @@ function _buildStatBar(stats: StatsTurn): HTMLElement {
             dur = s > 0 ? m + 'm ' + s + 's' : m + 'm';
         }
     }
-    const fmt = (n: number): string => {
-        if (n < 1000) return String(n);
-        if (n < 10000) return (n / 1000).toFixed(1) + 'k';
-        return Math.round(n / 1000) + 'k';
-    };
 
     const parts: Array<string | HTMLElement> = [];
 
@@ -347,7 +361,7 @@ function _buildStatBar(stats: StatsTurn): HTMLElement {
     }
 
     if (stats.inputTokens > 0 || stats.outputTokens > 0) {
-        parts.push(fmt(stats.inputTokens) + '/' + fmt(stats.outputTokens) + ' tok');
+        parts.push(_formatTokens(stats.inputTokens) + '/' + _formatTokens(stats.outputTokens) + ' tok');
     }
 
     if (stats.tools > 0) {

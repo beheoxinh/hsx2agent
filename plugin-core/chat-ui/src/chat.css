@@ -446,7 +446,7 @@ chat-message {
     gap: var(--sp-2);
     justify-content: flex-end;
     margin-top: 4px;
-    padding-bottom: 8px; /* Give some breathing room */
+    margin-bottom: 8px;
 }
 
 chat-message[type="agent"] .message-actions {
@@ -466,8 +466,7 @@ chat-message[type="agent"] .message-actions {
     padding: 1px 4px; /* Reduced padding */
     font-size: 0; /* SVG will control its own size */
     line-height: 0;
-    opacity: 0.3; /* Low opacity when not hovered so it's not distracting */
-    transition: opacity 0.15s, background 0.15s;
+    opacity: 1;
     user-select: none;
     display: inline-flex;
     align-items: center;
@@ -515,6 +514,22 @@ chat-message[type="agent"] .message-action-btn:hover::after {
 chat-message[type="agent"] .message-action-btn:hover::before {
     left: 12px;
     right: auto;
+}
+
+.token-usage-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.85em;
+    vertical-align: middle;
+    color: var(--think);
+    margin-left: 8px;
+    padding: 1px 6px;
+    border-radius: var(--r-sm);
+    background: var(--think-a08);
+    opacity: 0.6;
+    user-select: none;
+    white-space: nowrap;
+    align-self: center;
 }
 
 /* User message timestamp: align right on its own line */

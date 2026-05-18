@@ -150,8 +150,8 @@ const ChatController = {
             resetTimer(): void;
             stop(ms: number): void;
             startCountdown(deadlineMs: number, reqId: string): void;
-            updateDeadline(deadlineMs: number): void;
-            stopCountdown(): void
+            updateDeadline(deadlineEpochMs: number, reqId: string): void;
+            stopCountdown(reqId?: string): void;
         }
     } | null {
         return document.querySelector<HTMLElement & {
@@ -169,9 +169,9 @@ const ChatController = {
                 hide(): void;
                 resetTimer(): void;
                 stop(ms: number): void;
-                startCountdown(deadlineMs: number, reqId: string): void;
-                updateDeadline(deadlineMs: number): void;
-                stopCountdown(): void
+                startCountdown(deadlineEpochMs: number, reqId: string): void;
+                updateDeadline(deadlineEpochMs: number, reqId: string): void;
+                stopCountdown(reqId?: string): void;
             }
         }>('chat-container');
     },
@@ -344,14 +344,14 @@ const ChatController = {
             if (encodedHtml) {
                 if (ctx.textBubble) {
                     (ctx.textBubble as any).finalize(decodeBase64(encodedHtml));
-                    addMessageActions(ctx.meta!, false, turnId, ctx.textBubble.textContent || '');
+                    addMessageActions(ctx.msg!, false, turnId, ctx.textBubble.textContent || '');
                     ctx.meta!.classList.add('show');
                 } else {
                     const c = this._ensureMsg(turnId, agentId);
                     const bubble = document.createElement('message-bubble');
                     c.msg!.appendChild(bubble);
                     (bubble as any).finalize(decodeBase64(encodedHtml));
-                    addMessageActions(c.meta!, false, turnId, bubble.textContent || '');
+                    addMessageActions(c.msg!, false, turnId, bubble.textContent || '');
                     c.meta!.classList.add('show');
                 }
             } else if (ctx.textBubble) {
@@ -767,6 +767,17 @@ const ChatController = {
 
         const row = this._lastAgentRow();
         if (!row) return;
+
+        // Add token usage badge to the actions container
+        const actions = row.querySelector('.message-actions');
+        if (actions) {
+            actions.querySelector('.token-usage-badge')?.remove();
+            const badge = document.createElement('span');
+            badge.className = 'token-usage-badge';
+            const totalTokens = stats.inputTokens + stats.outputTokens;
+            badge.textContent = `Total: ${_formatTokens(totalTokens)} (In: ${_formatTokens(stats.inputTokens)} | Out: ${_formatTokens(stats.outputTokens)})`;
+            actions.appendChild(badge);
+        }
 
         // Remove any previous summary bar (guard against double-emit)
         row.querySelectorAll('.turn-summary-bar').forEach(el => el.remove());

@@ -24,7 +24,7 @@ private val APPROVED_BG = com.intellij.ui.JBColor(
 class AutoApproveToggleAction(private val project: Project) : ToggleAction(
     "Auto-Approve",
     "Apply agent edits without per-file approval",
-    AllIcons.Actions.Checked
+    AllIcons.Actions.OfflineMode
 ), CustomComponentAction {
 
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
