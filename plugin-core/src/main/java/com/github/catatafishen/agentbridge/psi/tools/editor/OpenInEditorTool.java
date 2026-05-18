@@ -102,18 +102,10 @@ public final class OpenInEditorTool extends EditorTool {
 
         // Don't steal focus when the user is actively typing in the chat prompt.
         boolean effectiveFocus = request.focus() && !PsiBridgeService.isUserTypingInChat(project);
-        navigateToFile(vf, request.line(), effectiveFocus);
+        PsiBridgeService.getInstance(project).gentleNavigate(vf, request.line(), 0, effectiveFocus);
         restartDaemonAnalysis(vf);
         return "Opened " + request.pathStr() + (request.line() > 0 ? " at line " + request.line() : "") +
             " (daemon analysis triggered - use get_highlights after a moment)";
-    }
-
-    private void navigateToFile(@NotNull VirtualFile vf, int line, boolean effectiveFocus) {
-        if (line > 0) {
-            new OpenFileDescriptor(project, vf, line - 1, 0).navigate(effectiveFocus);
-        } else {
-            FileEditorManager.getInstance(project).openFile(vf, effectiveFocus);
-        }
     }
 
     private void restartDaemonAnalysis(@NotNull VirtualFile vf) {

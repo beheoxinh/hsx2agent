@@ -113,11 +113,16 @@ class PromptOrchestrator(
     private var pendingContextItems: List<ContextItemData> = emptyList()
     private var pendingPromptEntryId = ""
 
+    private fun cleanupPreviousTurnEditors() {
+        PsiBridgeService.getInstance(project).closeAgentOpenedFiles()
+    }
+
     /** Executes a prompt on the calling thread (must be called from a background thread). */
     fun execute(
         prompt: String, contextItems: List<ContextItemData>, selectedModelId: String,
         rawText: String, promptEntryId: String
     ) {
+        cleanupPreviousTurnEditors()
         pendingRawText = rawText
         pendingContextItems = contextItems
         pendingPromptEntryId = promptEntryId
@@ -686,7 +691,7 @@ class PromptOrchestrator(
         // We trigger it here when the tool call starts so the UI responds immediately.
         if (ActiveAgentManager.getFollowAgentFiles(project) && toolCall.filePaths().isNotEmpty()) {
             ApplicationManager.getApplication().invokeLater {
-                FileNavigator(project).handleFileLink(toolCall.filePaths()[0])
+                FileNavigator(project).handleFileLink(toolCall.filePaths()[0], true)
             }
         }
     }
