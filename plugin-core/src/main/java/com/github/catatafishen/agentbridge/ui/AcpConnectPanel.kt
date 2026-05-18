@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.BuildInfo
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
+import com.github.catatafishen.agentbridge.session.db.ConversationListener
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.intellij.icons.AllIcons
@@ -437,7 +438,16 @@ class AcpConnectPanel(
         connection.subscribe(
             PsiBridgeService.TOOL_CALL_TOPIC,
             PsiBridgeService.ToolCallListener { event ->
-                ApplicationManager.getApplication().invokeLater { addToolCallEntry(event.toolName(), event.durationMs(), event.success()) }
+                ApplicationManager.getApplication()
+                    .invokeLater { addToolCallEntry(event.toolName(), event.durationMs(), event.success()) }
+            })
+
+        connection.subscribe(
+            ConversationListener.TOPIC,
+            object : ConversationListener {
+                override fun historyChanged(allHistoryCleared: Boolean) {
+                    ApplicationManager.getApplication().invokeLater { refreshSessionCombo() }
+                }
             })
     }
 
@@ -697,6 +707,7 @@ class AcpConnectPanel(
                         onSignIn = { startInlineAuth() },
                         onRetry = { doConnect() }
                     )
+
                 authService.isAuthenticationError(message) && profile.terminalSignInCommand != null -> {
                     val signInCmd = profile.terminalSignInCommand!!
                     statusBanner.showAuthError(
@@ -705,8 +716,10 @@ class AcpConnectPanel(
                         onRetry = { doConnect() }
                     )
                 }
+
                 authService.isAuthenticationError(message) ->
                     statusBanner.showError("$message — check your credentials and click Connect to retry.")
+
                 else -> statusBanner.showError(message)
             }
         }

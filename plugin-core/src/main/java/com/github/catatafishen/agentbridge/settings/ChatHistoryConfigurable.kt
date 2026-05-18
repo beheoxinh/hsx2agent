@@ -1,6 +1,8 @@
 package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
+import com.github.catatafishen.agentbridge.session.db.ConversationListener
+import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.session.exporters.ExportUtils
 import com.google.gson.JsonParser
 import com.intellij.icons.AllIcons
@@ -113,6 +115,23 @@ class ChatHistoryConfigurable(private val project: Project) :
                     )
             }
         }
+        group("Unified Database History") {
+            row {
+                button("Clear All History") {
+                    val res = Messages.showOkCancelDialog(
+                        project,
+                        "CLEAR ALL HISTORY?\nThis will delete EVERYTHING from the unified database, including the current session!\n\nThis action cannot be undone.",
+                        "DANGER: Clear All History",
+                        "Delete All",
+                        "Cancel",
+                        Messages.getWarningIcon()
+                    )
+                    if (res == Messages.OK) {
+                        ConversationService.getInstance(project).deleteAllHistory()
+                    }
+                }.comment("Deletes all conversation history from the project SQLite database.")
+            }
+        }
         row {
             val decorated = ToolbarDecorator.createDecorator(table)
                 .disableAddAction()
@@ -132,6 +151,15 @@ class ChatHistoryConfigurable(private val project: Project) :
         }.resizableRow().layout(RowLayout.PARENT_GRID)
 
         ApplicationManager.getApplication().invokeLater(::loadConversations)
+
+        project.messageBus.connect().subscribe(
+            ConversationListener.TOPIC,
+            object : ConversationListener {
+                override fun historyChanged(allHistoryCleared: Boolean) {
+                    ApplicationManager.getApplication().invokeLater(::loadConversations)
+                }
+            }
+        )
     }
 
     private fun createDeleteAllArchivesAction(): AnAction =

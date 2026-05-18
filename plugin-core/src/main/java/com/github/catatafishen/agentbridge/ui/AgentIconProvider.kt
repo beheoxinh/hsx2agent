@@ -14,6 +14,7 @@ object AgentIconProvider {
     private val junieIcon: Icon = loadIcon("junie.svg")
     private val kiroIcon: Icon = loadIcon("kiro.svg")
     private val codexIcon: Icon = loadIcon("codex.svg")
+    private val hermesIcon: Icon = loadIcon("hermes.svg")
 
     fun getDefaultIcon(): Icon = defaultIcon
 
@@ -24,6 +25,7 @@ object AgentIconProvider {
             AgentProfileManager.OPENCODE_PROFILE_ID -> opencodeIcon
             AgentProfileManager.JUNIE_PROFILE_ID -> junieIcon
             AgentProfileManager.KIRO_PROFILE_ID -> kiroIcon
+            AgentProfileManager.HERMES_PROFILE_ID -> hermesIcon
             CodexAppServerClient.PROFILE_ID -> codexIcon
             else -> null
         }

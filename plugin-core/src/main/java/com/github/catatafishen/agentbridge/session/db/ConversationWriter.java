@@ -12,6 +12,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Types;
 import java.time.Instant;
 import java.util.HashMap;
@@ -721,6 +722,66 @@ public final class ConversationWriter {
             } catch (SQLException e) {
                 LOG.warn("ConversationWriter: failed to record hook execution for "
                     + execution.toolEventId(), e);
+            }
+        }
+    }
+
+    // ── Deletion operations ──────────────────────────────────────────────────
+
+    public void deleteTurn(@NotNull String turnId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement("DELETE FROM turns WHERE id = ?")) {
+                ps.setString(1, turnId);
+                ps.executeUpdate();
+                LOG.info("ConversationWriter: deleted turn " + turnId);
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to delete turn " + turnId, e);
+            }
+        }
+    }
+
+    public void deleteOtherSessions(@NotNull String currentSessionId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement("DELETE FROM sessions WHERE id != ?")) {
+                ps.setString(1, currentSessionId);
+                ps.executeUpdate();
+                LOG.info("ConversationWriter: deleted all sessions except " + currentSessionId);
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to delete other sessions", e);
+            }
+        }
+    }
+
+    public void deleteSessionsOlderThan(int days) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement(
+                "DELETE FROM sessions WHERE COALESCE(ended_at, started_at) < datetime('now', '-' || ? || ' days')")) {
+                ps.setInt(1, days);
+                ps.executeUpdate();
+                LOG.info("ConversationWriter: deleted sessions older than " + days + " days");
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to delete old sessions", e);
+            }
+        }
+    }
+
+    public void deleteAllHistory() {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (Statement stmt = conn.createStatement()) {
+                stmt.executeUpdate("DELETE FROM sessions");
+                // Also clear events that might not be linked to any session (though rare in schema)
+                stmt.executeUpdate("DELETE FROM events WHERE turn_id IS NULL");
+                LOG.info("ConversationWriter: cleared all conversation history");
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to clear all history", e);
             }
         }
     }

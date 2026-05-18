@@ -5,6 +5,7 @@ import                com.github.catatafishen.agentbridge.acp.model.SessionUpdat
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
+import com.github.catatafishen.agentbridge.session.db.ConversationListener
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
@@ -169,6 +170,7 @@ class ChatToolWindowContent(
         setupUI()
         subscribeToFocusRestoreEvents()
         subscribeToToolWindowFocus()
+        subscribeToHistoryEvents()
         // Initialise the session store's agent name from the currently active profile.
         conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
         updateSidePanelLayout()
@@ -190,6 +192,23 @@ class ChatToolWindowContent(
         project.messageBus.connect().subscribe(
             com.intellij.openapi.wm.ex.ToolWindowManagerListener.TOPIC,
             listener
+        )
+    }
+
+    private fun subscribeToHistoryEvents() {
+        project.messageBus.connect().subscribe(
+            ConversationListener.TOPIC,
+            object : ConversationListener {
+                override fun historyChanged(allHistoryCleared: Boolean) {
+                    if (allHistoryCleared) {
+                        ApplicationManager.getApplication().invokeLater {
+                            resetSession()
+                            chatSessionInitialized = false
+                            persistedEntryCount = 0
+                        }
+                    }
+                }
+            }
         )
     }
 
@@ -342,6 +361,7 @@ class ChatToolWindowContent(
         }
         cardLayout.show(mainPanel, CARD_CHAT)
         agentManager.isConnected = true
+        project.messageBus.syncPublisher(ConversationListener.TOPIC).connectionChanged(true)
         restartSessionGroup?.updateIconForActiveAgent()
         updatePromptPlaceholder()
         authService.clearPendingAuthError()  // Clear any auth error from a previous agent
@@ -410,6 +430,7 @@ class ChatToolWindowContent(
             LOG.warn("Error stopping agent", e)
         }
         agentManager.isConnected = false
+        project.messageBus.syncPublisher(ConversationListener.TOPIC).connectionChanged(false)
         loadedModels = emptyList()
         selectedModelIndex = -1
         modelsStatusText = null

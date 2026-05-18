@@ -441,6 +441,53 @@ public final class ConversationService implements Disposable {
     }
 
     /**
+     * Deletes a single turn (prompt) and all its associated events.
+     */
+    public void deleteTurn(@NotNull String turnId) {
+        ConversationWriter writer = getOrCreateWriter();
+        if (writer == null) return;
+        writer.deleteTurn(turnId);
+        notifyHistoryChanged(false);
+    }
+
+    /**
+     * Deletes all sessions except the current one.
+     */
+    public void deleteOtherSessions(@Nullable String basePath) {
+        ConversationWriter writer = getOrCreateWriter();
+        if (writer == null) return;
+        String currentSessionId = getCurrentSessionId(basePath);
+        writer.deleteOtherSessions(currentSessionId);
+        notifyHistoryChanged(false);
+    }
+
+    /**
+     * Deletes sessions older than the specified number of days.
+     */
+    public void deleteSessionsOlderThan(int days) {
+        ConversationWriter writer = getOrCreateWriter();
+        if (writer == null) return;
+        writer.deleteSessionsOlderThan(days);
+        notifyHistoryChanged(false);
+    }
+
+    /**
+     * Clears all conversation history, including the current session.
+     */
+    public void deleteAllHistory() {
+        ConversationWriter writer = getOrCreateWriter();
+        if (writer == null) return;
+        writer.deleteAllHistory();
+        notifyHistoryChanged(true);
+    }
+
+    private void notifyHistoryChanged(boolean allHistoryCleared) {
+        if (project != null) {
+            PlatformApiCompat.syncPublisher(project, ConversationListener.TOPIC).historyChanged(allHistoryCleared);
+        }
+    }
+
+    /**
      * Marks a tool-call event as non-MCP (ACP-only) if it was previously unknown (NULL).
      * Called when ACP completes a tool call that was never correlated with an MCP execution.
      * Best-effort — silently returns if the writer is unavailable.

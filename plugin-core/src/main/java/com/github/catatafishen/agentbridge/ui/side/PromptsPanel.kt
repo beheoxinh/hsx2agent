@@ -2,16 +2,28 @@ package com.github.catatafishen.agentbridge.ui.side
 
 import com.github.catatafishen.agentbridge.services.PromptDbService
 import com.github.catatafishen.agentbridge.services.ToolRegistry
+import com.github.catatafishen.agentbridge.session.db.ConversationListener
 import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
+import com.github.catatafishen.agentbridge.settings.ChatInputSettings
+import com.github.catatafishen.agentbridge.settings.SidePanelPosition
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
 import com.github.catatafishen.agentbridge.ui.EntryData
 import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_CHARS
 import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_ROWS
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
+import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.wm.ToolWindowAnchor
+import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBList
@@ -93,6 +105,71 @@ internal class PromptsPanel(
         horizontalAlignment = SwingConstants.CENTER
     }
 
+    private val topPanel = JPanel(GridBagLayout()).apply {
+        isOpaque = false
+        border = JBUI.Borders.empty(4)
+    }
+
+    private val clearOthersButton = JButton(AllIcons.Actions.GC).apply {
+        toolTipText = "Clear all other session history (keeps current)"
+        font = JBUI.Fonts.miniFont()
+        addActionListener { confirmClearOthers() }
+    }
+    private val clearOldButton = JButton(AllIcons.General.Filter).apply {
+        toolTipText = "Clear old history..."
+        font = JBUI.Fonts.miniFont()
+        addActionListener { showClearOldPopup(this) }
+    }
+    private val clearAllButton = JButton(AllIcons.Actions.Cancel).apply {
+        toolTipText = "Clear all history (including current session)"
+        font = JBUI.Fonts.miniFont()
+        foreground = JBUI.CurrentTheme.Banner.ERROR_BACKGROUND // hint of danger
+        addActionListener { confirmClearAll() }
+    }
+
+    private fun isSideAnchor(): Boolean {
+        val tw = ToolWindowManager.getInstance(project).getToolWindow("Hsx2Agent")
+        if (tw != null) {
+            val anchor = tw.anchor
+            return anchor == ToolWindowAnchor.LEFT || anchor == ToolWindowAnchor.RIGHT
+        }
+        val position = ChatInputSettings.getInstance().sidePanelPosition
+        if (position == SidePanelPosition.LEFT || position == SidePanelPosition.RIGHT) return true
+        if (position == SidePanelPosition.TOP || position == SidePanelPosition.BOTTOM) return false
+
+        // Fallback: use width if available, otherwise assume narrow (true)
+        return width <= 0 || width < 450
+    }
+
+    private fun rebuildHeader() {
+        topPanel.removeAll()
+        buildAdvancedPanel()
+
+        if (isSideAnchor()) {
+            // Row 0: searchField (spans 2 columns, gridwidth=2)
+            topPanel.add(searchField, gbc(gridx = 0, gridy = 0, gridwidth = 2, fillH = true, weightx = 1.0, bottom = 4))
+
+            // Row 1: branchCombo (gridx=0, weightx=1.0) and advancedToggle (gridx=1, weightx=0.0)
+            topPanel.add(branchCombo, gbc(gridx = 0, gridy = 1, fillH = true, weightx = 1.0, right = 4))
+            topPanel.add(advancedToggle, gbc(gridx = 1, gridy = 1, weightx = 0.0))
+
+            // Row 2: advancedPanel (spans 2 columns, gridwidth=2)
+            topPanel.add(advancedPanel, gbc(gridx = 0, gridy = 2, gridwidth = 2, fillH = true, weightx = 1.0))
+        } else {
+            // Horizontal layout (Top/Bottom): exactly 2 rows total.
+            // Row 1: [Search (greedy)] [Branch (~25%)] [Toggle (fixed)]
+            topPanel.add(searchField, gbc(gridx = 0, gridy = 0, fillH = true, weightx = 1.0, right = 4))
+            topPanel.add(branchCombo, gbc(gridx = 1, gridy = 0, fillH = true, weightx = 0.33, right = 6))
+            topPanel.add(advancedToggle, gbc(gridx = 2, gridy = 0, weightx = 0.0))
+
+            // Row 2: Advanced Panel (spans all columns)
+            topPanel.add(advancedPanel, gbc(gridx = 0, gridy = 1, gridwidth = 3, fillH = true, weightx = 1.0))
+        }
+
+        topPanel.revalidate()
+        topPanel.repaint()
+    }
+
     // ── List and loading state ───────────────────────────────────────────────
 
     private val listModel = DefaultListModel<PromptItem>()
@@ -149,6 +226,15 @@ internal class PromptsPanel(
                 val cellBounds = promptList.getCellBounds(idx, idx) ?: return
                 if (!cellBounds.contains(e.point)) return
                 val item = listModel.getElementAt(idx) ?: return
+
+                // Check for delete button click (top-right area)
+                val relX = e.point.x - cellBounds.x
+                val relY = e.point.y - cellBounds.y
+                if (relY < JBUI.scale(20) && relX > cellBounds.width - JBUI.scale(26)) {
+                    confirmDeleteTurn(item, idx)
+                    return
+                }
+
                 val entryId = promptEntryId(item.prompt)
                 if (entryId.isEmpty()) return
                 if (chatConsole.isEntryRendered(entryId)) {
@@ -212,20 +298,25 @@ internal class PromptsPanel(
 
         advancedToggle.addActionListener { toggleAdvanced() }
 
-        buildAdvancedPanel()
+        add(topPanel, BorderLayout.NORTH)
+        rebuildHeader()
 
-        val searchRow = JPanel(BorderLayout()).apply {
+        project.messageBus.connect(this).subscribe(ToolWindowManagerListener.TOPIC, object : ToolWindowManagerListener {
+            override fun stateChanged(toolWindowManager: ToolWindowManager) {
+                rebuildHeader()
+            }
+        })
+
+        // ── Bottom action bar ────────────────────────────────────────────────
+        val bottomActions = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(4), 0)).apply {
             isOpaque = false
-            add(searchField, BorderLayout.CENTER)
-        }
+            border = JBUI.Borders.empty(4, 4, 4, 8)
 
-        val top = JPanel(BorderLayout()).apply {
-            border = JBUI.Borders.empty(4)
-            add(searchRow, BorderLayout.NORTH)
-            add(advancedPanel, BorderLayout.CENTER)
-            add(advancedToggle, BorderLayout.SOUTH)
+            add(clearOthersButton)
+            add(clearOldButton)
+            add(clearAllButton)
         }
-        add(top, BorderLayout.NORTH)
+        add(bottomActions, BorderLayout.SOUTH)
 
         // loadMorePanel lives inside the scrollable area, above the promptList.
         // A Scrollable wrapper preserves JBList scroll behaviour while allowing
@@ -270,70 +361,153 @@ internal class PromptsPanel(
         chatConsole.addEntriesChangeListener(entriesListener)
         addHierarchyListener(hierarchyListener)
         PromptDbService.getInstance(project).registerNavigateCallback(::applySearchParams)
+
+        project.messageBus.connect(this).subscribe(
+            ConversationListener.TOPIC,
+            object : ConversationListener {
+                override fun historyChanged(allHistoryCleared: Boolean) {
+                    ApplicationManager.getApplication().invokeLater {
+                        populateFilterCombos()
+                        reloadHistoryAsync()
+                        syncActionButtons()
+                    }
+                }
+
+                override fun connectionChanged(connected: Boolean) {
+                    ApplicationManager.getApplication().invokeLater {
+                        syncActionButtons()
+                    }
+                }
+            }
+        )
+
         populateFilterCombos()
         reloadHistoryAsync()
+        syncActionButtons()
         refresh()
     }
 
-    private fun buildAdvancedPanel() {
-        advancedPanel.border = JBUI.Borders.emptyTop(4)
-        val rowGap = JBUI.scale(3)
-        val labelGap = JBUI.scale(4)
-        val gap = JBUI.scale(2)
+    private fun syncActionButtons() {
+        val connected = com.github.catatafishen.agentbridge.services.ActiveAgentManager.getInstance(project).isConnected
+        clearOthersButton.isEnabled = connected
+    }
 
-        // Row 0: scope checkboxes (spans all columns)
-        val scopeRow = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)).apply {
+    private fun createScopesPanel(): JPanel {
+        return JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(2), 0)).apply {
             isOpaque = false
-            add(JLabel("Search in:").apply { font = JBUI.Fonts.miniFont() })
-            add(scopePrompt)
-            add(scopeText)
-            add(scopeThinking)
-            add(scopeToolCalls)
+            add(scopePrompt.apply { text = "P"; toolTipText = "Search in User Prompts" })
+            add(scopeText.apply { text = "T"; toolTipText = "Search in Assistant Text Events" })
+            add(scopeThinking.apply { text = "K"; toolTipText = "Search in Thinking blocks" })
+            add(scopeToolCalls.apply { text = "I/O"; toolTipText = "Search in Tool Calls and Results" })
         }
-        advancedPanel.add(
-            scopeRow, gbc(
-                gridx = 0, gridy = 0, gridwidth = 4, fillH = true, weightx = 1.0,
-                bottom = rowGap
+    }
+
+    private fun buildAdvancedPanel() {
+        advancedPanel.removeAll()
+        advancedPanel.border = JBUI.Borders.emptyTop(2)
+
+        if (isSideAnchor()) {
+            // Vertical Layout (Side): Multi-row advanced panel
+            advancedPanel.add(
+                JLabel("Agent:").apply { font = JBUI.Fonts.miniFont() },
+                gbc(gridx = 0, gridy = 0, right = 4, bottom = 2)
             )
-        )
+            advancedPanel.add(agentCombo, gbc(gridx = 1, gridy = 0, fillH = true, weightx = 1.0, bottom = 2))
 
-        // Row 1: Branch label + Branch combo (full width)
-        advancedPanel.add(
-            JLabel("Branch:").apply { font = JBUI.Fonts.miniFont() },
-            gbc(gridx = 0, gridy = 1, right = labelGap, bottom = rowGap)
-        )
-        advancedPanel.add(
-            branchCombo,
-            gbc(gridx = 1, gridy = 1, gridwidth = 3, fillH = true, weightx = 1.0, bottom = rowGap)
-        )
+            advancedPanel.add(
+                JLabel("Tool:").apply { font = JBUI.Fonts.miniFont() },
+                gbc(gridx = 0, gridy = 1, right = 4, bottom = 2)
+            )
+            advancedPanel.add(toolCombo, gbc(gridx = 1, gridy = 1, fillH = true, weightx = 1.0, bottom = 2))
 
-        // Row 2: Agent label + Agent combo | Tool label + Tool combo
-        advancedPanel.add(
-            JLabel("Agent:").apply { font = JBUI.Fonts.miniFont() },
-            gbc(gridx = 0, gridy = 2, right = labelGap, bottom = rowGap)
-        )
-        advancedPanel.add(
-            agentCombo,
-            gbc(gridx = 1, gridy = 2, fillH = true, weightx = 0.4, right = JBUI.scale(8), bottom = rowGap)
-        )
-        advancedPanel.add(
-            JLabel("Tool:").apply { font = JBUI.Fonts.miniFont() },
-            gbc(gridx = 2, gridy = 2, right = labelGap, bottom = rowGap)
-        )
-        advancedPanel.add(
-            toolCombo,
-            gbc(gridx = 3, gridy = 2, fillH = true, weightx = 0.6, bottom = rowGap)
-        )
+            advancedPanel.add(
+                JLabel("File:").apply { font = JBUI.Fonts.miniFont() },
+                gbc(gridx = 0, gridy = 2, right = 4, bottom = 4)
+            )
+            advancedPanel.add(fileField, gbc(gridx = 1, gridy = 2, fillH = true, weightx = 1.0, bottom = 4))
 
-        // Row 3: File label + File field (full width)
-        advancedPanel.add(
-            JLabel("File:").apply { font = JBUI.Fonts.miniFont() },
-            gbc(gridx = 0, gridy = 3, right = labelGap, bottom = gap)
+            advancedPanel.add(createScopesPanel(), gbc(gridx = 0, gridy = 3, gridwidth = 2, fillH = true))
+        } else {
+            // Horizontal Layout (Top/Bottom): Single-row advanced panel
+            advancedPanel.add(
+                JLabel("Agent:").apply { font = JBUI.Fonts.miniFont() },
+                gbc(gridx = 0, gridy = 0, right = 2)
+            )
+            advancedPanel.add(agentCombo, gbc(gridx = 1, gridy = 0, fillH = true, weightx = 0.2, right = 6))
+
+            advancedPanel.add(
+                JLabel("Tool:").apply { font = JBUI.Fonts.miniFont() },
+                gbc(gridx = 2, gridy = 0, right = 2)
+            )
+            advancedPanel.add(toolCombo, gbc(gridx = 3, gridy = 0, fillH = true, weightx = 0.3, right = 6))
+
+            advancedPanel.add(
+                JLabel("File:").apply { font = JBUI.Fonts.miniFont() },
+                gbc(gridx = 4, gridy = 0, right = 2)
+            )
+            advancedPanel.add(fileField, gbc(gridx = 5, gridy = 0, fillH = true, weightx = 0.5, right = 8))
+
+            advancedPanel.add(createScopesPanel(), gbc(gridx = 6, gridy = 0, weightx = 0.0))
+        }
+    }
+
+    private fun confirmClearOthers() {
+        val res = Messages.showYesNoDialog(
+            project, "Clear all other session history?\nThe current session will be kept.",
+            "Confirm Clear Others", Messages.getQuestionIcon()
         )
-        advancedPanel.add(
-            fileField,
-            gbc(gridx = 1, gridy = 3, gridwidth = 3, fillH = true, weightx = 1.0, bottom = gap)
+        if (res == Messages.YES) {
+            sessionStore.deleteOtherSessions(null)
+        }
+    }
+
+    private fun confirmAndDeleteOld(days: Int, label: String) {
+        val res = Messages.showYesNoDialog(
+            project, "Clear history older than $label?\nThis action cannot be undone.",
+            "Confirm Clear History", Messages.getQuestionIcon()
         )
+        if (res == Messages.YES) {
+            sessionStore.deleteSessionsOlderThan(days)
+        }
+    }
+
+    private fun showClearOldPopup(button: JButton) {
+        val group = DefaultActionGroup()
+        group.add(object : AnAction("Keep Last 1 Day") {
+            override fun actionPerformed(e: AnActionEvent) {
+                confirmAndDeleteOld(1, "1 day")
+            }
+        })
+        group.add(object : AnAction("Keep Last 7 Days") {
+            override fun actionPerformed(e: AnActionEvent) {
+                confirmAndDeleteOld(7, "7 days")
+            }
+        })
+        group.add(object : AnAction("Keep Last 30 Days") {
+            override fun actionPerformed(e: AnActionEvent) {
+                confirmAndDeleteOld(30, "30 days")
+            }
+        })
+
+        val popup = JBPopupFactory.getInstance().createActionGroupPopup(
+            "Clear History Old", group, com.intellij.openapi.actionSystem.DataContext.EMPTY_CONTEXT,
+            JBPopupFactory.ActionSelectionAid.NUMBERING, false
+        )
+        popup.showUnderneathOf(button)
+    }
+
+    private fun confirmClearAll() {
+        val res = Messages.showOkCancelDialog(
+            project,
+            "CLEAR ALL HISTORY?\nThis will delete EVERYTHING including the current session!\n\nThis action cannot be undone.",
+            "DANGER: Clear All History",
+            "Delete All",
+            "Cancel",
+            Messages.getWarningIcon()
+        )
+        if (res == Messages.OK) {
+            sessionStore.deleteAllHistory()
+        }
     }
 
     private fun gbc(
@@ -612,11 +786,32 @@ internal class PromptsPanel(
         PromptDbService.getInstance(project).registerNavigateCallback(null)
     }
 
+    private fun confirmDeleteTurn(item: PromptItem, idx: Int) {
+        val res = Messages.showYesNoDialog(
+            project, "Delete this prompt and all its associated events?",
+            "Confirm Delete Prompt", Messages.getQuestionIcon()
+        )
+        if (res == Messages.YES) {
+            sessionStore.deleteTurn(item.turnId)
+            listModel.remove(idx)
+        }
+    }
+
     private class BubbleRenderer : ListCellRenderer<PromptItem> {
         private val outer = JPanel(BorderLayout(0, JBUI.scale(2)))
         private val headerPanel = JPanel(BorderLayout())
         private val tsLabel = JLabel()
         private val statsLabel = JLabel()
+        private val deleteLabel = JLabel(AllIcons.Actions.Close).apply {
+            toolTipText = "Delete prompt"
+            border = JBUI.Borders.emptyLeft(4)
+        }
+        private val rightHeader = JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0)).apply {
+            isOpaque = false
+            add(statsLabel)
+            add(deleteLabel)
+        }
+
         private val textArea = JTextArea()
         private val commitsLabel = JLabel()
         private val commitsPanel = JPanel(BorderLayout()).apply {
@@ -632,7 +827,7 @@ internal class PromptsPanel(
             statsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
             headerPanel.isOpaque = false
             headerPanel.add(tsLabel, BorderLayout.WEST)
-            headerPanel.add(statsLabel, BorderLayout.EAST)
+            headerPanel.add(rightHeader, BorderLayout.EAST)
             textArea.isOpaque = false
             textArea.isEditable = false
             textArea.lineWrap = true
