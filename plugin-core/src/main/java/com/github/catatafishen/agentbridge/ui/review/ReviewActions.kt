@@ -117,3 +117,20 @@ class CleanApprovedAction(private val project: Project) : DumbAwareAction(
         e.presentation.isEnabled = session.reviewItems.any { it.approved() }
     }
 }
+
+class ApproveAllAction(private val project: Project) : DumbAwareAction(
+    "Approve All",
+    "Approve all pending changes",
+    AllIcons.Actions.Checked
+) {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        AgentEditSession.getInstance(project).acceptAll()
+    }
+
+    override fun update(e: AnActionEvent) {
+        val session = AgentEditSession.getInstance(project)
+        e.presentation.isEnabled = session.hasPendingChanges()
+    }
+}

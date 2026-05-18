@@ -316,6 +316,7 @@ class ChatToolWindowContent(
 
     private fun setupTitleBarActions() {
         val actions = listOf(
+            com.github.catatafishen.agentbridge.ui.review.ApproveAllAction(project),
             com.github.catatafishen.agentbridge.ui.review.CleanApprovedAction(project),
             com.github.catatafishen.agentbridge.ui.review.AutoApproveToggleAction(project),
             com.github.catatafishen.agentbridge.ui.review.AutoCleanOnNewPromptToggleAction(project),
