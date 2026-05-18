@@ -380,13 +380,7 @@ public abstract class FileTool extends Tool {
                 int midLine = (startLine > 0 && endLine > 0)
                     ? (startLine + endLine) / 2
                     : Math.max(startLine, 1);
-                if (midLine > 0) {
-                    new OpenFileDescriptor(project, vf, midLine - 1, 0).navigate(focus);
-                    scrollAndHighlight(fem, vf, startLine, endLine, midLine, highlightColor, actionLabel);
-                } else {
-                    fem.openFile(vf, focus);
-                }
-
+                PsiBridgeService.getInstance(project).gentleNavigate(vf, midLine, 0, false);
                 selectInProjectView(project, vf);
             } finally {
                 nav.set(false);

@@ -14,10 +14,16 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.ComponentManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.LogicalPosition;
+import com.intellij.openapi.editor.ScrollType;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.messages.Topic;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -1181,6 +1187,83 @@ public final class PsiBridgeService implements Disposable {
         public void close() {
             disconnect.run();
         }
+    }
+
+    /**
+     * Navigates to a file and line in a non-disruptive way when following an agent.
+     *
+     * <p>If {@code requestUserFocus} is false (automated "Follow Agent"):
+     * <ul>
+     *   <li>If the file is already the active editor: only scroll the line into view,
+     *       do NOT move the caret. This prevents interrupting the user while typing.</li>
+     *   <li>If the file is open but in a background tab: open/switch to it without
+     *       stealing keyboard focus.</li>
+     * </ul>
+     *
+     * <p>If {@code requestUserFocus} is true (user clicked a link):
+     * <ul>
+     *   <li>Performs standard navigation that moves the caret and grabs focus.</li>
+     * </ul>
+     *
+     * @param vf               the file to navigate to
+     * @param line             1-based line number
+     * @param column           0-based column number
+     * @param requestUserFocus whether to grab keyboard focus and move caret
+     */
+    public void gentleNavigate(@NotNull VirtualFile vf, int line, int column, boolean requestUserFocus) {
+        if (!requestUserFocus) {
+            trackAgentOpenedFile(vf);
+        }
+        ApplicationManager.getApplication().invokeLater(() -> {
+            try {
+                if (project.isDisposed()) return;
+                int logicalLine = Math.max(0, line - 1);
+                int logicalColumn = Math.max(0, column);
+
+                OpenFileDescriptor descriptor = new OpenFileDescriptor(project, vf, logicalLine, logicalColumn);
+
+                if (!requestUserFocus) {
+                    FileEditorManager fem = FileEditorManager.getInstance(project);
+                    Editor editor = fem.getSelectedTextEditor();
+
+                    // CASE 1: The file is already the active editor.
+                    // To be non-disruptive, we ONLY scroll. We do NOT move the caret.
+                    if (editor != null && vf.equals(editor.getVirtualFile())) {
+                        LogicalPosition pos = new LogicalPosition(logicalLine, logicalColumn);
+                        editor.getScrollingModel().scrollTo(pos, ScrollType.MAKE_VISIBLE);
+                        return;
+                    }
+
+                    // CASE 2: The file is open but in a background tab, or not open at all.
+                    // We open it with focus=false.
+                    fem.openTextEditor(descriptor, false);
+                } else {
+                    // CASE 3: User-initiated or explicit focus request.
+                    descriptor.navigate(true);
+                }
+            } catch (Exception e) {
+                LOG.warn("Gentle navigate failed for " + vf.getPath(), e);
+            }
+        });
+    }
+
+    private final Set<VirtualFile> agentOpenedFiles = ConcurrentHashMap.newKeySet();
+
+    public void trackAgentOpenedFile(@NotNull VirtualFile vf) {
+        agentOpenedFiles.add(vf);
+    }
+
+    public void closeAgentOpenedFiles() {
+        ApplicationManager.getApplication().invokeLater(() -> {
+            if (project.isDisposed()) return;
+            FileEditorManager fem = FileEditorManager.getInstance(project);
+            for (VirtualFile vf : agentOpenedFiles) {
+                if (vf.isValid() && fem.isFileOpen(vf)) {
+                    fem.closeFile(vf);
+                }
+            }
+            agentOpenedFiles.clear();
+        });
     }
 
     @Override

@@ -30,7 +30,7 @@ class FileNavigator(private val project: Project) {
     /** SHAs currently being checked in the background — prevents duplicate submissions. */
     private val pendingChecks: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
-    fun handleFileLink(href: String) {
+    fun handleFileLink(href: String, isAutomated: Boolean = false) {
         if (href.startsWith("gitshow://")) {
             handleGitShowLink(href.removePrefix("gitshow://"))
             return
@@ -39,14 +39,9 @@ class FileNavigator(private val project: Project) {
         val (filePath, line) = parsePathAndLine(pathAndLine)
         val normalizedPath = filePath.replace('\\', '/')
         val vf = LocalFileSystem.getInstance().findFileByPath(normalizedPath) ?: return
-        ApplicationManager.getApplication().invokeLater {
-            try {
-                val focus = !PsiBridgeService.isUserTypingInChat(project)
-                OpenFileDescriptor(project, vf, maxOf(0, line - 1), 0).navigate(focus)
-            } catch (e: Exception) {
-                log.warn("Failed to navigate to file $normalizedPath:$line", e)
-            }
-        }
+
+        val requestFocus = if (isAutomated) false else !PsiBridgeService.isUserTypingInChat(project)
+        PsiBridgeService.getInstance(project).gentleNavigate(vf, line, 0, requestFocus)
     }
 
     fun markdownToHtml(text: String): String =
