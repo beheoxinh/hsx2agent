@@ -87,6 +87,7 @@ public final class GitCommitTool extends GitTool {
             options.add("Yes, commit code");
             options.add("No, cancel");
             promptArgs.add("options", options);
+            promptArgs.addProperty("timeout_ms", 60000);
 
             com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool promptTool =
                 new com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool(project);

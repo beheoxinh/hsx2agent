@@ -29,6 +29,7 @@ public final class PromptUserTool extends InfrastructureTool {
 
     private static final String PARAM_QUESTION = "question";
     private static final String PARAM_OPTIONS = "options";
+    private static final String PARAM_TIMEOUT_MS = "timeout_ms";
     private static final long RESPONSE_TIMEOUT_MS = 120_000L;
     private static final String NOTIFICATION_GROUP_ID = "AgentBridge Notifications";
 
@@ -66,7 +67,8 @@ public final class PromptUserTool extends InfrastructureTool {
     public @NotNull JsonObject inputSchema() {
         JsonObject schema = schema(
             Param.required(PARAM_QUESTION, TYPE_STRING, "Question to ask the user"),
-            Param.required(PARAM_OPTIONS, TYPE_ARRAY, "Reply options shown as quick-reply buttons")
+            Param.required(PARAM_OPTIONS, TYPE_ARRAY, "Reply options shown as quick-reply buttons"),
+            Param.optional(PARAM_TIMEOUT_MS, TYPE_INTEGER, "Response timeout in milliseconds (default 120s)")
         );
         addArrayItems(schema, PARAM_OPTIONS);
         return schema;
@@ -84,9 +86,11 @@ public final class PromptUserTool extends InfrastructureTool {
             return "Error: at least one reply option is required";
         }
 
+        long timeoutMs = args.has(PARAM_TIMEOUT_MS) ? args.get(PARAM_TIMEOUT_MS).getAsLong() : RESPONSE_TIMEOUT_MS;
+
         ChatConsolePanel panel = ChatConsolePanel.Companion.getInstance(project);
         if (panel == null) {
-            return askViaDialog(question, options);
+            return askViaDialog(question, options, timeoutMs);
         }
 
         notifyIfUnfocused(question);
@@ -94,10 +98,10 @@ public final class PromptUserTool extends InfrastructureTool {
         CompletableFuture<String> responseFuture = new CompletableFuture<>();
         // Deadline is shared mutable state — written by the EDT extend handler, read by this pooled thread.
         // System.currentTimeMillis() is used (not nanoTime) so JS and Java agree on the absolute deadline.
-        final long[] deadlineMs = {System.currentTimeMillis() + RESPONSE_TIMEOUT_MS};
+        final long[] deadlineMs = {System.currentTimeMillis() + timeoutMs};
         String reqId = UUID.randomUUID().toString();
 
-        EdtUtil.invokeLater(() -> showAskUserRequestCompat(panel, reqId, question, options, deadlineMs, responseFuture));
+        EdtUtil.invokeLater(() -> showAskUserRequestCompat(panel, reqId, question, options, timeoutMs, deadlineMs, responseFuture));
 
         try {
             return awaitWithExtensibleDeadline(responseFuture, deadlineMs);
@@ -126,6 +130,7 @@ public final class PromptUserTool extends InfrastructureTool {
         @NotNull String reqId,
         @NotNull String question,
         @NotNull List<String> options,
+        long timeoutMs,
         long @NotNull [] deadlineMs,
         @NotNull CompletableFuture<String> responseFuture
     ) {
@@ -134,7 +139,7 @@ public final class PromptUserTool extends InfrastructureTool {
             return kotlin.Unit.INSTANCE;
         };
         kotlin.jvm.functions.Function0<Long> onExtend = () -> {
-            long newDeadline = System.currentTimeMillis() + RESPONSE_TIMEOUT_MS;
+            long newDeadline = System.currentTimeMillis() + timeoutMs;
             deadlineMs[0] = newDeadline;
             return newDeadline;
         };
@@ -230,7 +235,7 @@ public final class PromptUserTool extends InfrastructureTool {
         AppIcon.getInstance().requestAttention(project, false);
     }
 
-    private @NotNull String askViaDialog(@NotNull String question, @NotNull List<String> options) {
+    private @NotNull String askViaDialog(@NotNull String question, @NotNull List<String> options, long timeoutMs) {
         CompletableFuture<String> response = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             StringBuilder message = new StringBuilder(question);
@@ -252,7 +257,7 @@ public final class PromptUserTool extends InfrastructureTool {
         });
 
         try {
-            String answer = response.get(RESPONSE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            String answer = response.get(timeoutMs, TimeUnit.MILLISECONDS);
             if (answer.isEmpty()) {
                 return "Error: user cancelled";
             }
