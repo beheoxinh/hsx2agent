@@ -772,11 +772,16 @@ const ChatController = {
         const actions = row.querySelector('.message-actions');
         if (actions) {
             actions.querySelector('.token-usage-badge')?.remove();
-            const badge = document.createElement('span');
-            badge.className = 'token-usage-badge';
             const totalTokens = stats.inputTokens + stats.outputTokens;
-            badge.textContent = `Total: ${_formatTokens(totalTokens)} (In: ${_formatTokens(stats.inputTokens)} | Out: ${_formatTokens(stats.outputTokens)})`;
-            actions.appendChild(badge);
+            if (totalTokens > 0) {
+                const badge = document.createElement('span');
+                badge.className = 'token-usage-badge';
+                const details: string[] = [];
+                if (stats.inputTokens > 0) details.push(`In: ${_formatTokens(stats.inputTokens)}`);
+                if (stats.outputTokens > 0) details.push(`Out: ${_formatTokens(stats.outputTokens)}`);
+                badge.textContent = `Total: ${_formatTokens(totalTokens)} (${details.join(' | ')})`;
+                actions.appendChild(badge);
+            }
         }
 
         // Remove any previous summary bar (guard against double-emit)

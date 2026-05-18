@@ -7,16 +7,11 @@ import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
-import com.intellij.ui.dsl.builder.AlignX
-import com.intellij.ui.dsl.builder.AlignY
-import com.intellij.ui.dsl.builder.RowLayout
-import com.intellij.ui.dsl.builder.bindItem
-import com.intellij.ui.dsl.builder.bindText
-import com.intellij.ui.dsl.builder.panel
+import com.intellij.ui.dsl.builder.*
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import com.intellij.ui.components.JBScrollPane
 import java.awt.Font
 
 @Suppress("unused")
@@ -74,6 +69,14 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
                 .bindItem(
                     { ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(BUBBLE_CLIENT_TYPE)) },
                     { AcpClient.saveAgentBubbleColorKey(BUBBLE_CLIENT_TYPE, it?.name) }
+                )
+        }
+        row {
+            checkBox("Custom models only")
+                .comment("Show only your custom models in the model selector.")
+                .bindSelected(
+                    { profile()?.isCustomOnly ?: false },
+                    { profile()?.isCustomOnly = it }
                 )
         }
         separator()

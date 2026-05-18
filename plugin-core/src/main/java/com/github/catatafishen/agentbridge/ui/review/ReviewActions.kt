@@ -79,6 +79,22 @@ class AutoCleanOnNewPromptToggleAction(private val project: Project) : ToggleAct
     }
 }
 
+class AutoCommitToggleAction(private val project: Project) : ToggleAction(
+    "Auto-Commit",
+    "Automatically trigger a commit turn when all changes are approved and turn ends",
+    AllIcons.Actions.Commit
+) {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun isSelected(e: AnActionEvent): Boolean {
+        return McpServerSettings.getInstance(project).isAutoCommit
+    }
+
+    override fun setSelected(e: AnActionEvent, state: Boolean) {
+        McpServerSettings.getInstance(project).isAutoCommit = state
+    }
+}
+
 class ShowEditorHighlightsToggleAction(private val project: Project) : ToggleAction(
     "Show Editor Highlights",
     "Paint agent-edit background colors in the editor. Disable when git diff colors are sufficient",

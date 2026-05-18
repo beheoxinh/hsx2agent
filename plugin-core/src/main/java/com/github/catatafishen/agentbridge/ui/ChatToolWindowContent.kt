@@ -324,6 +324,7 @@ class ChatToolWindowContent(
             Separator.create(),
             AutoScrollToggleAction(),
             FollowAgentFilesToggleAction(),
+            com.github.catatafishen.agentbridge.ui.review.AutoCommitToggleAction(project),
             SidePanelToggleAction(),
             NativeUiToggleAction(),
             Separator.create(),
@@ -1177,6 +1178,7 @@ class ChatToolWindowContent(
         row.add(promptTextArea, BorderLayout.CENTER)
 
         val footerGroup = DefaultActionGroup()
+        footerGroup.add(CustomOnlyAction())
         footerGroup.add(ModelSelectorAction())
         footerGroup.add(SendAction())
 
@@ -1216,6 +1218,12 @@ class ChatToolWindowContent(
             showEmptyPromptWarning()
             return
         }
+
+        val contextItems = contextManager.collectInlineContextItems()
+        submitTurn(rawText, contextItems)
+    }
+
+    private fun submitTurn(rawText: String, contextItems: List<ContextItemData>) {
         consolePanel.disableQuickReplies()
         statusBanner?.dismissCurrent()
         // Auto-clean approved review rows when a brand-new user turn starts (not nudge / queued follow-up).
@@ -1228,7 +1236,6 @@ class ChatToolWindowContent(
         }
         setSendingState(true)
 
-        val contextItems = contextManager.collectInlineContextItems()
         val prompt = contextManager.replaceOrcsWithTextRefs(rawText, contextItems)
         val ctxFiles = if (contextItems.isNotEmpty()) {
             contextItems.map { item ->
@@ -1238,7 +1245,11 @@ class ChatToolWindowContent(
         val bubbleHtml = buildBubbleHtml(rawText, contextItems)
         val entryId = consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
         appendNewEntries()
-        promptTextArea.text = ""
+
+        // Only clear the text area if we are sending what was currently in it (vs an external 'Continue' trigger)
+        if (promptTextArea.text.trim() == rawText) {
+            promptTextArea.text = ""
+        }
 
         val selectedModelId = resolveSelectedModelId()
         // Always clear pause state when the user sends a message — a blocked MCP thread must be
@@ -1440,6 +1451,7 @@ class ChatToolWindowContent(
         if (!sending) {
             McpPauseService.getInstance(project).setPaused(false)
             restoreUnhandledNudgeIfNeeded()
+            if (!isSending) checkAutoCommit()
         }
         ApplicationManager.getApplication().invokeLater {
             updatePromptPlaceholder()
@@ -1447,6 +1459,20 @@ class ChatToolWindowContent(
             innerInputToolbar.updateActionsAsync()
             refreshShortcutHints()
             updateProcessingTimer(sending)
+        }
+    }
+
+    private fun checkAutoCommit() {
+        val mcp = com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project)
+        if (!mcp.isAutoCommit) return
+
+        val session = com.github.catatafishen.agentbridge.psi.review.AgentEditSession.getInstance(project)
+        if (session.hasChanges() && !session.hasPendingChanges()) {
+            ApplicationManager.getApplication().invokeLater {
+                // If a new turn was started by unhandled nudge, don't interrupt it.
+                if (isSending || project.isDisposed) return@invokeLater
+                submitTurn("Commit my changes", emptyList())
+            }
         }
     }
 
@@ -2143,6 +2169,33 @@ class ChatToolWindowContent(
         }
     }
 
+    private inner class CustomOnlyAction : ToggleAction(
+        "Custom Only",
+        "Show only your custom models in the model selector",
+        AllIcons.General.Filter
+    ) {
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+        override fun update(e: AnActionEvent) {
+            super.update(e)
+            val profile = agentManager.activeProfile
+            e.presentation.isVisible = profile.id == AgentProfileManager.CLAUDE_CLI_PROFILE_ID
+        }
+
+        override fun isSelected(e: AnActionEvent): Boolean = agentManager.activeProfile.isCustomOnly
+
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            val profile = agentManager.activeProfile
+            if (profile.id == AgentProfileManager.CLAUDE_CLI_PROFILE_ID) {
+                profile.isCustomOnly = state
+                loadModelsAsync(onSuccess = { models ->
+                    loadedModels = models
+                    restoreModelSelection(models)
+                })
+            }
+        }
+    }
+
     /** ComboBoxAction for model selection — matches Run panel dropdown style. */
     private inner class ModelSelectorAction : ComboBoxAction() {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
@@ -2228,18 +2281,24 @@ class ChatToolWindowContent(
         }
 
         override fun update(e: AnActionEvent) {
+            val profile = agentManager.activeProfile
             e.presentation.text = currentModelSelectorText()
             e.presentation.isEnabled = modelsStatusText == null && loadedModels.isNotEmpty()
             // Hide entirely when models loaded successfully but list is empty
-            // (agent uses configOptions for model selection instead)
-            e.presentation.isVisible = modelsStatusText != null || loadedModels.isNotEmpty()
+            // (agent uses configOptions for model selection instead), but keep it visible
+            // for Claude CLI so user sees it's empty (or loading).
+            e.presentation.isVisible = modelsStatusText != null || loadedModels.isNotEmpty() ||
+                profile.id == AgentProfileManager.CLAUDE_CLI_PROFILE_ID
         }
     }
 
     private fun currentModelSelectorText(): String {
         modelsStatusText?.let { return it }
-        return if (selectedModelIndex in loadedModels.indices) {
-            loadedModels[selectedModelIndex].name()
+        if (selectedModelIndex in loadedModels.indices) {
+            return loadedModels[selectedModelIndex].name()
+        }
+        return if (loadedModels.isEmpty() && agentManager.activeProfile.id == AgentProfileManager.CLAUDE_CLI_PROFILE_ID) {
+            "No models"
         } else {
             MSG_LOADING
         }
@@ -2347,7 +2406,11 @@ class ChatToolWindowContent(
         }
         consolePanel.onContinueTurn = { _ ->
             ApplicationManager.getApplication().invokeLater {
-                submitNudge("Continue")
+                if (isSending) {
+                    submitNudge("Continue")
+                } else {
+                    submitTurn("Continue", emptyList())
+                }
             }
         }
         com.intellij.openapi.util.Disposer.register(project, consolePanel)
@@ -3177,10 +3240,12 @@ class ChatToolWindowContent(
     }
 
     private fun notifyIfUnfocused(toolCallCount: Int) {
+        if (!ChatInputSettings.getInstance().isEnableResponseNotifications) return
+
         ApplicationManager.getApplication().invokeLater {
             val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project) ?: return@invokeLater
             if (frame.isActive) return@invokeLater
-            val title = "Copilot Response Ready"
+            val title = "${agentManager.activeProfile.displayName} Response Ready"
             val content =
                 if (toolCallCount > 0) "Turn completed with $toolCallCount tool call${if (toolCallCount != 1) "s" else ""}"
                 else "Turn completed"

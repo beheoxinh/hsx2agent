@@ -171,6 +171,18 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     }
 
     /**
+     * When true, the plugin automatically triggers a commit turn if the agent finishes
+     * its turn with approved changes and no pending changes remain.
+     */
+    public boolean isAutoCommit() {
+        return myState.autoCommit;
+    }
+
+    public void setAutoCommit(boolean enabled) {
+        myState.autoCommit = enabled;
+    }
+
+    /**
      * When true (default), agent-edit highlights are painted as persistent background colors
      * in the editor while a review session is active. Users who rely on git diff colors may
      * prefer to disable this to avoid redundant overlapping highlights.
@@ -250,6 +262,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private boolean reviewAgentEdits = false;
         private boolean autoApproveAgentEdits = false;
         private boolean autoCleanReviewOnNewPrompt = false;
+        private boolean autoCommit = false;
         private boolean showEditorHighlights = true;
         private String kindReadColorKey = null;
         private String kindEditColorKey = null;
@@ -358,6 +371,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setAutoCleanReviewOnNewPrompt(boolean autoCleanReviewOnNewPrompt) {
             this.autoCleanReviewOnNewPrompt = autoCleanReviewOnNewPrompt;
+        }
+
+        public boolean isAutoCommit() {
+            return autoCommit;
+        }
+
+        public void setAutoCommit(boolean autoCommit) {
+            this.autoCommit = autoCommit;
         }
 
         public boolean isShowEditorHighlights() {

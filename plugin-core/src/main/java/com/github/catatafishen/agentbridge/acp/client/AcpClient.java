@@ -38,8 +38,8 @@ import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.util.SystemProperties;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -54,6 +54,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
@@ -160,6 +161,12 @@ public abstract class AcpClient extends AbstractAgentClient {
      * Nanotime of the last {@code session/update} notification received; used for inactivity detection.
      */
     private volatile long lastActivityNanos = System.nanoTime();
+
+    /**
+     * Serializes session/prompt calls to ensure only one prompt is active per agent process
+     * at a time, preventing rate limit issues with some agents (e.g. Hermes).
+     */
+    private final Semaphore promptSemaphore = new Semaphore(1);
 
     private final AcpMessageParser messageParser = new AcpMessageParser(
         new AcpMessageParser.Delegate() {
@@ -738,6 +745,13 @@ public abstract class AcpClient extends AbstractAgentClient {
     public final PromptResponse sendPrompt(PromptRequest request,
                                            Consumer<SessionUpdate> onUpdate) throws AgentPromptException {
         try {
+            promptSemaphore.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AgentPromptException("Prompt execution queueing interrupted", e);
+        }
+
+        try {
             long turnStartNanos = System.nanoTime();
             lastActivityNanos = turnStartNanos;
             updateConsumer = onUpdate;
@@ -767,7 +781,11 @@ public abstract class AcpClient extends AbstractAgentClient {
                 : ERR_PROMPT_FAILED_PREFIX + displayName();
             throw new AgentPromptException(msg, e);
         } finally {
-            afterPromptComplete();
+            try {
+                afterPromptComplete();
+            } finally {
+                promptSemaphore.release();
+            }
         }
     }
 

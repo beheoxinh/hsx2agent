@@ -109,6 +109,8 @@ class PromptOrchestrator(
     private var turnHadContent = false
     private var codeChangeListener: Runnable? = null
 
+    private var turnGeneration = 0
+
     private var pendingRawText = ""
     private var pendingContextItems: List<ContextItemData> = emptyList()
     private var pendingPromptEntryId = ""
@@ -118,6 +120,7 @@ class PromptOrchestrator(
         prompt: String, contextItems: List<ContextItemData>, selectedModelId: String,
         rawText: String, promptEntryId: String
     ) {
+        val myGeneration = synchronized(this) { ++turnGeneration }
         pendingRawText = rawText
         pendingContextItems = contextItems
         pendingPromptEntryId = promptEntryId
@@ -130,7 +133,9 @@ class PromptOrchestrator(
             executePrompt(prompt, contextItems, selectedModelId)
         } finally {
             currentPromptThread = null
-            callbacks.onSendingStateChanged(false)
+            if (myGeneration == turnGeneration) {
+                callbacks.onSendingStateChanged(false)
+            }
         }
     }
 

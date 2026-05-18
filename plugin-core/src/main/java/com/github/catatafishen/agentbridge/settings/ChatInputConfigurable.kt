@@ -197,6 +197,16 @@ class ChatInputConfigurable(private val project: Project) :
                 )
                 .bindSelected({ s.isPauseOnInputFocus() }, { s.setPauseOnInputFocus(it) })
         }
+        row {
+            checkBox("Show OS notifications when the agent finishes a turn")
+                .comment("Display a balloon notification and request attention when the IDE is not focused.")
+                .bindSelected({ s.isEnableResponseNotifications }, { s.isEnableResponseNotifications = it })
+        }
+        row {
+            checkBox("Auto-commit after each turn if all changes are approved")
+                .comment("Automatically triggers a commit turn when the agent finishes and there are approved files but no pending ones.")
+                .bindSelected({ mcp.isAutoCommit }, { mcp.isAutoCommit = it })
+        }
         separator()
         row("Side panel position:") {
             comboBox(SidePanelPosition.entries.toList())
