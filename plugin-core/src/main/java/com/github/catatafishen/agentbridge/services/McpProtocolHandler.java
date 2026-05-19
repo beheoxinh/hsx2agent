@@ -571,7 +571,7 @@ public final class McpProtocolHandler {
         LiveToolCallService liveService = LiveToolCallService.getInstance(project);
         ToolDefinition definition = ToolRegistry.getInstance(project).findById(toolName);
         String kind = definition != null ? definition.kind().value() : null;
-        String displayName = definition != null ? definition.displayName() : toolName;
+        String displayName = definition != null ? definition.displayName() : humanize(toolName);
         String inputJson = arguments.toString();
         String originalInputJson = originalArguments.equals(arguments) ? null : originalArguments.toString();
         ToolHookConfig hookConfig = HookRegistry.getInstance(project).findConfig(toolName);
@@ -990,6 +990,23 @@ public final class McpProtocolHandler {
             + "\n\n[Output truncated: " + removed + " characters omitted."
             + " Use the tool's pagination parameters (e.g. start_line/end_line, offset/max_chars)"
             + " to read specific sections.]";
+    }
+
+    private static @NotNull String humanize(@NotNull String name) {
+        StringBuilder sb = new StringBuilder();
+        boolean nextUpper = true;
+        for (char c : name.toCharArray()) {
+            if (c == '_' || c == '-' || c == '.') {
+                sb.append(' ');
+                nextUpper = true;
+            } else if (nextUpper) {
+                sb.append(Character.toUpperCase(c));
+                nextUpper = false;
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString().trim();
     }
 
     private static JsonObject respondResult(JsonObject request, JsonObject result) {

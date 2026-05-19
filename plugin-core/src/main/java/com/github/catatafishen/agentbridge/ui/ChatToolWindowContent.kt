@@ -339,6 +339,7 @@ class ChatToolWindowContent(
     }
 
     private fun buildAndShowChatPanel() {
+        LiveToolCallService.getInstance(project).clear()
         val addSeparatorNow = {
             val ts = java.time.Instant.now().toString()
             consolePanel.setCurrentAgent(
