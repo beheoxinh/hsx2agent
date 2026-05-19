@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.settings
 
+import com.github.catatafishen.agentbridge.memory.MemorySettingsConfigurable
 import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings.StorageLocationMode
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.options.ConfigurationException
@@ -45,6 +46,15 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
     // Tab 3: Scratch File Types
     private val scratchTypesConfigurable = ScratchTypesConfigurable()
 
+    // Tab 4: Tool Statistics
+    private val toolStatsConfigurable = ToolStatsConfigurable()
+
+    // Tab 5: Memory
+    private val memoryConfigurable = MemorySettingsConfigurable(project)
+
+    // Tab 6: Chat History
+    private val chatHistoryConfigurable = ChatHistoryConfigurable(project)
+
     override fun getDisplayName(): String = "Storage"
 
     override fun getId(): String = ID
@@ -60,6 +70,18 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
 
         scratchTypesConfigurable.createComponent().let {
             tabbedPane.addTab("Scratch File Types", it)
+        }
+
+        toolStatsConfigurable.createComponent().let {
+            tabbedPane.addTab("Tool Statistics", it)
+        }
+
+        memoryConfigurable.createComponent().let {
+            tabbedPane.addTab("Memory", it)
+        }
+
+        chatHistoryConfigurable.createComponent().let {
+            tabbedPane.addTab("Chat History", it)
         }
 
         mainPanel = tabbedPane
@@ -129,7 +151,10 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
     override fun isModified(): Boolean {
         return isLocationModified() ||
             projectFilesConfigurable.isModified ||
-            scratchTypesConfigurable.isModified
+            scratchTypesConfigurable.isModified ||
+            toolStatsConfigurable.isModified ||
+            memoryConfigurable.isModified ||
+            chatHistoryConfigurable.isModified
     }
 
     private fun isLocationModified(): Boolean {
@@ -143,6 +168,9 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
         applyLocation()
         projectFilesConfigurable.apply()
         scratchTypesConfigurable.apply()
+        toolStatsConfigurable.apply()
+        memoryConfigurable.apply()
+        chatHistoryConfigurable.apply()
     }
 
     private fun applyLocation() {
@@ -159,6 +187,9 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
         resetLocation()
         projectFilesConfigurable.reset()
         scratchTypesConfigurable.reset()
+        toolStatsConfigurable.reset()
+        memoryConfigurable.reset()
+        chatHistoryConfigurable.reset()
     }
 
     private fun resetLocation() {
@@ -180,6 +211,9 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
         customField = null
         projectFilesConfigurable.disposeUIResources()
         scratchTypesConfigurable.disposeUIResources()
+        toolStatsConfigurable.disposeUIResources()
+        memoryConfigurable.disposeUIResources()
+        chatHistoryConfigurable.disposeUIResources()
     }
 
     private fun selectedMode(): StorageLocationMode = when {

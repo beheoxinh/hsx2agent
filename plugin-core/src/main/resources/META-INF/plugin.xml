@@ -177,13 +177,6 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
       id="com.github.catatafishen.agentbridge.settings"
       displayName="Hsx2Agent"/>
 
-    <!-- ── Chat History (under Storage) ── -->
-    <projectConfigurable
-      parentId="com.github.catatafishen.agentbridge.storage"
-      instance="com.github.catatafishen.agentbridge.settings.ChatHistoryConfigurable"
-      id="com.github.catatafishen.agentbridge.chatHistory"
-      displayName="Chat History"/>
-
     <!-- ── MCP section (server config + child pages) ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.settings"
@@ -258,25 +251,12 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
       id="com.github.catatafishen.agentbridge.clientAgents.codex"
       displayName="Codex"/>
 
-    <!-- ── Storage (file locations + child stores: tool stats, memory, chat history) ── -->
+    <!-- ── Storage (file locations + sub-tabs: Project Files, Scratch File Types, Tool Stats, Memory, Chat History) ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.settings"
       instance="com.github.catatafishen.agentbridge.settings.AgentBridgeStorageConfigurable"
       id="com.github.catatafishen.agentbridge.storage"
       displayName="Storage"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.agentbridge.storage"
-      instance="com.github.catatafishen.agentbridge.settings.ToolStatsConfigurable"
-      id="com.github.catatafishen.agentbridge.storage.toolStats"
-      displayName="Tool Statistics"/>
-
-    <!-- ── Memory (semantic memory / MemPalace, under Storage) ── -->
-    <projectConfigurable
-      parentId="com.github.catatafishen.agentbridge.storage"
-      instance="com.github.catatafishen.agentbridge.memory.MemorySettingsConfigurable"
-      id="com.github.catatafishen.agentbridge.memory"
-      displayName="Memory"/>
 
     <!-- ── Web Access ── -->
     <projectConfigurable
