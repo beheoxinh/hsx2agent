@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.ChatWebServer
+import com.github.catatafishen.agentbridge.services.LiveToolCallService
 import com.github.catatafishen.agentbridge.services.ToolCallRecord
 import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.services.ToolRegistry
@@ -820,6 +821,7 @@ class ChatConsolePanel(
         streaming = false
         toolCallNames.clear(); toolCallEntries.clear()
         ToolCallTracker.getInstance(project).clear()
+        LiveToolCallService.getInstance(project).clear()
         clearPendingAskUserRequest(null)
         executeJs("ChatController.clear()")
         fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.text = "" } }

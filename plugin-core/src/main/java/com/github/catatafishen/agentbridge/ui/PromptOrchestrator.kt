@@ -285,6 +285,7 @@ class PromptOrchestrator(
         CodeChangeTracker.clear()
         turnStartHeadHash = captureGitHead()
         turnStartGitBranch = captureGitBranch()
+        LiveToolCallService.getInstance(project).clear()
 
         // Register real-time listener so code-change chips update as each tool runs.
         codeChangeListener?.let { CodeChangeTracker.removeListener(it) }

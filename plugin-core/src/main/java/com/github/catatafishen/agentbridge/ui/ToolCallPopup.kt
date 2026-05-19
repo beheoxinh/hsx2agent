@@ -498,7 +498,13 @@ internal object ToolCallPopup {
             if (subtext != null) {
                 add(JBLabel(subtext).apply {
                     font = JBUI.Fonts.miniFont()
-                    foreground = UIUtil.getInactiveTextColor()
+                    foreground = when {
+                        subtext == "Allowed" || subtext == "Success" || subtext.endsWith(" run") ->
+                            JBColor(Color(0x4A, 0x90, 0x4A), Color(130, 190, 130))
+
+                        subtext == "Denied" || subtext == "Failed" -> NativeChatColors.ERROR
+                        else -> UIUtil.getInactiveTextColor()
+                    }
                     alignmentX = JComponent.CENTER_ALIGNMENT
                 })
             }
