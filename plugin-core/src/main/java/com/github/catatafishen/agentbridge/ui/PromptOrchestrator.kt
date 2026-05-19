@@ -529,6 +529,11 @@ class PromptOrchestrator(
         if (sessionId != null) {
             callbacks.onTurnMineEntries(sessionId, agentManager.activeProfile.displayName)
         }
+        // Cleanup agent resources (tabs, tool windows) at the end of every turn.
+        // This ensures that tool windows like 'Git' (which are opened to show commits)
+        // are automatically hidden once the agent's turn is complete, keeping the
+        // workspace clean for the user.
+        AgentTabTracker.getInstance(project).closeTrackedTabs()
     }
 
     /**

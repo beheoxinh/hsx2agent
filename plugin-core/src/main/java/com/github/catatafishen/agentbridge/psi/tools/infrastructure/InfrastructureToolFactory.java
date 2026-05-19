@@ -18,6 +18,7 @@ public final class InfrastructureToolFactory {
         return List.of(
             new PromptUserTool(project),
             new HttpRequestTool(project),
+            new HideToolWindowTool(project),
             new RunCommandTool(project),
             new ReadIdeLogTool(project),
             new GetNotificationsTool(project),
