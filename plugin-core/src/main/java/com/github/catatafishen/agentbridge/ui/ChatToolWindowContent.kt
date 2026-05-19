@@ -1295,13 +1295,14 @@ class ChatToolWindowContent(
         rawText: String,
         contextItems: List<ContextItemData>,
         isAutoCommit: Boolean = false,
-        isSilent: Boolean = false
+        isSilent: Boolean = false,
+        isContinue: Boolean = false
     ) {
         isLastTurnAutoCommit = isAutoCommit
         consolePanel.disableQuickReplies()
         statusBanner?.dismissCurrent()
-        // Auto-clean approved review rows when a brand-new user turn starts (not nudge / queued follow-up / auto-commit).
-        if (!isAutoCommit && com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isAutoCleanReviewOnNewPrompt) {
+        // Auto-clean approved review rows when a brand-new user turn starts (not nudge / queued follow-up / auto-commit / continue).
+        if (!isAutoCommit && !isContinue && com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isAutoCleanReviewOnNewPrompt) {
             try {
                 AgentEditSession.getInstance(project)
                     ?.removeAllApproved()
@@ -1331,7 +1332,7 @@ class ChatToolWindowContent(
         pausedByInputFocus = false
         McpPauseService.getInstance(project).setPaused(false)
         ApplicationManager.getApplication().executeOnPooledThread {
-            promptOrchestrator.execute(prompt, contextItems, selectedModelId, rawText, entryId, isAutoCommit)
+            promptOrchestrator.execute(prompt, contextItems, selectedModelId, rawText, entryId, isAutoCommit, isContinue)
         }
     }
 
@@ -2502,7 +2503,7 @@ class ChatToolWindowContent(
                 if (isSending) {
                     submitNudge(continueMsg, showBubble = false)
                 } else {
-                    submitTurn(continueMsg, emptyList(), isSilent = true)
+                    submitTurn(continueMsg, emptyList(), isSilent = true, isContinue = true)
                 }
             }
         }
