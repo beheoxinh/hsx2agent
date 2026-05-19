@@ -1,4 +1,4 @@
-package    com.github.catatafishen.agentbridge.ui
+package com.github.catatafishen.agentbridge.ui
 
 import  com.github.catatafishen.agentbridge.acp.model.Model
 import                com.github.catatafishen.agentbridge.acp.model.SessionUpdate
@@ -447,7 +447,8 @@ class ChatToolWindowContent(
         // Hide side panel when returning to the connect screen to prevent UI glitches
         val position = ChatInputSettings.getInstance().sidePanelPosition
         sidePanel?.isVisible = false
-        rootSplitter.proportion = if (position == SidePanelPosition.RIGHT || position == SidePanelPosition.BOTTOM) 1.0f else 0.0f
+        rootSplitter.proportion =
+            if (position == SidePanelPosition.RIGHT || position == SidePanelPosition.BOTTOM) 1.0f else 0.0f
         updateSidePanelLayout()
         updateSideTabContents(false)
 
@@ -1491,7 +1492,11 @@ class ChatToolWindowContent(
             ApplicationManager.getApplication().invokeLater {
                 // If a new turn was started by unhandled nudge, don't interrupt it.
                 if (isSending || project.isDisposed) return@invokeLater
-                submitTurn("Commit all approved changes now. Use a descriptive conventional commit message. No more actions or research needed.", emptyList(), isAutoCommit = true)
+                submitTurn(
+                    "Commit all approved changes now. Use a descriptive conventional commit message. No more actions or research needed.",
+                    emptyList(),
+                    isAutoCommit = true
+                )
             }
         }
     }
