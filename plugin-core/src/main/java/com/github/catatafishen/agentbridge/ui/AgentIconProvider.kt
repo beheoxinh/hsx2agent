@@ -21,6 +21,24 @@ object AgentIconProvider {
 
     fun getDefaultIcon(): Icon = defaultIcon
 
+    fun getIcon(name: String?): Icon {
+        if (name == null) return defaultIcon
+        return getIconForProfile(name) ?: getIconForDisplayName(name) ?: defaultIcon
+    }
+
+    private fun getIconForDisplayName(name: String): Icon? {
+        return when (name) {
+            "GitHub Copilot" -> copilotIcon
+            "OpenCode" -> opencodeIcon
+            "Junie" -> junieIcon
+            "Kiro" -> kiroIcon
+            "Hermes Agent" -> hermesIcon
+            "Claude CLI" -> claudeIcon
+            "Codex" -> codexIcon
+            else -> null
+        }
+    }
+
     fun getIconForProfile(profileId: String?): Icon? {
         return when (profileId) {
             ClaudeCliClient.PROFILE_ID -> claudeIcon

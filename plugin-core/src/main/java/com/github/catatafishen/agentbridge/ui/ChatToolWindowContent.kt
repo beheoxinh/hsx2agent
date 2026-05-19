@@ -443,6 +443,14 @@ class ChatToolWindowContent(
         modelsStatusText = null
         connectPanel.resetConnectButton()
         connectPanel.refreshMcpStatus()
+
+        // Hide side panel when returning to the connect screen to prevent UI glitches
+        val position = ChatInputSettings.getInstance().sidePanelPosition
+        sidePanel?.isVisible = false
+        rootSplitter.proportion = if (position == SidePanelPosition.RIGHT || position == SidePanelPosition.BOTTOM) 1.0f else 0.0f
+        updateSidePanelLayout()
+        updateSideTabContents(false)
+
         cardLayout.show(mainPanel, CARD_CONNECT)
         // Reset toolbar icon to default when disconnecting
         restartSessionGroup?.updateIconForDisconnect()
@@ -2028,6 +2036,11 @@ class ChatToolWindowContent(
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
+        override fun update(e: AnActionEvent) {
+            super.update(e)
+            e.presentation.isEnabled = agentManager.isConnected
+        }
+
         override fun isSelected(e: AnActionEvent): Boolean {
             val position = ChatInputSettings.getInstance().sidePanelPosition
             val p = rootSplitter.proportion
@@ -3120,23 +3133,6 @@ class ChatToolWindowContent(
         val trimmed = prompt.trim()
         if (trimmed.isEmpty()) return
 
-        // Intercept Kiro slash commands
-        val client = agentManager.getClient()
-        if (client is com.github.catatafishen.agentbridge.acp.client.KiroClient && trimmed.startsWith("/")) {
-            statusBanner?.dismissCurrent()
-            setSendingState(true)
-            consolePanel.addPromptEntry(trimmed, null)
-            appendNewEntries()
-            ApplicationManager.getApplication().executeOnPooledThread {
-                client.executeSlashCommand(trimmed) { _ ->
-                    ApplicationManager.getApplication().invokeLater {
-                        setSendingState(false)
-                    }
-                }
-            }
-            return
-        }
-
         statusBanner?.dismissCurrent()
         setSendingState(true)
         val entryId = consolePanel.addPromptEntry(trimmed, null)
@@ -3146,7 +3142,19 @@ class ChatToolWindowContent(
         // unblocked regardless of whether the pause feature is currently enabled in settings.
         pausedByInputFocus = false
         McpPauseService.getInstance(project).setPaused(false)
+
         ApplicationManager.getApplication().executeOnPooledThread {
+            // Intercept Kiro slash commands (client lookup moved to pooled thread to avoid EDT freeze)
+            val client = agentManager.getClient()
+            if (client is com.github.catatafishen.agentbridge.acp.client.KiroClient && trimmed.startsWith("/")) {
+                client.executeSlashCommand(trimmed) { _ ->
+                    ApplicationManager.getApplication().invokeLater {
+                        setSendingState(false)
+                    }
+                }
+                return@executeOnPooledThread
+            }
+
             promptOrchestrator.execute(trimmed, emptyList(), selectedModelId, trimmed, entryId)
         }
     }
@@ -3154,7 +3162,7 @@ class ChatToolWindowContent(
     private var autocompletePopup: com.intellij.openapi.ui.popup.JBPopup? = null
 
     private fun checkSlashCommandAutocomplete() {
-        val client = agentManager.getClient()
+        val client = agentManager.getClientIfRunning()
         if (client !is com.github.catatafishen.agentbridge.acp.client.KiroClient) {
             autocompletePopup?.cancel()
             return
@@ -3228,7 +3236,9 @@ class ChatToolWindowContent(
     fun resetSession() {
         // Clear the persisted resume ID so the next session/new starts completely fresh.
         agentManager.settings.setResumeSessionId(null)
-        agentManager.getClient().clearPersistedSession()
+        ApplicationManager.getApplication().executeOnPooledThread {
+            agentManager.getClient().clearPersistedSession()
+        }
         resetSessionState()
         consolePanel.clear()
         consolePanel.showPlaceholder("New conversation started.")

@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.BuildInfo
+import com.github.catatafishen.agentbridge.bridge.TransportType
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.services.AgentProfileManager.AgentProfileListener
@@ -28,6 +29,7 @@ import java.awt.datatransfer.StringSelection
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.*
 
 /**
@@ -49,14 +51,14 @@ class AcpConnectPanel(
     /** Item model for the session resume dropdown. */
     sealed class SessionChoice(val displayText: String) {
         /** Resume the most recent session (default). */
-        class Latest(val record: ConversationService.SessionRecord) :
+        data class Latest(val record: ConversationService.SessionRecord) :
             SessionChoice(formatSession(record))
 
         /** Start a fresh session without resuming. */
         data object None : SessionChoice("None (fresh session)")
 
         /** Resume a specific older session. */
-        class Older(val record: ConversationService.SessionRecord) :
+        data class Older(val record: ConversationService.SessionRecord) :
             SessionChoice(formatSession(record))
 
         override fun toString(): String = displayText
@@ -74,6 +76,43 @@ class AcpConnectPanel(
     private val agentManager = ActiveAgentManager.getInstance(project)
     private val authService = AuthLoginService(project)
     private var inlineAuthProcess: Process? = null
+    private var isConnectingAgent = false
+        set(value) {
+            if (field != value) {
+                field = value
+                ApplicationManager.getApplication().invokeLater {
+                    refreshMcpState()
+                }
+            }
+        }
+
+    private val profileStatusCheckInProgress = AtomicBoolean(false)
+    private var profileStatusTimer: javax.swing.Timer? = null
+
+    override fun addNotify() {
+        super.addNotify()
+        startProfileStatusTimer()
+    }
+
+    override fun removeNotify() {
+        super.removeNotify()
+        stopProfileStatusTimer()
+    }
+
+    private fun startProfileStatusTimer() {
+        if (profileStatusTimer == null) {
+            profileStatusTimer = javax.swing.Timer(5000) {
+                if (isShowing) {
+                    updateProfileStatus()
+                }
+            }
+        }
+        profileStatusTimer?.start()
+    }
+
+    private fun stopProfileStatusTimer() {
+        profileStatusTimer?.stop()
+    }
 
     // MCP controls
     private val mcpStartButton = JButton(START_SERVER)
@@ -100,6 +139,12 @@ class AcpConnectPanel(
     private val profileCombo = ComboBox<AgentProfile>()
     private val profileStatusIcon = JBLabel()
     private val sessionCombo = ComboBox<SessionChoice>()
+    private val recentSessionsPanel = JBPanel<JBPanel<*>>().apply {
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        isOpaque = false
+        alignmentX = LEFT_ALIGNMENT
+    }
+    private lateinit var recentSessionsTitle: JBLabel
     private val connectButton = JButton("Connect")
     private val connectSpinner = AsyncProcessIcon("acp-connect").apply {
         isVisible = false
@@ -126,7 +171,17 @@ class AcpConnectPanel(
             border = JBUI.Borders.empty(20, 24)
             maximumSize = Dimension(maxContentWidth, Int.MAX_VALUE)
 
-            add(Box.createVerticalGlue())
+            val titleLabel = JBLabel("Hsx2Coder").apply {
+                foreground = JBColor(Color(0x2E, 0x7D, 0x32), Color(0x81, 0xC7, 0x84))
+                font = JBUI.Fonts.label().deriveFont(36f).asBold()
+                horizontalAlignment = SwingConstants.CENTER
+                alignmentX = LEFT_ALIGNMENT
+                // Allow label to fill width so horizontalAlignment centers text correctly
+                maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+                border = JBUI.Borders.empty(10, 0, 10, 0)
+            }
+            add(titleLabel)
+
             add(createMcpSection())
             add(Box.createVerticalGlue())
             add(createAcpSection().also { acpSection = it })
@@ -153,7 +208,7 @@ class AcpConnectPanel(
         add(scrollPane, BorderLayout.CENTER)
 
         val versionLabel = JBLabel(
-            "AgentBridge ${BuildInfo.getVersion()}"
+            BuildInfo.getVersion()
         ).apply {
             foreground = JBUI.CurrentTheme.Label.disabledForeground()
             font = JBUI.Fonts.smallFont()
@@ -365,6 +420,7 @@ class AcpConnectPanel(
         panel.add(profileCombo, BorderLayout.CENTER)
 
         val searchButton = InplaceButton("Search for installed agents", AllIcons.Actions.Download) {
+            ShellEnvironment.refresh()
             SmartAgentDetector(project).detectAllInBackground(true)
         }.apply {
             accessibleContext.accessibleName = "Search for installed agents"
@@ -396,28 +452,45 @@ class AcpConnectPanel(
     }
 
     private fun updateProfileStatus() {
-        val profile = profileCombo.selectedItem as? AgentProfile ?: return
-        val customPath = profile.customBinaryPath
+        if (!profileStatusCheckInProgress.compareAndSet(false, true)) return
+
+        val profile = profileCombo.selectedItem as? AgentProfile ?: run {
+            profileStatusCheckInProgress.set(false)
+            return
+        }
+        val profileId = profile.id
         val binaryName = profile.binaryName
+        val alternates = profile.alternateNames.toTypedArray()
 
         ApplicationManager.getApplication().executeOnPooledThread {
-            val exists = if (customPath.isNotBlank()) {
-                val file = java.io.File(customPath)
-                file.exists() && file.isFile
-            } else if (binaryName.isNotBlank()) {
-                BinaryDetector.findBinaryPath(binaryName) != null
-            } else {
-                false
-            }
-
-            ApplicationManager.getApplication().invokeLater {
-                if (exists) {
-                    profileStatusIcon.icon = AllIcons.General.InspectionsOK
-                    profileStatusIcon.toolTipText = "Binary found: ${customPath.ifBlank { binaryName }}"
+            try {
+                val resolver = if (profile.transportType == TransportType.CLAUDE_CLI) {
+                    ClaudeAgentBinaryResolver()
                 } else {
-                    profileStatusIcon.icon = AllIcons.General.Error
-                    profileStatusIcon.toolTipText = "Binary not found. Use the auto-detect button or check Settings."
+                    AcpClientBinaryResolver(profileId, binaryName, *alternates)
                 }
+
+                var resolvedPath = resolver.resolve()
+                if (resolvedPath != null) {
+                    if (!resolvedPath.contains("/") && !resolvedPath.contains("\\")) {
+                        resolvedPath = BinaryDetector.findBinaryPath(resolvedPath)
+                    }
+                }
+
+                val exists = resolvedPath != null && java.io.File(resolvedPath).exists()
+
+                ApplicationManager.getApplication().invokeLater {
+                    if (exists) {
+                        profileStatusIcon.icon = AllIcons.General.InspectionsOK
+                        profileStatusIcon.toolTipText = "Binary found: $resolvedPath"
+                    } else {
+                        profileStatusIcon.icon = AllIcons.General.Error
+                        profileStatusIcon.toolTipText =
+                            "Binary not found. Use the auto-detect button or check Settings."
+                    }
+                }
+            } finally {
+                profileStatusCheckInProgress.set(false)
             }
         }
     }
@@ -462,13 +535,25 @@ class AcpConnectPanel(
         })
         panel.add(Box.createVerticalStrut(JBUI.scale(4)))
 
-        refreshSessionCombo()
         sessionCombo.renderer = SimpleListCellRenderer.create { label, value, _ ->
             label.text = value?.displayText ?: ""
         }
         sessionCombo.alignmentX = LEFT_ALIGNMENT
         sessionCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
         panel.add(sessionCombo)
+
+        // Recent sessions list
+        panel.add(Box.createVerticalStrut(JBUI.scale(12)))
+        panel.add(JBLabel("Recent sessions").apply {
+            font = JBUI.Fonts.smallFont().asBold()
+            foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
+            alignmentX = LEFT_ALIGNMENT
+            isVisible = false // Hidden if no sessions
+        }.also { recentSessionsTitle = it })
+        panel.add(Box.createVerticalStrut(JBUI.scale(4)))
+        panel.add(recentSessionsPanel)
+
+        refreshSessionCombo()
         return panel
     }
 
@@ -484,6 +569,59 @@ class AcpConnectPanel(
         for (i in 1 until sessions.size) {
             sessionCombo.addItem(SessionChoice.Older(sessions[i]))
         }
+
+        // Populate recent list
+        recentSessionsPanel.removeAll()
+        val recentCount = minOf(sessions.size, 6)
+        for (i in 0 until recentCount) {
+            val record = sessions[i]
+            val choice = if (i == 0) SessionChoice.Latest(record) else SessionChoice.Older(record)
+            recentSessionsPanel.add(createRecentSessionItem(choice))
+        }
+
+        if (::recentSessionsTitle.isInitialized) {
+            recentSessionsTitle.isVisible = sessions.isNotEmpty()
+        }
+        recentSessionsPanel.revalidate()
+        recentSessionsPanel.repaint()
+    }
+
+    private fun createRecentSessionItem(choice: SessionChoice): JComponent {
+        val record = when (choice) {
+            is SessionChoice.Latest -> choice.record
+            is SessionChoice.Older -> choice.record
+            else -> return Box.createGlue() as JComponent
+        }
+
+        val date = SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date(record.updatedAt))
+        val name = record.name.ifEmpty { record.agent }
+        val shortName = if (name.length > 40) name.take(37) + "..." else name
+        val turns = if (record.turnCount > 0) " (${record.turnCount})" else ""
+
+        val item = JBLabel("$date \u2014 $shortName$turns").apply {
+            font = JBUI.Fonts.smallFont()
+            foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            border = JBUI.Borders.empty(4, 4)
+            alignmentX = LEFT_ALIGNMENT
+            icon = AgentIconProvider.getIcon(record.agent)
+        }
+
+        item.addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseClicked(e: java.awt.event.MouseEvent?) {
+                sessionCombo.selectedItem = choice
+            }
+
+            override fun mouseEntered(e: java.awt.event.MouseEvent?) {
+                item.foreground = JBUI.CurrentTheme.Link.Foreground.HOVERED
+            }
+
+            override fun mouseExited(e: java.awt.event.MouseEvent?) {
+                item.foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
+            }
+        })
+
+        return item
     }
 
     // ── Shared UI helpers ──
@@ -571,7 +709,7 @@ class AcpConnectPanel(
         val running = mcpServer.isRunning
         val port = mcpServer.port
 
-        mcpStartButton.isEnabled = true
+        mcpStartButton.isEnabled = !isConnectingAgent
         mcpStartButton.text = if (running) STOP_SERVER else START_SERVER
         mcpStartButton.icon = if (running) AllIcons.Actions.Suspend else AllIcons.Actions.Execute
 
@@ -727,6 +865,7 @@ class AcpConnectPanel(
 
         // Show immediate visual feedback before any work starts, so the EDT is free to repaint
         // the button before applySessionChoice or onConnect run.
+        isConnectingAgent = true
         statusBanner.dismissCurrent()
         connectButton.isEnabled = false
         connectButton.text = "Connecting\u2026"
@@ -794,6 +933,7 @@ class AcpConnectPanel(
 
     fun showError(message: String) {
         ApplicationManager.getApplication().invokeLater {
+            isConnectingAgent = false
             connectButton.isEnabled = true
             connectButton.text = "Connect"
             connectSpinner.isVisible = false
@@ -851,6 +991,7 @@ class AcpConnectPanel(
 
     fun resetConnectButton() {
         ApplicationManager.getApplication().invokeLater {
+            isConnectingAgent = false
             connectButton.isEnabled = true
             connectButton.text = "Connect"
             connectSpinner.isVisible = false
@@ -864,6 +1005,7 @@ class AcpConnectPanel(
     /** Shows "Connecting…" state for auto-connect scenarios. */
     fun showConnecting() {
         ApplicationManager.getApplication().invokeLater {
+            isConnectingAgent = true
             statusBanner.dismissCurrent()
             connectButton.isEnabled = false
             connectButton.text = "Connecting\u2026"

@@ -12,6 +12,7 @@ import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -249,6 +250,9 @@ public final class ActiveAgentManager implements Disposable {
      */
     @NotNull
     public AbstractAgentClient getClient() {
+        if (ApplicationManager.getApplication().isDispatchThread()) {
+            LOG.warn("getClient() called on EDT — may cause UI freeze if agent startup is triggered", new Throwable());
+        }
         if (!started || acpClient == null || !acpClient.isHealthy()) {
             start();
         }
