@@ -122,7 +122,7 @@ class PromptOrchestrator(
     /** Executes a prompt on the calling thread (must be called from a background thread). */
     fun execute(
         prompt: String, contextItems: List<ContextItemData>, selectedModelId: String,
-        rawText: String, promptEntryId: String
+        rawText: String, promptEntryId: String, isAutoCommit: Boolean = false
     ) {
         val myGeneration = synchronized(this) { ++turnGeneration }
         cleanupPreviousTurnEditors()
@@ -135,7 +135,7 @@ class PromptOrchestrator(
         Thread.interrupted()
         currentPromptThread = Thread.currentThread()
         try {
-            executePrompt(prompt, contextItems, selectedModelId)
+            executePrompt(prompt, contextItems, selectedModelId, isAutoCommit)
         } finally {
             currentPromptThread = null
             if (myGeneration == turnGeneration) {
@@ -162,7 +162,12 @@ class PromptOrchestrator(
         consolePanel().addErrorEntry("Stopped by user")
     }
 
-    private fun executePrompt(prompt: String, contextItems: List<ContextItemData>, selectedModelId: String) {
+    private fun executePrompt(
+        prompt: String,
+        contextItems: List<ContextItemData>,
+        selectedModelId: String,
+        isAutoCommit: Boolean = false
+    ) {
         try {
             // Clean up agent resources from previous turns before starting a new one
             AgentTabTracker.getInstance(project).closeTrackedTabs()
@@ -182,7 +187,7 @@ class PromptOrchestrator(
             val sessionId = ensureSessionCreated(client)
             wirePermissionListener(client)
 
-            val modelId = prepareModelAndTurnState(selectedModelId)
+            val modelId = prepareModelAndTurnState(selectedModelId, isAutoCommit)
             val attachments = contextManager.buildPromptAttachments(contextItems.ifEmpty { null })
             val effectivePrompt = buildEffectivePrompt(prompt, attachments)
             addContextEntries(attachments, contextItems)
@@ -273,7 +278,7 @@ class PromptOrchestrator(
             ?.notify(project)
     }
 
-    private fun prepareModelAndTurnState(selectedModelId: String): String {
+    private fun prepareModelAndTurnState(selectedModelId: String, isAutoCommit: Boolean = false): String {
         turnToolCallCount = 0
         turnStartedAt = System.currentTimeMillis()
         turnInputTokens = 0
@@ -285,7 +290,7 @@ class PromptOrchestrator(
         CodeChangeTracker.clear()
         turnStartHeadHash = captureGitHead()
         turnStartGitBranch = captureGitBranch()
-        LiveToolCallService.getInstance(project).clear()
+        if (!isAutoCommit) LiveToolCallService.getInstance(project).clear()
 
         // Register real-time listener so code-change chips update as each tool runs.
         codeChangeListener?.let { CodeChangeTracker.removeListener(it) }

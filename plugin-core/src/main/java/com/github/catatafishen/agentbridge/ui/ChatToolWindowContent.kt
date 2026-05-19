@@ -1324,7 +1324,7 @@ class ChatToolWindowContent(
         pausedByInputFocus = false
         McpPauseService.getInstance(project).setPaused(false)
         ApplicationManager.getApplication().executeOnPooledThread {
-            promptOrchestrator.execute(prompt, contextItems, selectedModelId, rawText, entryId)
+            promptOrchestrator.execute(prompt, contextItems, selectedModelId, rawText, entryId, isAutoCommit)
         }
     }
 
