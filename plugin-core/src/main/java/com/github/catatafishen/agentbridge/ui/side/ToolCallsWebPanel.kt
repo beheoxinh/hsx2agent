@@ -208,6 +208,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     }
 
     fun reloadHistory() {
+        LiveToolCallService.getInstance(project).clear()
         ApplicationManager.getApplication().invokeLater {
             loadHistoryPage(null)
         }
