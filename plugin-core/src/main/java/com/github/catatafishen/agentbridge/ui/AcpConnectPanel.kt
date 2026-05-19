@@ -5,8 +5,10 @@ import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.services.AgentProfileManager.AgentProfileListener
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.github.catatafishen.agentbridge.session.db.ConversationListener
 import com.github.catatafishen.agentbridge.session.db.ConversationService
+import com.github.catatafishen.agentbridge.settings.*
 import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings
 import com.github.catatafishen.agentbridge.settings.BinaryDetector
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
@@ -372,6 +374,15 @@ class AcpConnectPanel(
             accessibleContext.accessibleName = "Search for installed agents"
         }
 
+        val settingsButton = InplaceButton("Configure agent", AllIcons.General.GearPlain) {
+            val profile = profileCombo.selectedItem as? AgentProfile
+            if (profile != null) {
+                showAgentSettings(profile.id)
+            }
+        }.apply {
+            accessibleContext.accessibleName = "Configure agent"
+        }
+
         val eastPanel = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             isOpaque = false
@@ -379,6 +390,8 @@ class AcpConnectPanel(
             add(profileStatusIcon)
             add(Box.createHorizontalStrut(JBUI.scale(8)))
             add(searchButton)
+            add(Box.createHorizontalStrut(JBUI.scale(8)))
+            add(settingsButton)
         }
         panel.add(eastPanel, BorderLayout.EAST)
 
@@ -411,6 +424,20 @@ class AcpConnectPanel(
                 }
             }
         }
+    }
+
+    private fun showAgentSettings(profileId: String) {
+        val configurableClass = when (profileId) {
+            AgentProfileManager.COPILOT_PROFILE_ID -> CopilotClientConfigurable::class.java
+            AgentProfileManager.OPENCODE_PROFILE_ID -> OpenCodeClientConfigurable::class.java
+            AgentProfileManager.CLAUDE_CLI_PROFILE_ID -> ClaudeCliClientConfigurable::class.java
+            AgentProfileManager.JUNIE_PROFILE_ID -> JunieClientConfigurable::class.java
+            AgentProfileManager.KIRO_PROFILE_ID -> KiroClientConfigurable::class.java
+            AgentProfileManager.CODEX_PROFILE_ID -> CodexClientConfigurable::class.java
+            AgentProfileManager.HERMES_PROFILE_ID -> HermesClientConfigurable::class.java
+            else -> ClientAgentsGroupConfigurable::class.java
+        }
+        ShowSettingsUtil.getInstance().showSettingsDialog(project, configurableClass)
     }
 
     private fun refreshProfileCombo() {
