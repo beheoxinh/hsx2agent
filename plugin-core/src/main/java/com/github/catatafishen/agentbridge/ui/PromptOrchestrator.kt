@@ -589,19 +589,30 @@ class PromptOrchestrator(
 
             is SessionUpdate.ToolCall -> {
                 turnHadContent = true
-                handleStreamingToolCall(update)
-                handleClientUpdate(update)
+                ApplicationManager.getApplication().invokeLater {
+                    if (!stopped) {
+                        handleStreamingToolCall(update)
+                        handleClientUpdate(update)
+                    }
+                }
             }
 
             is SessionUpdate.ToolCallUpdate -> {
                 turnHadContent = true
-                handleStreamingToolCallUpdate(update)
-                handleClientUpdate(update)
+                ApplicationManager.getApplication().invokeLater {
+                    if (!stopped) {
+                        handleStreamingToolCallUpdate(update)
+                        handleClientUpdate(update)
+                    }
+                }
             }
 
             is SessionUpdate.AgentThoughtChunk -> {
                 turnHadContent = true
-                if (!stopped) consolePanel().appendThinkingText(update.text())
+                val text = update.text()
+                ApplicationManager.getApplication().invokeLater {
+                    if (!stopped) consolePanel().appendThinkingText(text)
+                }
             }
 
             is SessionUpdate.TurnUsage -> {

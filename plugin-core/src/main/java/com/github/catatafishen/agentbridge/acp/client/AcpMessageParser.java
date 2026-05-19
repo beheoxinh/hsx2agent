@@ -107,6 +107,12 @@ class AcpMessageParser {
                 LOG.debug(displayName.get() + ": received config_option_update (not yet handled)");
                 yield null;
             }
+            // available_commands_update: sent by OpenCode to notify the client about available
+            // session commands (e.g. "cancel"). Currently handled by standard protocol methods.
+            case "available_commands_update" -> {
+                LOG.debug(displayName.get() + ": received available_commands_update (ignoring)");
+                yield null;
+            }
             default -> {
                 LOG.warn(displayName.get() + ": unknown session update type: '" + type + "'");
                 yield null;

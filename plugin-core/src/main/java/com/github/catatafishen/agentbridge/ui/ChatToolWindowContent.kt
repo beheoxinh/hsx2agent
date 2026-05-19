@@ -3066,12 +3066,14 @@ class ChatToolWindowContent(
      * Tracks [persistedEntryCount] so only genuinely new entries are flushed each call.
      */
     private fun appendNewEntries() {
-        lastIncrementalSaveMs = System.currentTimeMillis()
-        val allEntries = conversationReplayer.deferredEntries() + chatConsolePanel.getEntries()
-        val newEntries = allEntries.drop(persistedEntryCount)
-        if (newEntries.isEmpty()) return
-        conversationStore.appendEntriesAsync(project.basePath, newEntries)
-        persistedEntryCount = allEntries.size
+        ApplicationManager.getApplication().invokeLater {
+            lastIncrementalSaveMs = System.currentTimeMillis()
+            val allEntries = conversationReplayer.deferredEntries() + chatConsolePanel.getEntries()
+            val newEntries = allEntries.drop(persistedEntryCount)
+            if (newEntries.isEmpty()) return@invokeLater
+            conversationStore.appendEntriesAsync(project.basePath, newEntries)
+            persistedEntryCount = allEntries.size
+        }
     }
 
     /**
@@ -3391,7 +3393,9 @@ class ChatToolWindowContent(
 
     private fun restoreModelSelection(models: List<Model>) {
         val savedModel = agentManager.settings.selectedModel
-        LOG.debug("Restoring model selection: saved='$savedModel', current='${agentManager.client.currentModelId}', available=${models.map { it.id() }}")
+        val client = agentManager.getClientIfRunning()
+        val clientModelId = client?.currentModelId
+        LOG.debug("Restoring model selection: saved='$savedModel', current='$clientModelId', available=${models.map { it.id() }}")
         if (savedModel != null) {
             val idx = models.indexOfFirst { it.id() == savedModel }
             if (idx >= 0) {
@@ -3400,9 +3404,8 @@ class ChatToolWindowContent(
             LOG.debug("Saved model '$savedModel' not found in available models")
         }
         // Fall back to the agent-reported current model from session/new
-        val currentModelId = agentManager.client.currentModelId
-        if (currentModelId != null) {
-            val idx = models.indexOfFirst { it.id() == currentModelId }
+        if (clientModelId != null) {
+            val idx = models.indexOfFirst { it.id() == clientModelId }
             if (idx >= 0) {
                 selectedModelIndex = idx; LOG.debug("Selected agent-reported model index=$idx"); return
             }
@@ -3412,7 +3415,7 @@ class ChatToolWindowContent(
 
     private fun resolveSelectedModelId(): String {
         loadedModels.getOrNull(selectedModelIndex)?.id()?.takeIf { it.isNotEmpty() }?.let { return it }
-        return agentManager.client.currentModelId?.takeIf { it.isNotEmpty() } ?: ""
+        return agentManager.getClientIfRunning()?.currentModelId?.takeIf { it.isNotEmpty() } ?: ""
     }
 
     private fun loadModelsAsync(
