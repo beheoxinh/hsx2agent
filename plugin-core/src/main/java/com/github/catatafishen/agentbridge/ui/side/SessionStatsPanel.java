@@ -55,10 +55,8 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
     private final transient ProcessingTimerPanel timerPanel;
     private final transient BillingManager billing;
-    private final transient ActiveAgentManager agentManager;
     private Font smallFont;
     private final Color dimColor;
-    private final transient Runnable switchListener;
 
     /**
      * Labels that use {@code smallFont} — re-populated in the constructor and refreshed in
@@ -70,11 +68,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private final transient SessionDiffAnimator sessionDiffAnimator = new SessionDiffAnimator();
     private final transient SessionDiffAnimator turnDiffAnimator = new SessionDiffAnimator();
     private final Timer animationTimer;
-
-    // Selected client section
-    private final JLabel clientIconLabel = new JLabel();
-    private final JLabel clientNameLabel = new JLabel();
-    private final JPanel clientSection;
 
     // Current turn section (also displays the most recent completed turn between turns)
     private final JLabel turnHeaderLabel = new JLabel("Active turn");
@@ -145,35 +138,9 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         this.project = project;
         this.timerPanel = timerPanel;
         this.billing = billing;
-        this.agentManager = ActiveAgentManager.getInstance(project);
 
         this.smallFont = UIManager.getFont("Label.font").deriveFont((float) JBUI.scale(11));
         this.dimColor = JBUI.CurrentTheme.Label.disabledForeground();
-
-        // Selected client section
-        clientNameLabel.setFont(smallFont);
-        scalableLabels.add(clientNameLabel);
-        JPanel clientRow = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0));
-        clientRow.setOpaque(false);
-        clientRow.setBorder(BorderFactory.createEmptyBorder(0, JBUI.scale(8), JBUI.scale(4), JBUI.scale(8)));
-
-        clientIconLabel.setMinimumSize(new Dimension(JBUI.scale(16), JBUI.scale(16)));
-        clientIconLabel.setPreferredSize(new Dimension(JBUI.scale(16), JBUI.scale(16)));
-        clientIconLabel.setMaximumSize(new Dimension(JBUI.scale(16), JBUI.scale(16)));
-
-        clientRow.add(clientIconLabel);
-        clientRow.add(clientNameLabel);
-
-        clientSection = new JPanel();
-        clientSection.setLayout(new BoxLayout(clientSection, BoxLayout.Y_AXIS));
-        clientSection.setOpaque(false);
-        clientSection.add(createSectionHeader("Selected client"));
-        clientSection.add(clientRow);
-        leftAlignSection(clientSection);
-        // Initial state: hide until an agent is connected
-        clientSection.setVisible(false);
-        refreshClientSection();
-        leftAlignChild(clientRow);
 
         // Current turn section — mirrors the Session grid layout (Time row first) so the
         // two visually align. Stays visible after the turn ends, then re-labels as "Last turn".
@@ -282,7 +249,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setOpaque(false);
         JPanel sessionHeader = createSectionHeader("Session");
-        content.add(clientSection);
         content.add(turnSection);
         content.add(sessionHeader);
         content.add(statsGrid);
@@ -320,25 +286,13 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         });
         animationTimer.setRepeats(true);
 
-        switchListener = () -> ApplicationManager.getApplication().invokeLater(this::refreshClientSection);
-        agentManager.addSwitchListener(switchListener);
-
-        project.getMessageBus().connect(this).subscribe(ConversationListener.TOPIC, new ConversationListener() {
-            @Override
-            public void connectionChanged(boolean connected) {
-                ApplicationManager.getApplication().invokeLater(() -> refreshClientSection());
-            }
-        });
-
         timerPanel.setOnStatsChanged(this::refresh);
         billing.setOnBillingChanged(this::refresh);
-        refreshClientSection();
         refresh();
     }
 
     @Override
     public void dispose() {
-        agentManager.removeSwitchListener(switchListener);
         timerPanel.setOnStatsChanged(null);
         billing.setOnBillingChanged(null);
         animationTimer.stop();
@@ -494,22 +448,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         revalidate();
         repaint();
-    }
-
-    private void refreshClientSection() {
-        if (!agentManager.isConnected()) {
-            clientSection.setVisible(false);
-            return;
-        }
-        clientSection.setVisible(true);
-        String profileId = agentManager.getActiveProfileId();
-        Icon icon = AgentIconProvider.INSTANCE.getIconForProfile(profileId);
-        if (icon != null) {
-            clientIconLabel.setIcon(com.intellij.util.IconUtil.toSize(icon, JBUI.scale(16), JBUI.scale(16)));
-        } else {
-            clientIconLabel.setIcon(null);
-        }
-        clientNameLabel.setText(agentManager.getActiveProfile().getDisplayName());
     }
 
     private void refreshTurnSection(SessionStatsSnapshot snap) {
