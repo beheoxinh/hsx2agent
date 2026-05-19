@@ -33,7 +33,7 @@ object AgentIconProvider {
             "Junie" -> junieIcon
             "Kiro" -> kiroIcon
             "Hermes Agent" -> hermesIcon
-            "Claude CLI" -> claudeIcon
+            "Claude CLI", "Claude Code CLI", "claude" -> claudeIcon
             "Codex" -> codexIcon
             else -> null
         }
