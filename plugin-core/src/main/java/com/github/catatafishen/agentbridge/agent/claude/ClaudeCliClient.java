@@ -39,6 +39,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -248,12 +249,9 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         Object[][] rows = {
             // columns: alias, displayName
             {"default", "Default (recommended)"},
-            {"sonnet", "Sonnet (latest, daily coding)"},
-            {"opus", "Opus (latest, complex reasoning)"},
-            {"haiku", "Haiku (fast and efficient)"},
-            {"sonnet[1m]", "Sonnet 1M context"},
-            {"opus[1m]", "Opus 1M context"},
-            {"opusplan", "Opus Plan (opus→sonnet)"},
+            {"sonnet", "Sonnet (latest)"},
+            {"opus", "Opus (latest)"},
+            {"haiku", "Haiku (fastest)"},
         };
         List<Model> list = new ArrayList<>(rows.length);
         for (Object[] row : rows) {
@@ -263,37 +261,64 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         return Collections.unmodifiableList(list);
     }
 
-    private @Nullable String detectModelFromSettings() {
+    @NotNull
+    private List<String> detectModelsFromSettings() {
         Path path = Path.of(SystemProperties.getUserHome(), ".claude", "settings.json");
-        if (!Files.exists(path)) return null;
+        if (!Files.exists(path)) return Collections.emptyList();
 
+        Set<String> models = new LinkedHashSet<>();
         try {
             String content = Files.readString(path, StandardCharsets.UTF_8);
             JsonObject settings = JsonParser.parseString(content).getAsJsonObject();
-            if (settings.has("env")) {
+
+            // Check top-level "model" and "models"
+            addModelsFromElement(settings.get("model"), models);
+            addModelsFromElement(settings.get("models"), models);
+
+            // Check "env" section
+            if (settings.has("env") && settings.get("env").isJsonObject()) {
                 JsonObject env = settings.getAsJsonObject("env");
-                if (env.has("ANTHROPIC_MODEL")) {
-                    return env.get("ANTHROPIC_MODEL").getAsString();
-                }
+                addModelsFromElement(env.get("ANTHROPIC_MODEL"), models);
+                addModelsFromElement(env.get("ANTHROPIC_MODELS"), models);
             }
         } catch (Exception e) {
             LOG.warn("Could not read Claude settings from " + path + ": " + e.getMessage());
         }
-        return null;
+        return new ArrayList<>(models);
+    }
+
+    private void addModelsFromElement(@Nullable JsonElement element, @NotNull Set<String> target) {
+        if (element == null || element.isJsonNull()) return;
+
+        if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) {
+            String val = element.getAsString();
+            for (String s : val.split(",")) {
+                String trimmed = s.trim();
+                if (!trimmed.isEmpty()) target.add(trimmed);
+            }
+        } else if (element.isJsonArray()) {
+            for (JsonElement item : element.getAsJsonArray()) {
+                if (item.isJsonPrimitive() && item.getAsJsonPrimitive().isString()) {
+                    String val = item.getAsString();
+                    if (!val.isBlank()) target.add(val.trim());
+                }
+            }
+        }
     }
 
     @Override
     public @NotNull List<Model> getAvailableModels() {
         List<String> custom = profile.getCustomCliModels();
-        String detectedModel = detectModelFromSettings();
+        List<String> detectedModels = detectModelsFromSettings();
 
         List<Model> result = new ArrayList<>();
         Set<String> seenIds = new HashSet<>();
 
-        // 1. Add detected model first if it exists
-        if (detectedModel != null && !detectedModel.isBlank()) {
-            seenIds.add(detectedModel);
-            result.add(new Model(detectedModel, detectedModel + " (Auto-detected from settings.json)", null, null));
+        // 1. Add detected models first
+        for (String id : detectedModels) {
+            if (seenIds.add(id)) {
+                result.add(new Model(id, id + " (Auto-detected from settings.json)", null, null));
+            }
         }
 
         // 2. Add known models if not in custom-only mode
