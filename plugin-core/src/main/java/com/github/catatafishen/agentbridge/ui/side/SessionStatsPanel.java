@@ -1,10 +1,7 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
-import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
-import com.github.catatafishen.agentbridge.session.db.ConversationListener;
 import com.github.catatafishen.agentbridge.session.db.ConversationStatistics;
-import com.github.catatafishen.agentbridge.ui.AgentIconProvider;
 import com.github.catatafishen.agentbridge.ui.BillingCalculator;
 import com.github.catatafishen.agentbridge.ui.BillingDisplayData;
 import com.github.catatafishen.agentbridge.ui.BillingManager;

@@ -473,15 +473,17 @@ internal object ToolCallPopup {
             isOpaque = false
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
 
+            val nodeColor = when {
+                subtext == "Skipped" -> UIUtil.getInactiveTextColor()
+                subtext == "Denied" || subtext == "Failed" || !success -> NativeChatColors.ERROR
+                else -> JBColor(Color(0x4A, 0x90, 0x4A), Color(130, 190, 130))
+            }
+
             val circle = object : JPanel() {
                 override fun paintComponent(g: Graphics) {
                     val g2 = g as Graphics2D
                     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                    g2.color = if (success) {
-                        JBColor(Color(0x4A, 0x90, 0x4A), Color(130, 190, 130)) // Green
-                    } else {
-                        NativeChatColors.ERROR
-                    }
+                    g2.color = nodeColor
                     g2.fillOval(0, 0, width - 1, height - 1)
                 }
             }.apply {
@@ -498,13 +500,7 @@ internal object ToolCallPopup {
             if (subtext != null) {
                 add(JBLabel(subtext).apply {
                     font = JBUI.Fonts.miniFont()
-                    foreground = when {
-                        subtext == "Allowed" || subtext == "Success" || subtext.endsWith(" run") ->
-                            JBColor(Color(0x4A, 0x90, 0x4A), Color(130, 190, 130))
-
-                        subtext == "Denied" || subtext == "Failed" -> NativeChatColors.ERROR
-                        else -> UIUtil.getInactiveTextColor()
-                    }
+                    foreground = nodeColor
                     alignmentX = JComponent.CENTER_ALIGNMENT
                 })
             }
