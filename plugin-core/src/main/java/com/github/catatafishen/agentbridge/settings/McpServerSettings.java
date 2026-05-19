@@ -182,6 +182,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         myState.autoCommit = enabled;
     }
 
+    public boolean isSuggestGitInit() {
+        return myState.suggestGitInit;
+    }
+
+    public void setSuggestGitInit(boolean enabled) {
+        myState.suggestGitInit = enabled;
+    }
+
     /**
      * When true (default), agent-edit highlights are painted as persistent background colors
      * in the editor while a review session is active. Users who rely on git diff colors may
@@ -263,6 +271,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private boolean autoApproveAgentEdits = false;
         private boolean autoCleanReviewOnNewPrompt = false;
         private boolean autoCommit = false;
+        private boolean suggestGitInit = true;
         private boolean showEditorHighlights = true;
         private String kindReadColorKey = null;
         private String kindEditColorKey = null;

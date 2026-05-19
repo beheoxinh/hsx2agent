@@ -207,6 +207,11 @@ class ChatInputConfigurable(private val project: Project) :
                 .comment("Automatically triggers a commit turn when the agent finishes and there are approved files but no pending ones.")
                 .bindSelected({ mcp.isAutoCommit }, { mcp.isAutoCommit = it })
         }
+        row {
+            checkBox("Suggest git initialization if project has no version control")
+                .comment("Shows a notification when connecting to an agent if git is missing, with an option to initialize it automatically.")
+                .bindSelected({ mcp.isSuggestGitInit }, { mcp.isSuggestGitInit = it })
+        }
         separator()
         row("Side panel position:") {
             comboBox(SidePanelPosition.entries.toList())

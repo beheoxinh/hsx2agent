@@ -10,6 +10,7 @@ import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
 import com.github.catatafishen.agentbridge.settings.ChatInputSettings
+import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.settings.SidePanelPosition
 import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
@@ -372,6 +373,53 @@ class ChatToolWindowContent(
         authService.clearPendingAuthError()  // Clear any auth error from a previous agent
         setSendingState(false)  // Ensure send button is enabled
         notifyWebServerConnected()
+        checkGitAndPromptInit()
+    }
+
+    private fun checkGitAndPromptInit() {
+        val mcpSettings = McpServerSettings.getInstance(project)
+        if (!mcpSettings.isSuggestGitInit) return
+
+        val gitInitService = GitInitService.getInstance(project)
+        ApplicationManager.getApplication().executeOnPooledThread {
+            if (!gitInitService.isGitRepo()) {
+                ApplicationManager.getApplication().invokeLater {
+                    val result = com.intellij.openapi.ui.Messages.showYesNoDialog(
+                        project,
+                        "No version control detected. Agent needs to see git status of the application to operate stably.\n\n" +
+                            "Would you like the agent to initialize a git repository and create an initial commit?",
+                        "Git Repository Recommended",
+                        "Initialize Git",
+                        "Not Now",
+                        com.intellij.openapi.ui.Messages.getQuestionIcon()
+                    )
+
+                    if (result == com.intellij.openapi.ui.Messages.YES) {
+                        performGitInit(gitInitService)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun performGitInit(service: GitInitService) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            service.initializeGit()
+                .onSuccess {
+                    ApplicationManager.getApplication().invokeLater {
+                        statusBanner?.showInfo("Git repository initialized successfully.")
+                    }
+                }
+                .onFailure { error ->
+                    ApplicationManager.getApplication().invokeLater {
+                        com.intellij.openapi.ui.Messages.showErrorDialog(
+                            project,
+                            "Failed to initialize git repository: ${error.message}",
+                            "Git Initialization Failed"
+                        )
+                    }
+                }
+        }
     }
 
     /**

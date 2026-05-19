@@ -101,7 +101,7 @@ class AcpConnectPanel(
 
     private fun startProfileStatusTimer() {
         if (profileStatusTimer == null) {
-            profileStatusTimer = javax.swing.Timer(5000) {
+            profileStatusTimer = javax.swing.Timer(1000) {
                 if (isShowing) {
                     updateProfileStatus()
                 }
