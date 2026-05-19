@@ -243,6 +243,7 @@ class AcpMessageParser {
 
     private SessionUpdate.TurnUsage parseUsageUpdate(JsonObject params) {
         int used = params.has("used") ? params.get("used").getAsInt() : 0;
+        int size = params.has("size") ? params.get("size").getAsInt() : 0;
         Double cost = null;
         if (params.has("cost") && params.get("cost").isJsonObject()) {
             JsonObject costObj = params.getAsJsonObject("cost");
@@ -251,7 +252,7 @@ class AcpMessageParser {
                 cost = amountEl.getAsDouble();
             }
         }
-        return new SessionUpdate.TurnUsage(used, 0, cost);
+        return new SessionUpdate.TurnUsage(used, size, cost);
     }
 
     private List<ContentBlock> parseContentBlocks(JsonObject params) {

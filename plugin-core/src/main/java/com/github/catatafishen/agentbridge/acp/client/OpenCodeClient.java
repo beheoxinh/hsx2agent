@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
+import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
+import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -42,6 +44,11 @@ public final class OpenCodeClient extends AcpClient {
         "grep", "glob", "ls", "read", "write", "edit", "patch", "bash",
         "lsp", "websearch", "webfetch", "codesearch", "todoread", "todowrite"
     );
+
+    private long lastSessionInputTokens = 0;
+    private long lastSessionOutputTokens = 0;
+    private long latestTurnInputTokens = 0;
+    private long latestTurnOutputTokens = 0;
 
     static List<String> nativeToolsToDeny() {
         return NATIVE_TOOLS_TO_DENY;
@@ -225,8 +232,48 @@ public final class OpenCodeClient extends AcpClient {
     }
 
     @Override
+    protected PromptRequest beforeSendPrompt(PromptRequest request) {
+        latestTurnInputTokens = lastSessionInputTokens;
+        latestTurnOutputTokens = lastSessionOutputTokens;
+        return super.beforeSendPrompt(request);
+    }
+
+    @Override
+    protected SessionUpdate processUpdate(SessionUpdate update) {
+        if (update instanceof SessionUpdate.TurnUsage(int inputTokens, int outputTokens, Double costUsd)) {
+            latestTurnInputTokens = inputTokens;
+            latestTurnOutputTokens = outputTokens;
+            long deltaInput = latestTurnInputTokens - lastSessionInputTokens;
+            long deltaOutput = latestTurnOutputTokens - lastSessionOutputTokens;
+            return new SessionUpdate.TurnUsage((int) deltaInput, (int) deltaOutput, costUsd);
+        }
+        return super.processUpdate(update);
+    }
+
+    @Override
+    protected void afterPromptComplete() {
+        lastSessionInputTokens = latestTurnInputTokens;
+        lastSessionOutputTokens = latestTurnOutputTokens;
+        super.afterPromptComplete();
+    }
+
+    @Override
+    public void dropCurrentSession() {
+        super.dropCurrentSession();
+        lastSessionInputTokens = 0;
+        lastSessionOutputTokens = 0;
+        latestTurnInputTokens = 0;
+        latestTurnOutputTokens = 0;
+    }
+
+    @Override
     public boolean requiresInlineReferences() {
         return true;
+    }
+
+    @Override
+    public AbstractAgentClient.ModelDisplayMode modelDisplayMode() {
+        return AbstractAgentClient.ModelDisplayMode.TOKEN_COUNT;
     }
 
     @Override
