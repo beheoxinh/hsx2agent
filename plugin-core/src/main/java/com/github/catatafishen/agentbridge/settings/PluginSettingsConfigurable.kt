@@ -1,67 +1,239 @@
 package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.BuildInfo
+import com.github.catatafishen.agentbridge.services.ActiveAgentManager
+import com.github.catatafishen.agentbridge.services.CleanupSettings
+import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
+import com.github.catatafishen.agentbridge.ui.ChatToolWindowContent
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
-import com.intellij.ui.dsl.builder.panel
-import javax.swing.JComponent
+import com.intellij.ui.components.JBCheckBox
+import com.intellij.ui.components.labels.LinkLabel
+import com.intellij.ui.dsl.builder.*
 
-/**
- * Root settings page for AgentBridge. Holds no settings of its own — child
- * pages (UI/UX, Storage, MCP, Agents, etc.) configure the various subsystems.
- *
- * Implements [SearchableConfigurable.Parent] so that IntelliJ treats this node
- * as a group in the settings tree and expands it when selected, saving the user
- * one click to reach child pages. [hasOwnContent] returns true so the description
- * page is still shown.
- *
- * Built with the official IntelliJ Platform Kotlin UI DSL v2.
- */
-class PluginSettingsConfigurable @Suppress("unused") constructor(
-    @Suppress("UNUSED_PARAMETER") project: Project
-) : SearchableConfigurable.Parent {
+class PluginSettingsConfigurable(private val project: Project) :
+    BoundConfigurable("Hsx2Agent"),
+    SearchableConfigurable {
 
     override fun getId(): String = "com.github.catatafishen.agentbridge.settings"
 
-    override fun getDisplayName(): String = "AgentBridge"
+    private val s get() = ChatInputSettings.getInstance()
+    private val mcp get() = McpServerSettings.getInstance(project)
+    private val cleanup get() = CleanupSettings.getInstance(project)
 
-    /** Keep the root description page visible when this node is selected. */
-    override fun hasOwnContent(): Boolean = true
-
-    /**
-     * Children are declared via `plugin.xml` `projectConfigurable` extension points with
-     * `parentId="com.github.catatafishen.agentbridge.settings"`. This method returns an
-     * empty array; IntelliJ merges the extension-point children automatically.
-     * Required by older SDK versions where `SearchableConfigurable.Parent` inherits the
-     * abstract `getConfigurables()` from `Configurable.Composite`.
-     */
-    override fun getConfigurables(): Array<out Configurable> = emptyArray()
-
-    override fun createComponent(): JComponent = panel {
+    @Suppress("LongMethod", "kotlin:S3776")
+    override fun createPanel() = panel {
         row {
             comment(
-                "AgentBridge connects IntelliJ IDE with AI coding agents via the " +
-                    "<b>Agent Coding Protocol (ACP)</b>. Agents gain live access to code " +
-                    "intelligence, refactoring, search, file editing, and build tools through " +
-                    "the MCP server built into the IDE.<br><br>" +
-                    "Supported clients: <b>GitHub Copilot</b>, <b>OpenCode</b>, " +
-                    "<b>Claude Code</b>, <b>Claude CLI</b>, <b>Junie</b>, <b>Kiro</b>."
+                "Appearance and interaction settings for the chat panel, input area, and editor integration."
             )
+        }
+        separator()
+        row {
+            checkBox("Show keyboard shortcut hints in chat input")
+                .comment("Display shortcut hints centered inside the input area when it is empty.")
+                .bindSelected({ s.isShowShortcutHints }, { s.isShowShortcutHints = it })
+        }
+        row {
+            val link = LinkLabel<Unit>(
+                "Customize keyboard shortcuts…", null
+            ) { _, _ ->
+                ApplicationManager.getApplication().invokeLater {
+                    ShowSettingsUtil.getInstance().showSettingsDialog(
+                        project,
+                        { c -> c is SearchableConfigurable && "preferences.keymap" == c.id },
+                        { c -> if (c is SearchableConfigurable) c.enableSearch("AgentBridge")?.run() }
+                    )
+                }
+            }
+            cell(link)
+        }
+        separator()
+        row {
+            checkBox("Enable soft wraps in chat input")
+                .comment("Wrap long lines in the chat input instead of scrolling horizontally.")
+                .bindSelected({ s.isSoftWrapsEnabled }, { s.isSoftWrapsEnabled = it })
+        }
+        separator()
+        lateinit var smartPaste: Cell<JBCheckBox>
+        row {
+            smartPaste = checkBox("Enable smart paste")
+                .comment("Intercept large clipboard pastes to create scratch files or inline file references.")
+                .bindSelected({ s.isSmartPasteEnabled }, { s.isSmartPasteEnabled = it })
+        }
+        row("Min lines to trigger:") {
+            spinner(1..100, 1)
+                .comment("Clipboard content with more lines than this triggers Smart Paste.")
+                .bindIntValue({ s.smartPasteMinLines }, { s.smartPasteMinLines = it })
+                .enabledIf(smartPaste.selected)
+        }
+        row("Min characters to trigger:") {
+            spinner(50..10_000, 50)
+                .comment("Clipboard content with more characters than this triggers Smart Paste.")
+                .bindIntValue({ s.smartPasteMinChars }, { s.smartPasteMinChars = it })
+                .enabledIf(smartPaste.selected)
+        }
+        separator()
+        row("File search trigger:") {
+            comboBox(listOf("#", "@", ""))
+                .comment("Character that opens the file search popup in the chat input.")
+                .applyToComponent {
+                    renderer = com.intellij.ui.SimpleListCellRenderer.create<String>("") { value ->
+                        when (value) {
+                            "#" -> "# (VS Code style)"
+                            "@" -> "@ (AI Assistant style)"
+                            else -> "Disabled"
+                        }
+                    }
+                }
+                .bindItem({ s.fileSearchTrigger }, { s.fileSearchTrigger = it ?: "#" })
+        }
+        separator()
+        row {
+            checkBox(
+                "Follow Agent — open files and highlight regions as the agent reads or edits them"
+            )
+                .comment(
+                    "Works independently of the connected agent — any external agent accessing " +
+                        "the MCP server will trigger follow-mode when this is enabled."
+                )
+                .bindSelected(
+                    { ActiveAgentManager.getFollowAgentFiles(project) },
+                    { ActiveAgentManager.setFollowAgentFiles(project, it) }
+                )
+        }
+        row {
+            checkBox("Enable smooth scrolling in chat panel")
+                .comment("⚠ May cause screen tearing on some systems")
+                .bindSelected({ mcp.isSmoothScrollEnabled }, {
+                    mcp.isSmoothScrollEnabled = it
+                    ChatConsolePanel.getInstance(project)?.setSmoothScroll(it)
+                })
+        }
+        row {
+            checkBox("Show turn stats below messages (duration, tokens, lines changed)")
+                .comment(
+                    "Displays a summary footer below the last message of each agent turn. " +
+                        "Disabling saves vertical space."
+                )
+                .bindSelected({ mcp.isShowTurnStats }, {
+                    mcp.isShowTurnStats = it
+                    ChatConsolePanel.getInstance(project)?.setShowTurnStats(it)
+                })
+        }
+        separator()
+        row("Scratch file retention (hours, 0 = forever):") {
+            spinner(0..8760, 1)
+                .bindIntValue(
+                    { cleanup.scratchRetentionHours },
+                    { cleanup.scratchRetentionHours = it }
+                )
+        }
+        lateinit var autoCloseTabs: Cell<JBCheckBox>
+        row {
+            autoCloseTabs = checkBox("Auto-close agent tabs between turns")
+                .bindSelected({ cleanup.isAutoCloseAgentTabs }, { cleanup.isAutoCloseAgentTabs = it })
+        }
+        row {
+            checkBox("Auto-hide agent-opened tool windows")
+                .comment("Hide tool windows (e.g. Git Log) that were automatically opened/shown by the agent.")
+                .bindSelected({ cleanup.isAutoHideAgentToolWindows }, { cleanup.isAutoHideAgentToolWindows = it })
+        }
+        row {
+            checkBox("Also close running terminal tabs")
+                .bindSelected(
+                    { cleanup.isAutoCloseRunningTerminals },
+                    { cleanup.isAutoCloseRunningTerminals = it }
+                )
+                .enabledIf(autoCloseTabs.selected)
+        }
+        separator()
+        row("When the agent finishes before you act on a nudge:") {
+            comboBox(ChatInputSettings.UnhandledNudgeMode.entries.toList())
+                .comment(
+                    "\"Restore into chat input\" prepends the unsent nudge to the input area instead of firing it."
+                )
+                .applyToComponent {
+                    renderer =
+                        com.intellij.ui.SimpleListCellRenderer.create<ChatInputSettings.UnhandledNudgeMode>("") { value ->
+                            when (value) {
+                                ChatInputSettings.UnhandledNudgeMode.AUTO_SEND -> "Auto-send as a new prompt"
+                                ChatInputSettings.UnhandledNudgeMode.RESTORE_INTO_INPUT -> "Restore into chat input"
+                            }
+                        }
+                }
+                .bindItem(
+                    { s.unhandledNudgeMode },
+                    { s.unhandledNudgeMode = it ?: ChatInputSettings.UnhandledNudgeMode.AUTO_SEND }
+                )
+        }
+        separator()
+        row("Reprimand nudges:") {
+            comboBox(ChatInputSettings.ReprimandNudgeMode.entries.toList())
+                .comment(
+                    "Controls auto-sent nudges that correct the agent when it calls a built-in tool " +
+                        "instead of the MCP equivalent. " +
+                        "\"Send silently\" injects the correction without showing a bubble in the chat."
+                )
+                .applyToComponent {
+                    renderer =
+                        com.intellij.ui.SimpleListCellRenderer.create<ChatInputSettings.ReprimandNudgeMode>("") { value ->
+                            when (value) {
+                                ChatInputSettings.ReprimandNudgeMode.ENABLED -> "Enabled"
+                                ChatInputSettings.ReprimandNudgeMode.SEND_SILENTLY -> "Send silently"
+                                ChatInputSettings.ReprimandNudgeMode.DISABLED -> "Disabled"
+                                null -> "Enabled"
+                            }
+                        }
+                }
+                .bindItem(
+                    { s.reprimandNudgeMode },
+                    { s.reprimandNudgeMode = it ?: ChatInputSettings.ReprimandNudgeMode.ENABLED }
+                )
+        }
+        separator()
+        row {
+            checkBox("Auto-pause when chat input is focused")
+                .comment(
+                    "Automatically pauses the agent when you click into the chat input, " +
+                        "and resumes when the input loses focus."
+                )
+                .bindSelected({ s.isPauseOnInputFocus() }, { s.setPauseOnInputFocus(it) })
+        }
+        row {
+            checkBox("Show OS notifications when the agent finishes a turn")
+                .comment("Display a balloon notification and request attention when the IDE is not focused.")
+                .bindSelected({ s.isEnableResponseNotifications }, { s.isEnableResponseNotifications = it })
+        }
+        row {
+            checkBox("Auto-commit after each turn if all changes are approved")
+                .comment("Automatically triggers a commit turn when the agent finishes and there are approved files but no pending ones.")
+                .bindSelected({ mcp.isAutoCommit }, { mcp.isAutoCommit = it })
+        }
+        row {
+            checkBox("Suggest git initialization if project has no version control")
+                .comment("Shows a notification when connecting to an agent if git is missing, with an option to initialize it automatically.")
+                .bindSelected({ mcp.isSuggestGitInit }, { mcp.isSuggestGitInit = it })
+        }
+        separator()
+        row("Side panel position:") {
+            comboBox(SidePanelPosition.entries.toList())
+                .bindItem({ s.getSidePanelPosition() }, { s.setSidePanelPosition(it ?: SidePanelPosition.LEFT) })
         }
         separator()
         row {
             comment("Version ${BuildInfo.getVersion()}  ·  ${BuildInfo.getGitHash()}")
         }
+        onApply {
+            val chatContent = ChatToolWindowContent.getInstance(project)
+            chatContent?.setSoftWrapsEnabled(s.isSoftWrapsEnabled)
+            chatContent?.setShortcutHintsVisible()
+            chatContent?.updateSidePanelLayout()
+        }
     }
-
-    override fun isModified(): Boolean = false
-
-    // No mutable state on this page; child Configurables own all persisted settings.
-    override fun apply() = Unit
-    override fun reset() = Unit
 }
 
 /**
@@ -79,6 +251,6 @@ class PluginSettingsConfigurable @Suppress("unused") constructor(
 fun openAgentBridgeSettings(project: Project) {
     ApplicationManager.getApplication().invokeLater {
         ShowSettingsUtil.getInstance()
-            .showSettingsDialog(project, ChatInputConfigurable::class.java)
+            .showSettingsDialog(project, PluginSettingsConfigurable::class.java)
     }
 }
