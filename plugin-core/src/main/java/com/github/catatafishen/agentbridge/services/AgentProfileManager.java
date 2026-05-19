@@ -10,6 +10,7 @@ import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.util.SystemProperties;
+import com.intellij.util.messages.Topic;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -31,6 +32,13 @@ import java.util.Map;
 @Service(Service.Level.APP)
 @State(name = "AgentProfileOverrides", storages = @Storage("ideAgentProfiles.xml"))
 public final class AgentProfileManager implements PersistentStateComponent<AgentProfileManager.PersistedState> {
+
+    public static final Topic<AgentProfileListener> TOPIC =
+        Topic.create("Agent Profile Updates", AgentProfileListener.class);
+
+    public interface AgentProfileListener {
+        void profileChanged(@NotNull String profileId);
+    }
 
     public static final String COPILOT_PROFILE_ID = "copilot";
     public static final String OPENCODE_PROFILE_ID = "opencode";
@@ -184,6 +192,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         AgentProfile profile = profiles.get(agentId);
         if (profile == null) return;
         profile.setCustomBinaryPath(path != null ? path.trim() : "");
+        ApplicationManager.getApplication().getMessageBus().syncPublisher(TOPIC).profileChanged(agentId);
     }
 
     /**

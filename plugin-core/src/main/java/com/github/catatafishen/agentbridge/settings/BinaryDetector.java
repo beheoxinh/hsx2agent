@@ -91,15 +91,46 @@ public class BinaryDetector {
     }
 
     /**
-     * Find ALL absolute paths to a binary across the user's PATH.
-     * On Unix, scans PATH directories directly (equivalent to {@code which -a}).
-     * On Windows, scans all PATH directories with PATHEXT extensions.
+     * Find ALL absolute paths to a binary across the user's PATH, common system directories,
+     * and using OS-native detection tools like 'whereis'.
      *
      * @param binaryName Name of the binary to find
      * @return list of absolute paths (may be empty, never null)
      */
     @NotNull
     public static List<String> findAllBinaryPaths(@NotNull String binaryName) {
+        List<String> results = new java.util.ArrayList<>();
+
+        // 1. Scan PATH
+        results.addAll(findOnPath(binaryName));
+
+        // 2. Scan hardcoded system locations (non-Windows)
+        if (!isWindows()) {
+            results.addAll(findInCommonSystemLocations(binaryName));
+            results.addAll(findUsingNativeTools(binaryName));
+        }
+
+        // Deduplicate results by canonical path
+        List<String> uniqueResults = new java.util.ArrayList<>();
+        for (String path : results) {
+            try {
+                String canonical = new File(path).getCanonicalPath();
+                if (!uniqueResults.contains(canonical)) {
+                    uniqueResults.add(canonical);
+                }
+            } catch (Exception e) {
+                if (!uniqueResults.contains(path)) uniqueResults.add(path);
+            }
+        }
+
+        if (uniqueResults.size() > 1) {
+            LOG.info("Found " + uniqueResults.size() + " binaries for '" + binaryName + "': " + uniqueResults);
+        }
+        return uniqueResults;
+    }
+
+    @NotNull
+    private static List<String> findOnPath(@NotNull String binaryName) {
         Map<String, String> env = ShellEnvironment.getEnvironment();
         String pathVar;
         if (isWindows()) {
@@ -125,10 +156,75 @@ public class BinaryDetector {
         } else {
             collectFromDirs(dirs, binaryName, results);
         }
+        return results;
+    }
 
-        if (results.size() > 1) {
-            LOG.info("Found " + results.size() + " binaries for '" + binaryName + "': " + results);
+    @NotNull
+    private static List<String> findInCommonSystemLocations(@NotNull String binaryName) {
+        List<String> results = new java.util.ArrayList<>();
+        String[] commonDirs;
+
+        if (SystemInfo.isLinux) {
+            commonDirs = new String[]{
+                "/usr/bin", "/usr/local/bin", "/opt/bin", "/bin",
+                System.getProperty("user.home") + "/.local/bin",
+                System.getProperty("user.home") + "/bin"
+            };
+        } else if (SystemInfo.isMac) {
+            commonDirs = new String[]{
+                "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"
+            };
+        } else {
+            return results;
         }
+
+        collectFromDirs(commonDirs, binaryName, results);
+        return results;
+    }
+
+    @NotNull
+    private static List<String> findUsingNativeTools(@NotNull String binaryName) {
+        List<String> results = new java.util.ArrayList<>();
+
+        if (isWindows()) {
+            // Try 'where' on Windows
+            String output = runCommand(List.of("where", binaryName), 2);
+            if (output != null) {
+                for (String path : output.split("\n")) {
+                    String trimmed = path.trim();
+                    if (!trimmed.isEmpty() && new File(trimmed).isAbsolute() && new File(trimmed).isFile()) {
+                        results.add(trimmed);
+                    }
+                }
+            }
+            return results;
+        }
+
+        // Try 'whereis' on Unix - returns multiple paths often
+        String output = runCommand(List.of("whereis", "-b", binaryName), 2);
+        if (output != null && output.contains(":")) {
+            String[] parts = output.split(":", 2);
+            if (parts.length > 1) {
+                for (String path : parts[1].trim().split("\\s+")) {
+                    String trimmed = path.trim();
+                    if (!trimmed.isEmpty() && new File(trimmed).isAbsolute() && new File(trimmed).isFile()) {
+                        results.add(trimmed);
+                    }
+                }
+            }
+        }
+
+        // Try 'which -a' as well for redundancy
+        String whichOutput = runCommand(List.of("which", "-a", binaryName), 2);
+        if (whichOutput != null) {
+            for (String path : whichOutput.split("\n")) {
+                String trimmed = path.trim();
+                if (!trimmed.isEmpty() && new File(trimmed).isAbsolute() && new File(trimmed).isFile()) {
+                    results.add(trimmed);
+                }
+            }
+        }
+
         return results;
     }
 

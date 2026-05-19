@@ -3,10 +3,14 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.BuildInfo
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.*
+import com.github.catatafishen.agentbridge.services.AgentProfileManager.AgentProfileListener
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
 import com.github.catatafishen.agentbridge.session.db.ConversationListener
 import com.github.catatafishen.agentbridge.session.db.ConversationService
+import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings
+import com.github.catatafishen.agentbridge.settings.BinaryDetector
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
+import com.github.catatafishen.agentbridge.settings.SmartAgentDetector
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
@@ -96,6 +100,7 @@ class AcpConnectPanel(
     // ACP controls
     private var acpSection: JComponent = JBPanel<JBPanel<*>>()
     private val profileCombo = ComboBox<AgentProfile>()
+    private val profileStatusIcon = JBLabel()
     private val sessionCombo = ComboBox<SessionChoice>()
     private val connectButton = JButton("Connect")
     private val connectSpinner = AsyncProcessIcon("acp-connect").apply {
@@ -168,6 +173,11 @@ class AcpConnectPanel(
         val mcpServerControl = McpServerControl.getInstance(project)
         if (mcpSettings.isAutoStart && mcpServerControl != null && !mcpServerControl.isRunning) {
             showAutoStartLoading()
+        }
+
+        // Smart agent binary detection on first run
+        if (!AgentBridgeStorageSettings.getInstance().state.isAgentBinaryDetectionRun) {
+            SmartAgentDetector(project).detectAllInBackground(false)
         }
     }
 
@@ -347,7 +357,60 @@ class AcpConnectPanel(
         }
         profileCombo.alignmentX = LEFT_ALIGNMENT
         profileCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
-        return profileCombo
+        profileCombo.addActionListener { updateProfileStatus() }
+
+        val panel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
+        }
+        panel.add(profileCombo, BorderLayout.CENTER)
+
+        val searchButton = InplaceButton("Search for installed agents", AllIcons.Actions.FindAndShowNextMatches) {
+            SmartAgentDetector(project).detectAllInBackground(true)
+        }.apply {
+            accessibleContext.accessibleName = "Search for installed agents"
+        }
+
+        val eastPanel = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            add(Box.createHorizontalStrut(JBUI.scale(8)))
+            add(profileStatusIcon)
+            add(Box.createHorizontalStrut(JBUI.scale(8)))
+            add(searchButton)
+        }
+        panel.add(eastPanel, BorderLayout.EAST)
+
+        updateProfileStatus()
+        return panel
+    }
+
+    private fun updateProfileStatus() {
+        val profile = profileCombo.selectedItem as? AgentProfile ?: return
+        val customPath = profile.customBinaryPath
+        val binaryName = profile.binaryName
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val exists = if (customPath.isNotBlank()) {
+                val file = java.io.File(customPath)
+                file.exists() && file.isFile
+            } else if (binaryName.isNotBlank()) {
+                BinaryDetector.findBinaryPath(binaryName) != null
+            } else {
+                false
+            }
+
+            ApplicationManager.getApplication().invokeLater {
+                if (exists) {
+                    profileStatusIcon.icon = AllIcons.General.InspectionsOK
+                    profileStatusIcon.toolTipText = "Binary found: ${customPath.ifBlank { binaryName }}"
+                } else {
+                    profileStatusIcon.icon = AllIcons.General.Error
+                    profileStatusIcon.toolTipText = "Binary not found. Use the auto-detect button or check Settings."
+                }
+            }
+        }
     }
 
     private fun refreshProfileCombo() {
@@ -447,6 +510,17 @@ class AcpConnectPanel(
             object : ConversationListener {
                 override fun historyChanged(allHistoryCleared: Boolean) {
                     ApplicationManager.getApplication().invokeLater { refreshSessionCombo() }
+                }
+            })
+
+        connection.subscribe(
+            AgentProfileManager.TOPIC,
+            AgentProfileListener { profileId ->
+                ApplicationManager.getApplication().invokeLater {
+                    val currentProfile = profileCombo.selectedItem as? AgentProfile
+                    if (currentProfile?.id == profileId) {
+                        updateProfileStatus()
+                    }
                 }
             })
     }
@@ -760,6 +834,7 @@ class AcpConnectPanel(
             acpAutoConnectCheckbox.isSelected = agentManager.isAutoConnect
             refreshProfileCombo()
             refreshSessionCombo()
+            updateProfileStatus()
         }
     }
 

@@ -179,6 +179,7 @@ public final class AgentBridgeStorageSettings
         private String customStorageRoot = null;
         private StorageLocationMode storageLocationMode = null;
         private boolean toolStatsEnabled = true;
+        private boolean agentBinaryDetectionRun = false;
 
         public String getCustomStorageRoot() {
             return customStorageRoot;
@@ -202,6 +203,14 @@ public final class AgentBridgeStorageSettings
 
         public void setToolStatsEnabled(boolean toolStatsEnabled) {
             this.toolStatsEnabled = toolStatsEnabled;
+        }
+
+        public boolean isAgentBinaryDetectionRun() {
+            return agentBinaryDetectionRun;
+        }
+
+        public void setAgentBinaryDetectionRun(boolean agentBinaryDetectionRun) {
+            this.agentBinaryDetectionRun = agentBinaryDetectionRun;
         }
     }
 }
