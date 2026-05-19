@@ -7,10 +7,6 @@ import com.intellij.openapi.util.IconLoader
 import javax.swing.Icon
 
 object AgentIconProvider {
-    @JvmField
-    val ICON: Icon = com.intellij.util.IconUtil.toSize(loadIcon("agentbridge.svg"), 16, 16)
-
-    private val defaultIcon: Icon = ICON
     private val claudeIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("claude.svg"), 16, 16)
     private val copilotIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("copilot.svg"), 16, 16)
     private val opencodeIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("opencode.svg"), 16, 16)
@@ -19,11 +15,9 @@ object AgentIconProvider {
     private val codexIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("codex.svg"), 16, 16)
     private val hermesIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("hermes.svg"), 16, 16)
 
-    fun getDefaultIcon(): Icon = defaultIcon
-
-    fun getIcon(name: String?): Icon {
-        if (name == null) return defaultIcon
-        return getIconForProfile(name) ?: getIconForDisplayName(name) ?: defaultIcon
+    fun getIcon(name: String?): Icon? {
+        if (name == null) return null
+        return getIconForProfile(name) ?: getIconForDisplayName(name)
     }
 
     private fun getIconForDisplayName(name: String): Icon? {
