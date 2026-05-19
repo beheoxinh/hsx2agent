@@ -8,6 +8,7 @@ import com.github.catatafishen.agentbridge.session.db.ConversationQuery
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.ui.ChatTheme
+import com.github.catatafishen.agentbridge.ui.ToolCallPopup
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
@@ -34,6 +35,8 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     private var serviceListener: ChangeListener? = null
     private var diffQuery: JBCefJSQuery? = null
     private var loadMoreQuery: JBCefJSQuery? = null
+
+    private var showPopupQuery: JBCefJSQuery? = null
 
     init {
         if (JBCefApp.isSupported()) {
@@ -69,6 +72,16 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             }
             Disposer.register(this, loadMore)
             loadMoreQuery = loadMore
+
+            val showPopup = PlatformApiCompat.createJSQuery(browser)
+            showPopup.addHandler { toolCallId ->
+                ApplicationManager.getApplication().invokeLater({
+                    ToolCallPopup.show(project, toolCallId, browser.component)
+                }, com.intellij.openapi.application.ModalityState.any())
+                null
+            }
+            Disposer.register(this, showPopup)
+            showPopupQuery = showPopup
 
             browser.jbCefClient.addLoadHandler(object : CefLoadHandlerAdapter() {
                 override fun onLoadEnd(cefBrowser: CefBrowser, frame: CefFrame, httpStatusCode: Int) {
@@ -128,6 +141,13 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             browser?.cefBrowser?.executeJavaScript(
                 "window.loadMoreToolCalls = function(beforeEventId) { " +
                     query.inject("beforeEventId || ''") + " };",
+                "", 0
+            )
+        }
+        showPopupQuery?.let { query ->
+            browser?.cefBrowser?.executeJavaScript(
+                "window.showToolPopup = function(id) { " +
+                    query.inject("id") + " };",
                 "", 0
             )
         }

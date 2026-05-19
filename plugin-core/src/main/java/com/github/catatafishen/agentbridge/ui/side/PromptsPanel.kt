@@ -571,7 +571,7 @@ internal class PromptsPanel(
         ApplicationManager.getApplication().executeOnPooledThread {
             val branches = sessionStore.listDistinctBranches().toList()
             val agents = sessionStore.listDistinctAgents().toList()
-            val tools = ToolRegistry.getInstance(project).allTools.map { it.id() }
+            val toolsByCategory = ToolRegistry.getInstance(project).allTools.groupBy { it.category() }
             ApplicationManager.getApplication().invokeLater {
                 allBranches = branches
                 updateBranchPopup("")
@@ -587,8 +587,14 @@ internal class PromptsPanel(
                 val selectedTool = toolCombo.selectedItem as? String
                 toolModel.removeAllElements()
                 toolModel.addElement(ALL_TOOLS)
-                tools.forEach { toolModel.addElement(it) }
-                if (selectedTool != null && selectedTool != ALL_TOOLS) {
+
+                for (category in ToolRegistry.Category.entries) {
+                    val tools = toolsByCategory[category] ?: continue
+                    toolModel.addElement("--- ${category.displayName.uppercase(Locale.ROOT)} ---")
+                    tools.forEach { toolModel.addElement(it.id()) }
+                }
+
+                if (selectedTool != null && selectedTool != ALL_TOOLS && !selectedTool.startsWith("--- ")) {
                     toolCombo.selectedItem = selectedTool
                 }
             }
@@ -649,7 +655,7 @@ internal class PromptsPanel(
         val tool = toolCombo.selectedItem as? String
         return (branch.isNotEmpty() && branch != ALL_BRANCHES) ||
             (agent != null && agent != ALL_AGENTS) ||
-            (tool != null && tool != ALL_TOOLS) ||
+            (tool != null && tool != ALL_TOOLS && !tool.startsWith("--- ")) ||
             fileField.text.isNotBlank()
     }
 
@@ -674,7 +680,7 @@ internal class PromptsPanel(
         val branch = (branchCombo.editor?.item as? String)?.trim()
             ?.takeIf { it.isNotEmpty() && it != ALL_BRANCHES }
         val agent = (agentCombo.selectedItem as? String)?.takeIf { it != ALL_AGENTS }
-        val tool = (toolCombo.selectedItem as? String)?.takeIf { it != ALL_TOOLS }
+        val tool = (toolCombo.selectedItem as? String)?.takeIf { it != ALL_TOOLS && !it.startsWith("--- ") }
         val file = fileField.text.trim().takeIf { it.isNotEmpty() }
         val scopes = if (combinedText != null) buildSearchScopes() else null
 

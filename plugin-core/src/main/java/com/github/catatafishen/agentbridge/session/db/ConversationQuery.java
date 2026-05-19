@@ -579,6 +579,57 @@ public final class ConversationQuery {
         }
     }
 
+    @Nullable
+    public ToolCallHistoryEntry findToolCall(@NotNull String eventId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return null;
+            try {
+                String sql = """
+                    SELECT e.id, tc.tool_name, tc.display_name, tc.category,
+                           tc.arguments, tc.result, e.timestamp, tc.duration_ms,
+                           tc.success, tc.status
+                    FROM events e
+                    JOIN tool_call_events tc ON e.id = tc.event_id
+                    WHERE e.id = ?
+                    """;
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setString(1, eventId);
+                    ResultSet rs = ps.executeQuery();
+                    if (rs.next()) {
+                        String id = rs.getString(1);
+                        ToolCallHistoryEntry entry = new ToolCallHistoryEntry(
+                            id,
+                            rs.getString(2),
+                            nullToEmpty(rs.getString(3)).isEmpty()
+                                ? rs.getString(2) : nullToEmpty(rs.getString(3)),
+                            rs.getString(4),
+                            rs.getString(5),
+                            rs.getString(6),
+                            parseInstant(rs.getString(7)),
+                            rs.getLong(8),
+                            rs.getInt(9) != 0,
+                            rs.getString(10),
+                            false, List.of()
+                        );
+
+                        Map<String, List<HookStageEntry>> hookMap = loadHookStagesBatch(conn, List.of(id));
+                        List<HookStageEntry> hooks = hookMap.getOrDefault(id, List.of());
+
+                        return new ToolCallHistoryEntry(
+                            entry.eventId(), entry.toolName(), entry.displayName(), entry.category(),
+                            entry.arguments(), entry.result(), entry.timestamp(), entry.durationMs(),
+                            entry.success(), entry.status(), !hooks.isEmpty(), hooks
+                        );
+                    }
+                }
+            } catch (SQLException e) {
+                LOG.warn("Failed to find tool call " + eventId, e);
+            }
+            return null;
+        }
+    }
+
     @NotNull
     private Map<String, List<HookStageEntry>> loadHookStagesBatch(
         @NotNull Connection conn, @NotNull List<String> eventIds) throws SQLException {

@@ -1,5 +1,11 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.services.LiveToolCallEntry
+import com.github.catatafishen.agentbridge.services.LiveToolCallService
+import com.github.catatafishen.agentbridge.services.ToolRegistry
+import com.github.catatafishen.agentbridge.session.db.ConversationQuery
+import com.github.catatafishen.agentbridge.session.db.ConversationService
+import com.github.catatafishen.agentbridge.ui.renderers.ArgumentAwareRenderer
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
@@ -14,6 +20,8 @@ import java.awt.*
 import javax.swing.*
 
 internal object ToolCallPopup {
+
+    private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(ToolCallPopup::class.java)
 
     private var currentPopup: com.intellij.openapi.ui.popup.JBPopup? = null
 
@@ -41,6 +49,218 @@ internal object ToolCallPopup {
 
     private fun popupWidth() = JBUI.scale(650)
     private fun popupHeight() = JBUI.scale(420)
+
+    fun show(project: Project, toolCallId: String, contextComponent: Component) {
+        val liveId = toolCallId.toLongOrNull()
+        if (liveId != null) {
+            val entry = LiveToolCallService.getInstance(project).entries.find { it.callId() == liveId }
+            if (entry != null) {
+                show(fromLiveEntry(project, entry))
+                return
+            }
+        }
+
+        // Try historic
+        val service = ConversationService.getInstance(project)
+        val query =
+            ConversationQuery(com.github.catatafishen.agentbridge.session.db.ConversationDatabase.getInstance(project))
+        val historic = query.findToolCall(toolCallId)
+        if (historic != null) {
+            show(fromHistoricEntry(project, historic))
+        }
+    }
+
+    private fun fromLiveEntry(project: Project, entry: LiveToolCallEntry): Request {
+        val registry = ToolRegistry.getInstance(project)
+        val toolDef = registry.findById(entry.toolName())
+        val kind = toolDef?.kind()?.value() ?: entry.category() ?: "other"
+        val mcpDescription = if (toolDef != null && !toolDef.isBuiltIn) toolDef.description() else null
+
+        val title = toolChipTitle(project, entry.toolName(), entry.input())
+        val paramsPanel = if (!entry.input().isNullOrBlank()) {
+            ToolRenderers.jsonEditor(ToolCallArgParser.prettyJson(entry.input()), project)
+        } else null
+
+        val status = when {
+            entry.isRunning -> "running"
+            entry.success() == true -> "success"
+            else -> "failed"
+        }
+
+        val resultPanel = renderToolResultPanel(
+            project,
+            entry.toolName(),
+            status,
+            entry.output(),
+            entry.input(),
+            null, // live entries don't have description in the entry itself
+            false, // TODO: handle auto-denied in live service
+            null
+        )
+
+        return Request(
+            project = project,
+            title = title,
+            kind = kind,
+            paramsPanel = paramsPanel,
+            resultPanel = resultPanel,
+            toolDescription = mcpDescription,
+            failed = status == "failed",
+            hookStages = entry.hookStages().toList()
+        )
+    }
+
+    private fun fromHistoricEntry(project: Project, entry: ConversationQuery.ToolCallHistoryEntry): Request {
+        val registry = ToolRegistry.getInstance(project)
+        val toolDef = registry.findById(entry.toolName())
+        val kind = toolDef?.kind()?.value() ?: entry.category() ?: "other"
+        val mcpDescription = if (toolDef != null && !toolDef.isBuiltIn) toolDef.description() else null
+
+        val title = toolChipTitle(project, entry.toolName(), entry.arguments())
+        val paramsPanel = if (!entry.arguments().isNullOrBlank()) {
+            ToolRenderers.jsonEditor(ToolCallArgParser.prettyJson(entry.arguments()!!), project)
+        } else null
+
+        val resultPanel = renderToolResultPanel(
+            project,
+            entry.toolName(),
+            entry.status() ?: if (entry.success()) "success" else "failed",
+            entry.result(),
+            entry.arguments(),
+            null,
+            false,
+            null
+        )
+
+        return Request(
+            project = project,
+            title = title,
+            kind = kind,
+            paramsPanel = paramsPanel,
+            resultPanel = resultPanel,
+            toolDescription = mcpDescription,
+            failed = !entry.success() || entry.status() == "failed",
+            hookStages = entry.hookStages().map {
+                com.github.catatafishen.agentbridge.services.hooks.HookStageResult(
+                    it.trigger(), it.scriptName(), it.outcome(), it.durationMs(), it.detail()
+                )
+            }
+        )
+    }
+
+    private fun toolChipTitle(project: Project, baseName: String?, arguments: String?): String {
+        if (baseName == null) return "Tool Call"
+        val clean = baseName.trim('\'', '"')
+        val toolDef = ToolRegistry.getInstance(project).findById(clean)
+        val display = toolDef?.displayName() ?: clean.replaceFirstChar { it.uppercaseChar() }
+        val subtitle = formatToolSubtitle(clean, arguments)
+        return if (subtitle != null) "$display — $subtitle" else display
+    }
+
+    private fun formatToolSubtitle(toolName: String, arguments: String?): String? {
+        if (arguments.isNullOrBlank()) return null
+        return try {
+            val json = com.google.gson.JsonParser.parseString(arguments).asJsonObject
+            when (toolName) {
+                "read_file", "write_file", "create_file", "edit_text", "patch", "git_blame", "git_show", "git_diff" ->
+                    json["path"]?.asString ?: json["file"]?.asString
+
+                "run_command", "bash" -> json["title"]?.asString ?: json["command"]?.asString
+                "run_tests" -> json["target"]?.asString
+                "run_configuration" -> json["name"]?.asString
+                "search_text", "grep" -> json["query"]?.asString
+                "search_symbols", "go_to_declaration", "find_references", "find_implementations" -> json["symbol"]?.asString
+                    ?: json["query"]?.asString
+
+                else -> null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun renderToolResultPanel(
+        project: Project,
+        baseName: String?,
+        status: String?,
+        details: String?,
+        arguments: String? = null,
+        description: String? = null,
+        autoDenied: Boolean = false,
+        denialReason: String? = null
+    ): JComponent {
+        val container = ToolRenderers.listPanel()
+
+        if (autoDenied) {
+            container.add(JBLabel("<html><body style='width: 450px'><span style='color: #FF0000; font-weight: bold;'>Tool call was automatically denied.</span><br/>Reason: ${denialReason ?: "Security policy"}</body></html>").apply {
+                border = JBUI.Borders.emptyBottom(8)
+                alignmentX = Component.LEFT_ALIGNMENT
+            })
+        }
+
+        if (!description.isNullOrBlank()) {
+            val html = FileNavigator(project).markdownToHtml(description)
+            container.add(JBLabel("<html><body style='width: 450px'>$html</body></html>").apply {
+                border = JBUI.Borders.emptyBottom(8)
+                alignmentX = Component.LEFT_ALIGNMENT
+            })
+        }
+
+        if (status == "failed") {
+            val label = JBLabel("Error Details").apply {
+                foreground = JBColor.RED
+                font = JBUI.Fonts.label().asBold()
+                border = JBUI.Borders.emptyBottom(4)
+                alignmentX = Component.LEFT_ALIGNMENT
+            }
+            container.add(label)
+            container.add(ToolRenderers.codePanel(details ?: "Unknown error"))
+            return container
+        }
+
+        val finalDetails =
+            if (details.isNullOrBlank() && !arguments.isNullOrBlank()) "Parameters: $arguments" else details
+        if (finalDetails.isNullOrBlank()) {
+            val label = when (status) {
+                "running" -> "⏳ Running…"
+                else -> if (baseName != null) "Tool $baseName completed with no output." else "Completed"
+            }
+            container.add(JBLabel(label).apply {
+                foreground = UIUtil.getInactiveTextColor()
+                alignmentX = Component.LEFT_ALIGNMENT
+            })
+            return container
+        }
+
+        if (baseName != null) {
+            val registry = ToolRegistry.getInstance(project)
+            val renderer = ToolRenderers.get(baseName, registry)
+            if (renderer != null) {
+                try {
+                    val component = if (renderer is ArgumentAwareRenderer) {
+                        renderer.render(finalDetails, arguments)
+                    } else {
+                        renderer.render(finalDetails)
+                    }
+                    if (component != null) {
+                        container.add(component)
+                        return container
+                    }
+                } catch (e: Exception) {
+                    LOG.warn("Custom renderer $renderer failed", e)
+                }
+            }
+        }
+
+        val fallbackContent = if (ToolCallArgParser.isJson(finalDetails)) {
+            ToolRenderers.jsonEditor(ToolCallArgParser.prettyJson(finalDetails), project)
+        } else {
+            ToolRenderers.codeOrScratchPanel(finalDetails)
+        }
+        container.add(fallbackContent)
+
+        return container
+    }
 
     fun show(request: Request) {
         currentPopup?.cancel()
