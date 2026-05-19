@@ -492,43 +492,49 @@ public final class ConversationQuery {
 
     @NotNull
     public List<ToolCallHistoryEntry> loadToolCallHistory(int limit, @Nullable String beforeEventId) {
+        return loadToolCallHistory(limit, beforeEventId, null);
+    }
+
+    @NotNull
+    public List<ToolCallHistoryEntry> loadToolCallHistory(
+        int limit, @Nullable String beforeEventId, @Nullable String sessionId) {
         synchronized (database) {
             Connection conn = database.getConnection();
             if (conn == null) return List.of();
             try {
-                String sql;
-                if (beforeEventId != null) {
-                    // Stable cursor: (timestamp, event_id) tiebreaker avoids duplicates
-                    // when events share the same timestamp.
-                    sql = """
-                        SELECT e.id, tc.tool_name, tc.display_name, tc.category,
-                               tc.arguments, tc.result, e.timestamp, tc.duration_ms,
-                               tc.success, tc.status
-                        FROM events e
-                        JOIN tool_call_events tc ON e.id = tc.event_id
-                        WHERE tc.is_mcp = 1
-                          AND (e.timestamp, e.id) < (
-                              (SELECT timestamp FROM events WHERE id = ?), ?
-                          )
-                        ORDER BY e.timestamp DESC, e.id DESC
-                        LIMIT ?
-                        """;
-                } else {
-                    sql = """
-                        SELECT e.id, tc.tool_name, tc.display_name, tc.category,
-                               tc.arguments, tc.result, e.timestamp, tc.duration_ms,
-                               tc.success, tc.status
-                        FROM events e
-                        JOIN tool_call_events tc ON e.id = tc.event_id
-                        WHERE tc.is_mcp = 1
-                        ORDER BY e.timestamp DESC, e.id DESC
-                        LIMIT ?
-                        """;
+                StringBuilder sql = new StringBuilder();
+                sql.append("SELECT e.id, tc.tool_name, tc.display_name, tc.category, ")
+                    .append("tc.arguments, tc.result, e.timestamp, tc.duration_ms, ")
+                    .append("tc.success, tc.status ")
+                    .append("FROM events e ")
+                    .append("JOIN tool_call_events tc ON e.id = tc.event_id ");
+
+                if (sessionId != null) {
+                    sql.append("JOIN turns t ON e.turn_id = t.id ");
                 }
+
+                sql.append("WHERE tc.is_mcp = 1 ");
+
+                if (sessionId != null) {
+                    sql.append("AND t.session_id = ? ");
+                }
+
+                if (beforeEventId != null) {
+                    sql.append("AND (e.timestamp, e.id) < ( ")
+                        .append("  (SELECT timestamp FROM events WHERE id = ?), ? ")
+                        .append(") ");
+                }
+
+                sql.append("ORDER BY e.timestamp DESC, e.id DESC ")
+                    .append("LIMIT ?");
+
                 List<ToolCallHistoryEntry> result;
                 List<String> eventIds;
-                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                try (PreparedStatement ps = conn.prepareStatement(sql.toString())) {
                     int paramIdx = 1;
+                    if (sessionId != null) {
+                        ps.setString(paramIdx++, sessionId);
+                    }
                     if (beforeEventId != null) {
                         ps.setString(paramIdx++, beforeEventId);
                         ps.setString(paramIdx++, beforeEventId);

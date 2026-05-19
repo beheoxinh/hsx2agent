@@ -323,9 +323,18 @@ public final class ConversationService implements Disposable {
     @NotNull
     public List<ConversationQuery.ToolCallHistoryEntry> loadToolCallHistory(
         int limit, @Nullable String beforeEventId) {
+        return loadToolCallHistory(limit, beforeEventId, null);
+    }
+
+    /**
+     * Loads recent tool call history for a specific session.
+     */
+    @NotNull
+    public List<ConversationQuery.ToolCallHistoryEntry> loadToolCallHistory(
+        int limit, @Nullable String beforeEventId, @Nullable String sessionId) {
         ConversationDatabase db = getInitializedDbOrNull();
         if (db == null) return List.of();
-        return new ConversationQuery(db).loadToolCallHistory(limit, beforeEventId);
+        return new ConversationQuery(db).loadToolCallHistory(limit, beforeEventId, sessionId);
     }
 
     /**

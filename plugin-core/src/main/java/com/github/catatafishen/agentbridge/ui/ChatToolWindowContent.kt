@@ -340,6 +340,8 @@ class ChatToolWindowContent(
 
     private fun buildAndShowChatPanel() {
         LiveToolCallService.getInstance(project).clear()
+        sidePanel?.clearToolCalls()
+        sidePanel?.reloadToolCalls()
         val addSeparatorNow = {
             val ts = java.time.Instant.now().toString()
             consolePanel.setCurrentAgent(
@@ -481,6 +483,7 @@ class ChatToolWindowContent(
         try {
             agentManager.stop()
             resetSession()
+            sidePanel?.clearToolCalls()
         } catch (e: Exception) {
             LOG.warn("Error stopping agent", e)
         }
@@ -3297,6 +3300,7 @@ class ChatToolWindowContent(
             agentManager.getClient().clearPersistedSession()
         }
         resetSessionState()
+        sidePanel?.clearToolCalls()
         consolePanel.clear()
         consolePanel.showPlaceholder("New conversation started.")
         updateSessionInfo()

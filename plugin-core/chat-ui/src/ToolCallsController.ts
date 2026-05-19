@@ -124,6 +124,15 @@ const ToolCallsController = {
     },
 
     /**
+     * Clear EVERYTHING, including historic entries and the history-exhaustion flag.
+     */
+    clearAll(): void {
+        _items.clear();
+        _historyExhausted = false;
+        _notify();
+    },
+
+    /**
      * Get all entries as an array, sorted by timestamp descending (newest first).
      */
     getAll(): ToolCallData[] {

@@ -174,6 +174,18 @@ public final class SidePanel extends JPanel implements Disposable {
         selectTab(TAB_MCP);
     }
 
+    public void clearToolCalls() {
+        if (mcpPanel instanceof ToolCallsWebPanel) {
+            ((ToolCallsWebPanel) mcpPanel).clearAll();
+        }
+    }
+
+    public void reloadToolCalls() {
+        if (mcpPanel instanceof ToolCallsWebPanel) {
+            ((ToolCallsWebPanel) mcpPanel).reloadHistory();
+        }
+    }
+
     /**
      * Builds the MCP area (tool calls only; hooks pane intentionally hidden).
      */

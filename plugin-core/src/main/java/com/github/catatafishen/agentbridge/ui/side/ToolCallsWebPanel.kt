@@ -166,7 +166,8 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     private fun loadHistoryPage(beforeEventId: String?) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val service = ConversationService.getInstance(project)
-            val entries = service.loadToolCallHistory(HISTORY_PAGE_SIZE, beforeEventId)
+            val sessionId = service.getCurrentSessionId(project.basePath)
+            val entries = service.loadToolCallHistory(HISTORY_PAGE_SIZE, beforeEventId, sessionId)
             val registry = ToolRegistry.getInstance(project)
             if (entries.isEmpty()) {
                 ApplicationManager.getApplication().invokeLater {
@@ -200,6 +201,16 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             sb.append("ToolCallsController.upsert(").append(entryToJson(entry, registry)).append(");")
         }
         executeJs(sb.toString())
+    }
+
+    fun clearAll() {
+        executeJs("ToolCallsController.clearAll();")
+    }
+
+    fun reloadHistory() {
+        ApplicationManager.getApplication().invokeLater {
+            loadHistoryPage(null)
+        }
     }
 
     private fun executeJs(js: String) {
