@@ -353,6 +353,7 @@ class ChatToolWindowContent(
             appendNewEntries()
         }
         ensureSidePanelAvailable()
+        restoreSidePanelOpenState()
         if (!chatSessionInitialized) {
             archiveConversation()
             // Set agent color immediately so it is queued in pendingJs before the browser loads.
