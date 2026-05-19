@@ -2498,7 +2498,7 @@ class ChatToolWindowContent(
         }
         consolePanel.onContinueTurn = { _ ->
             ApplicationManager.getApplication().invokeLater {
-                val continueMsg = "tiếp tục những gì dang dở đã bị dừng ngang chừng"
+                val continueMsg = "Continue the unfinished response from where it was interrupted"
                 if (isSending) {
                     submitNudge(continueMsg, showBubble = false)
                 } else {
