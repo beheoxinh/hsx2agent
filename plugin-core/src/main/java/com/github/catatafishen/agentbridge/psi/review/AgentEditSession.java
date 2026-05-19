@@ -1206,7 +1206,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
                 .getInstance(project).expandReviewPanel();
         });
 
-        SystemNotifications.getInstance().notify("AgentBridge Notifications", title, body);
+        SystemNotifications.getInstance().notify("Hsx2Agent Notifications", title, body);
         AppIcon.getInstance().requestAttention(project, true);
 
         ChatWebServer webServer = ChatWebServer.getInstance(project);

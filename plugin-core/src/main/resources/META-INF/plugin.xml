@@ -348,7 +348,7 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
     </action>
     <action id="AgentBridge.ForceJcefRefresh"
             class="com.github.catatafishen.agentbridge.ui.ForceJcefRefreshAction"
-            text="AgentBridge: Force JCEF Refresh"
+            text="Hsx2Agent: Force JCEF Refresh"
             description="Diagnostic: force the chat panel to re-query its display scale and rebuild its OSR surface (recovers from monitor-switch freezes; issue #237)"/>
     <action id="AgentBridge.Review.RevertAgentEdits"
             class="com.github.catatafishen.agentbridge.psi.review.RevertAgentEditsAction"

@@ -34,7 +34,7 @@ public final class ChatToolWindowFactory implements ToolWindowFactory, DumbAware
         boolean isJbc = PlatformApiCompat.isJetBrainsClient();
         boolean isRds = PlatformApiCompat.isRemoteDevServer();
         boolean isRdb = PlatformApiCompat.isRemoteDevBackend();
-        LOG.info("AgentBridge tool window: prefix=" + prefix
+        LOG.info("Hsx2Agent tool window: prefix=" + prefix
             + " jcef=" + jcefSupported
             + " isJetBrainsClient=" + isJbc
             + " isRemoteDevServer=" + isRds
@@ -67,7 +67,7 @@ public final class ChatToolWindowFactory implements ToolWindowFactory, DumbAware
     private static JPanel buildThinClientPlaceholder() {
         JPanel panel = new JPanel(new GridBagLayout());
         JBLabel label = new JBLabel(
-            "<html><center>AgentBridge is running on the remote machine.<br>" +
+            "<html><center>Hsx2Agent is running on the remote machine.<br>" +
                 "The full chat UI is not available in the thin client.</center></html>"
         );
         label.setHorizontalAlignment(SwingConstants.CENTER);

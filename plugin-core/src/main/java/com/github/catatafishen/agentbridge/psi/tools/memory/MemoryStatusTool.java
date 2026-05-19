@@ -59,7 +59,7 @@ public final class MemoryStatusTool extends Tool {
         MemoryService memoryService = MemoryService.getInstance(project);
         MemoryStore store = memoryService.getStore();
         if (store == null) {
-            return "Error: Memory is not initialized. Enable it in Settings > AgentBridge > Memory.";
+            return "Error: Memory is not initialized. Enable it in Settings > Hsx2Agent > Memory.";
         }
 
         String wing = memoryService.getEffectiveWing();

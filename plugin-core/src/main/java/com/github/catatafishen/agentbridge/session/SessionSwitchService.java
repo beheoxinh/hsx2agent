@@ -441,7 +441,7 @@ public final class SessionSwitchService implements Disposable {
         JsonArray workspacePaths = new JsonArray();
         workspacePaths.add(basePath != null ? basePath : "");
         sessionJson.add(WORKSPACE_PATHS_KEY, workspacePaths);
-        sessionJson.addProperty("title", "Imported from AgentBridge");
+        sessionJson.addProperty("title", "Imported from Hsx2Agent");
         String ts = Instant.ofEpochMilli(epochMillis).toString();
         sessionJson.addProperty("createdAt", ts);
         sessionJson.addProperty("lastModifiedAt", ts);

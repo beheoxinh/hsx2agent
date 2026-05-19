@@ -43,7 +43,7 @@ public final class OpenCodeClientExporter {
     private static final Logger LOG = Logger.getInstance(OpenCodeClientExporter.class);
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private static final String OPENCODE_VERSION = "1.2.0";
-    private static final String IMPORTED_TITLE = "AgentBridge Session";
+    private static final String IMPORTED_TITLE = "Hsx2Agent Session";
     private static final String FIELD_INPUT = "input";
 
     private OpenCodeClientExporter() {

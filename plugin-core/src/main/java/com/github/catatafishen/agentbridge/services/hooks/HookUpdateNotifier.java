@@ -63,7 +63,7 @@ public final class HookUpdateNotifier {
                 : n + " hook files have plugin updates but were modified locally.";
 
             Notification notification = PlatformApiCompat.createNotification(
-                "AgentBridge hook update", content, NotificationType.WARNING);
+                "Hsx2Agent hook update", content, NotificationType.WARNING);
 
             notification.addAction(buildAction("Update all (overwrite my edits)", e -> {
                 overwriteAll(conflicts, hashes, hooksDir);

@@ -60,11 +60,11 @@ interface StateResponse {
 
 self.addEventListener('push', (e) => {
     e.waitUntil((async () => {
-        let title = 'AgentBridge';
+        let title = 'Hsx2Agent';
         let body = '';
         try {
             const data: PushData = e.data ? JSON.parse(e.data.text()) : {};
-            title = data.title || 'AgentBridge';
+            title = data.title || 'Hsx2Agent';
             if (data.seq) {
                 const r = await fetch('/state');
                 const st: StateResponse = await r.json();
@@ -122,7 +122,7 @@ self.addEventListener('message', (e) => {
         };
         if (data.actions?.length) opts.actions = data.actions;
         e.waitUntil(
-            self.registration.showNotification(data.title || 'AgentBridge', opts),
+            self.registration.showNotification(data.title || 'Hsx2Agent', opts),
         );
     }
 });

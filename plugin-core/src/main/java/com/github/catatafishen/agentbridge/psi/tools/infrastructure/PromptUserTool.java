@@ -31,7 +31,7 @@ public final class PromptUserTool extends InfrastructureTool {
     private static final String PARAM_OPTIONS = "options";
     private static final String PARAM_TIMEOUT_MS = "timeout_ms";
     private static final long RESPONSE_TIMEOUT_MS = 120_000L;
-    private static final String NOTIFICATION_GROUP_ID = "AgentBridge Notifications";
+    private static final String NOTIFICATION_GROUP_ID = "Hsx2Agent Notifications";
 
     public PromptUserTool(Project project) {
         super(project);

@@ -15,7 +15,7 @@ public final class BundledAgentDeployer {
     private static final Logger LOG = Logger.getInstance(BundledAgentDeployer.class);
 
     private static final String SENTINEL =
-        "<!-- Deployed by AgentBridge — edits are preserved, delete to stop auto-deploy -->";
+        "<!-- Deployed by Hsx2Agent — edits are preserved, delete to stop auto-deploy -->";
 
     private static final Object LOCK = new Object();
 

@@ -126,7 +126,7 @@ public class ProfileBasedAgentConfig implements AgentConfig {
 
     @Override
     public @NotNull String getNotificationGroupId() {
-        return "AgentBridge Notifications";
+        return "Hsx2Agent Notifications";
     }
 
     @Override

@@ -516,8 +516,8 @@ public final class CopilotClient extends AcpClient {
             merge(allMcpToolIds(), WEB_TOOLS),
             """
                 You are running inside an IntelliJ IDEA plugin. All interactions with the
-                system go through AgentBridge MCP tools. You do NOT have direct access to
-                git, curl, gh, or any CLI tool — use the agentbridge equivalents instead.
+                system go through Hsx2Agent MCP tools. You do NOT have direct access to
+                git, curl, gh, or any CLI tool — use the Hsx2Agent equivalents instead.
 
                 IMPORTANT — use IntelliJ MCP tools, not shell commands, for the following:
                 - Git: use git_status, git_diff, git_log, git_commit, git_stage, git_branch, etc.
@@ -543,7 +543,7 @@ public final class CopilotClient extends AcpClient {
                 You are a read-only code analysis assistant running inside an IntelliJ IDEA
                 plugin. Your role is to explore, search, and explain the codebase — not to
                 make any changes. You do NOT have direct access to git, curl, gh, or any
-                CLI tool — use only the AgentBridge MCP tools provided.
+                CLI tool — use only the Hsx2Agent MCP tools provided.
 
                 Use IntelliJ tools for all exploration:
                 - read_file, list_project_files, get_file_outline for file content
@@ -565,7 +565,7 @@ public final class CopilotClient extends AcpClient {
                 You are a precise code editing assistant running inside an IntelliJ IDEA
                 plugin. Make targeted, minimal changes and verify them with build_project
                 or run_tests after each edit. You do NOT have direct access to git, curl,
-                gh, or any CLI tool — use only the AgentBridge MCP tools provided.
+                gh, or any CLI tool — use only the Hsx2Agent MCP tools provided.
 
                 IMPORTANT — use IntelliJ MCP tools, not shell commands:
                 - Git: use git_status, git_diff, git_commit, etc., not git via run_command.
@@ -659,11 +659,11 @@ public final class CopilotClient extends AcpClient {
 
         StringBuilder sb = new StringBuilder();
         sb.append("[System notice] ⚠️ ").append(consequence);
-        sb.append(" Use AgentBridge instead: ").append(equivalents).append(".");
+        sb.append(" Use Hsx2Agent instead: ").append(equivalents).append(".");
 
         if (count >= 2) {
             sb.append(" This is bypass #").append(count).append(" this session.")
-                .append(" ALL file reads/writes/commands MUST go through AgentBridge MCP tools.");
+                .append(" ALL file reads/writes/commands MUST go through Hsx2Agent MCP tools.");
         }
 
         return sb.toString();

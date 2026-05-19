@@ -68,7 +68,7 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
                 .comment(
                     "Strips non-essential entries from the process PATH so the agent CLI " +
                         "cannot detect tools like git, gh, or curl. This encourages the agent " +
-                        "to use AgentBridge MCP tools instead, which preserves IDE buffer sync, " +
+                        "to use Hsx2Agent MCP tools instead, which preserves IDE buffer sync, " +
                         "enables follow-agent visibility, and routes API calls through the " +
                         "plugin's identity hooks."
                 )

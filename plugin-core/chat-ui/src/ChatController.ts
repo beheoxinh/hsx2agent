@@ -985,7 +985,7 @@ const ChatController = {
             const popup = document.createElement('div');
             popup.className = 'nudge-info-tooltip';
             popup.innerHTML =
-                'AgentBridge automatically sent this nudge to correct the agent\u2019s tool usage. ' +
+                'Hsx2Agent automatically sent this nudge to correct the agent\u2019s tool usage. ' +
                 '<a class="nudge-settings-link" href="#">Open UI/UX settings</a>';
             popup.querySelector('.nudge-settings-link')!.addEventListener('click', (e: Event) => {
                 e.preventDefault();

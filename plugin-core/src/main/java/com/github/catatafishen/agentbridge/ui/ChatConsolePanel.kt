@@ -1512,7 +1512,7 @@ class ChatConsolePanel(
 
     /**
      * Manually trigger JCEF monitor-switch recovery. Exposed for the
-     * `AgentBridge: Force JCEF Refresh` diagnostic action — gives users a
+     * `Hsx2Agent: Force JCEF Refresh` diagnostic action — gives users a
      * recovery path when the panel renders with wrong DPI or freezes on
      * monitor switch (issue #237), without needing to restart the IDE.
      */

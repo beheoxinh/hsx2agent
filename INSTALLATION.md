@@ -49,17 +49,17 @@ After restart:
 
 1. Check if plugin is loaded:
     - **Settings → Plugins → Installed**
-    - Look for **"AgentBridge"** in the list
+    - Look for **"Hsx2Agent"** in the list
     - Status should be **✓ Enabled**
 
 2. Check for tool window:
-    - Look for **"AgentBridge"** in the right sidebar
-    - Or go to **View → Tool Windows → AgentBridge**
+    - Look for **"Hsx2Agent"** in the right sidebar
+    - Or go to **View → Tool Windows → Hsx2Agent**
 
 3. Check IDE logs for errors:
     - **Help → Show Log in Explorer**
     - Open `idea.log`
-    - Search for "AgentBridge" or "AcpClient"
+    - Search for "Hsx2Agent" or "AcpClient"
     - Look for any ERROR or WARN messages
 
 ---
@@ -68,7 +68,7 @@ After restart:
 
 #### 4.1 Open Tool Window
 
-1. Click **AgentBridge** in the right sidebar
+1. Click **Hsx2Agent** in the right sidebar
 2. Tool window should open with:
     - **Chat console** (conversation area)
     - **Toolbar** (agent selector, model selector, settings)
@@ -92,11 +92,11 @@ After restart:
 
 ### Plugin Not Appearing in Tool Windows
 
-**Symptom:** No "AgentBridge" tool window visible
+**Symptom:** No "Hsx2Agent" tool window visible
 
 **Solutions:**
 
-1. Check if plugin is enabled: **Settings → Plugins → AgentBridge** (should have checkmark)
+1. Check if plugin is enabled: **Settings → Plugins → Hsx2Agent** (should have checkmark)
 2. Restart IDE: **File → Invalidate Caches and Restart → Just Restart**
 3. Check logs for errors: `Help → Show Log in Explorer`
 
@@ -136,7 +136,7 @@ After restart:
 To remove the plugin:
 
 1. **Settings → Plugins**
-2. Find **AgentBridge**
+2. Find **Hsx2Agent**
 3. Click **⚙️ → Uninstall**
 4. Restart IDE
 

@@ -68,7 +68,7 @@ public final class MemoryWakeUpTool extends Tool {
         MemoryService memoryService = MemoryService.getInstance(project);
         MemoryStore store = memoryService.getStore();
         if (store == null) {
-            return "Memory not initialized. Enable in Settings > AgentBridge > Memory.";
+            return "Memory not initialized. Enable in Settings > Hsx2Agent > Memory.";
         }
 
         String wing = memoryService.getEffectiveWing();

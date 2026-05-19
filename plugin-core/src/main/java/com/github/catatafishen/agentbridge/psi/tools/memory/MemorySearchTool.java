@@ -88,7 +88,7 @@ public final class MemorySearchTool extends Tool {
         MemoryStore store = memoryService.getStore();
         EmbeddingService embedding = memoryService.getEmbeddingService();
         if (store == null || embedding == null) {
-            return "Error: Memory is not initialized. Enable it in Settings > AgentBridge > Memory.";
+            return "Error: Memory is not initialized. Enable it in Settings > Hsx2Agent > Memory.";
         }
 
         float[] queryEmbedding = embedding.embed(queryText);

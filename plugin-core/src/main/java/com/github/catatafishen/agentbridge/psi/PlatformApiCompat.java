@@ -366,7 +366,7 @@ public final class PlatformApiCompat {
     }
 
     /**
-     * Shows an IDE balloon notification in the "AgentBridge Notifications" group.
+     * Shows an IDE balloon notification in the "Hsx2Agent Notifications" group.
      *
      * <p><b>Why extracted:</b> {@code NotificationGroup.createNotification(String, String, NotificationType)}
      * — the 3-argument overload with a content string — is not resolved by the IDE daemon when the
@@ -399,7 +399,7 @@ public final class PlatformApiCompat {
     }
 
     /**
-     * Creates a notification in the "AgentBridge Notifications" group without showing it, so the
+     * Creates a notification in the "Hsx2Agent Notifications" group without showing it, so the
      * caller can add actions before calling {@code notification.notify(project)}.
      *
      * <p><b>Why extracted:</b> {@code NotificationGroup.createNotification(String, String, NotificationType)}
@@ -427,7 +427,7 @@ public final class PlatformApiCompat {
             com.intellij.notification.NotificationGroupManager.getInstance();
         com.intellij.notification.NotificationGroup group = manager.getNotificationGroup("Hsx2Agent Notifications");
         if (group != null) return group;
-        return manager.getNotificationGroup("AgentBridge Notifications");
+        return manager.getNotificationGroup("Hsx2Agent Notifications");
     }
 
     /**

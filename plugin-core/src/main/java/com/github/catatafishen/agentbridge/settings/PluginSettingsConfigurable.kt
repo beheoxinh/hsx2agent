@@ -45,7 +45,7 @@ class PluginSettingsConfigurable(private val project: Project) :
                     ShowSettingsUtil.getInstance().showSettingsDialog(
                         project,
                         { c -> c is SearchableConfigurable && "preferences.keymap" == c.id },
-                        { c -> if (c is SearchableConfigurable) c.enableSearch("AgentBridge")?.run() }
+                        { c -> if (c is SearchableConfigurable) c.enableSearch("Hsx2Agent")?.run() }
                     )
                 }
             }

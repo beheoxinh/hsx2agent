@@ -69,7 +69,7 @@ public final class MemoryKgInvalidateTool extends Tool {
         MemoryService memoryService = MemoryService.getInstance(project);
         KnowledgeGraph kg = memoryService.getKnowledgeGraph();
         if (kg == null) {
-            return "Error: Memory is not initialized. Enable it in Settings > AgentBridge > Memory.";
+            return "Error: Memory is not initialized. Enable it in Settings > Hsx2Agent > Memory.";
         }
 
         boolean invalidated = kg.invalidateTriple(tripleId);

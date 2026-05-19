@@ -80,7 +80,7 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     private static final int PROTOCOL_VERSION = 1;
     private static final String CLIENT_NAME = "AgentBridge";
-    private static final String CLIENT_TITLE = "AgentBridge for IntelliJ";
+    private static final String CLIENT_TITLE = "Hsx2Agent for IntelliJ";
     private static final String CLIENT_VERSION = "2.0.0";
     private static final String KEY_SESSION_ID = "sessionId";
     private static final String KEY_UPDATE = "update";
@@ -679,7 +679,7 @@ public abstract class AcpClient extends AbstractAgentClient {
                     + "Conversation history injection has been enabled as a fallback — "
                     + "a compressed summary of the previous session will be prepended to "
                     + "your first prompt. You can configure this in "
-                    + "Settings → AgentBridge → Chat History.",
+                    + "Settings → Hsx2Agent → Chat History.",
                 NotificationType.INFORMATION));
     }
 
@@ -1327,11 +1327,11 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (binaryPath.contains("/") || binaryPath.contains("\\")) {
             if (!new File(binaryPath).exists()) {
                 throw new IOException(displayName + " binary not found at: " + binaryPath + ". "
-                    + "Please install it or configure the correct path in Settings → Tools → AgentBridge → " + displayName);
+                    + "Please install it or configure the correct path in Settings → Tools → Hsx2Agent → " + displayName);
             }
         } else {
             throw new IOException(displayName + " binary '" + binaryPath + "' not found in PATH. "
-                + "Please install it or configure the path in Settings → Tools → AgentBridge → " + displayName);
+                + "Please install it or configure the path in Settings → Tools → Hsx2Agent → " + displayName);
         }
     }
 

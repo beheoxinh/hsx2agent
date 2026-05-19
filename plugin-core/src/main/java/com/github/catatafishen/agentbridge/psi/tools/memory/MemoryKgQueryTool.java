@@ -81,7 +81,7 @@ public final class MemoryKgQueryTool extends Tool {
         MemoryService memoryService = MemoryService.getInstance(project);
         KnowledgeGraph kg = memoryService.getKnowledgeGraph();
         if (kg == null) {
-            return "Error: Memory is not initialized. Enable it in Settings > AgentBridge > Memory.";
+            return "Error: Memory is not initialized. Enable it in Settings > Hsx2Agent > Memory.";
         }
 
         List<KgTriple> triples = kg.query(subject, predicate, object, limit);

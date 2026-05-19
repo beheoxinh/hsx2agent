@@ -266,7 +266,7 @@ class PromptOrchestrator(
         val title = agentManager.activeProfile.displayName
         val content = "Permission request: $toolDisplayName"
         com.intellij.notification.NotificationGroupManager.getInstance()
-            .getNotificationGroup("AgentBridge Notifications")
+            .getNotificationGroup("Hsx2Agent Notifications")
             ?.createNotification(title, content, com.intellij.notification.NotificationType.INFORMATION)
             ?.notify(project)
     }

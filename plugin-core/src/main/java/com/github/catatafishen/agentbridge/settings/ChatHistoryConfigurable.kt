@@ -67,7 +67,7 @@ class ChatHistoryConfigurable(private val project: Project) :
 
         row {
             comment(
-                "Conversation sessions stored in the AgentBridge sessions directory."
+                "Conversation sessions stored in the Hsx2Agent sessions directory."
             )
         }
         row { cell(summaryLabel) }
@@ -239,7 +239,7 @@ class ChatHistoryConfigurable(private val project: Project) :
         }
         if (failures.isNotEmpty()) {
             NotificationGroupManager.getInstance()
-                .getNotificationGroup("AgentBridge Notifications")
+                .getNotificationGroup("Hsx2Agent Notifications")
                 .createNotification(
                     "Failed to delete ${failures.size} file(s): ${failures.joinToString(", ")}",
                     NotificationType.WARNING

@@ -63,7 +63,7 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
         mainPanel = FormBuilder.createFormBuilder()
             .addComponent(
                 JBLabel(
-                    "<html><body style='width: 520px'>Configure where AgentBridge stores per-project data files " +
+                    "<html><body style='width: 520px'>Configure where Hsx2Agent stores per-project data files " +
                         "such as tool-call statistics and semantic memory.</body></html>"
                 )
             )
@@ -105,7 +105,7 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
         val mode = selectedMode()
         val customPath = customPathText()
         if (mode == StorageLocationMode.CUSTOM && customPath.isBlank()) {
-            throw ConfigurationException("Select a custom AgentBridge storage directory.")
+            throw ConfigurationException("Select a custom Hsx2Agent storage directory.")
         }
         settings.storageLocationMode = mode
         settings.customStorageRoot = customPath.ifBlank { null }
@@ -139,9 +139,9 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
 
     private fun createCustomPathField(): TextFieldWithBrowseButton {
         val descriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor()
-            .withTitle("Select AgentBridge Storage Directory")
+            .withTitle("Select Hsx2Agent Storage Directory")
             .withDescription(
-                "AgentBridge per-project data files such as tool-call statistics and semantic memory " +
+                "Hsx2Agent per-project data files such as tool-call statistics and semantic memory " +
                     "will be stored under this directory."
             )
         return TextFieldWithBrowseButton().apply {

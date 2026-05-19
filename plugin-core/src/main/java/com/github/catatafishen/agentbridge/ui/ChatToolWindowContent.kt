@@ -2058,7 +2058,7 @@ class ChatToolWindowContent(
 
     /** Toolbar button that opens the plugin settings. */
     private inner class SettingsAction : AnAction(
-        "Settings", "Open AgentBridge settings",
+        "Settings", "Open Hsx2Agent settings",
         AllIcons.General.Settings
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
@@ -3332,7 +3332,7 @@ class ChatToolWindowContent(
                     com.intellij.openapi.ui.MessageType.INFO,
                     "<b>$title</b><br>$content"
                 )
-            com.intellij.ui.SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content)
+            com.intellij.ui.SystemNotifications.getInstance().notify("Hsx2Agent Notifications", title, content)
             com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
         }
     }

@@ -13,11 +13,11 @@ public final class AgentBridgeService implements Disposable {
     private static final Logger LOG = Logger.getInstance(AgentBridgeService.class);
 
     public AgentBridgeService() {
-        LOG.info("AgentBridge Service initialized");
+        LOG.info("Hsx2Agent Service initialized");
     }
 
     @Override
     public void dispose() {
-        LOG.info("AgentBridge Service disposed");
+        LOG.info("Hsx2Agent Service disposed");
     }
 }

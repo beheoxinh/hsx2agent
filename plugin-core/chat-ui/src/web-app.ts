@@ -605,7 +605,7 @@ fetch('/state')
 
 function processEvent(ev: SseEvent, replaying: boolean): void {
     if (ev.notification) {
-        if (!replaying) showNotification(ev.title || 'AgentBridge', ev.body || '');
+        if (!replaying) showNotification(ev.title || 'Hsx2Agent', ev.body || '');
         return;
     }
     if (ev.js) {

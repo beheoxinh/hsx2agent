@@ -517,7 +517,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private void initialize() throws AgentException {
         JsonObject clientInfo = new JsonObject();
         clientInfo.addProperty("name", "intellij-copilot-plugin");
-        clientInfo.addProperty("title", "IntelliJ AgentBridge");
+        clientInfo.addProperty("title", "IntelliJ Hsx2Agent");
         clientInfo.addProperty("version", "1.0.0");
         JsonObject capabilities = new JsonObject();
         capabilities.addProperty("experimentalApi", true);
