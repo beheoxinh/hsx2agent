@@ -211,6 +211,8 @@ class PromptOrchestrator(
         ApplicationManager.getApplication().invokeLater {
             consolePanel().addErrorEntry("Not signed in. Use the Sign In button in the banner above.")
             copilotBanner()?.triggerCheck()
+            // Ensure UI "running" state is cleared
+            consolePanel().finishResponse(0, "", "")
         }
         return true
     }

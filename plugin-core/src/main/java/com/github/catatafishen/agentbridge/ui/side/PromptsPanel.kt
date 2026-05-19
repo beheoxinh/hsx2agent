@@ -29,6 +29,7 @@ import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
+import com.intellij.util.Alarm
 import com.intellij.util.ui.JBUI
 import java.awt.*
 import java.awt.event.HierarchyEvent
@@ -174,6 +175,7 @@ internal class PromptsPanel(
 
     private val listModel = DefaultListModel<PromptItem>()
     private val promptList = JBList(listModel)
+    private val refreshAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
     private val sessionStore = ConversationService.getInstance(project)
     private val historyLoadSerial = AtomicInteger()
     private val entriesListener = Runnable {
@@ -543,12 +545,15 @@ internal class PromptsPanel(
 
     private fun onEntriesChanged() {
         if (chatConsole.entriesSnapshot().isEmpty()) {
+            refreshAlarm.cancelAllRequests()
             historyEntries = emptyList()
             listModel.clear()
             loadMorePanel.isVisible = false
             reloadHistoryAsync()
         } else {
-            refresh()
+            if (refreshAlarm.isDisposed) return
+            refreshAlarm.cancelAllRequests()
+            refreshAlarm.addRequest({ refresh() }, 500)
         }
     }
 

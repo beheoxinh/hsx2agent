@@ -49,13 +49,11 @@ class ChatConsolePanel(
     var onAutoScrollEnabled: (() -> Unit)? = null
 
     // ── Data model (same types as V1 for serialization compat) ─────
-    private val entries = mutableListOf<EntryData>()
+    private val entries = java.util.concurrent.CopyOnWriteArrayList<EntryData>()
 
     /**
-     * Snapshot of the current entries list. Returns a defensive copy, but the copy operation
-     * itself iterates the underlying mutable list, so this method is **EDT-only** — calling it
-     * off the EDT can race with mutations and throw `ConcurrentModificationException`.
-     * Off-EDT callers must hop via `ApplicationManager.getApplication().invokeLater { ... }`.
+     * Snapshot of the current entries list. Returns a defensive copy.
+     * CopyOnWriteArrayList allows safe iteration even if the list is modified concurrently.
      */
     fun entriesSnapshot(): List<EntryData> = ArrayList(entries)
 

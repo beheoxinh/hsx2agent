@@ -321,7 +321,6 @@ const ChatController = {
             const ctx = this._getCtx(turnId, agentId);
             this._collapseThinkingFor(ctx);
             if (!ctx.textBubble) {
-                if (!text.trim()) return;
                 const c = this._ensureMsg(turnId, agentId, timestamp);
                 const bubble = document.createElement('message-bubble');
                 bubble.setAttribute('streaming', '');
