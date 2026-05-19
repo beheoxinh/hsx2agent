@@ -2,7 +2,7 @@
 
 A collection of introspective case studies on how the Copilot agent decides which
 tool to use. These are used to identify gaps in the guardrail layers and improve
-AgentBridge's instructions and plugin behaviour.
+Hsx2Agent's instructions and plugin behaviour.
 
 ---
 
@@ -57,7 +57,7 @@ tool selection happened.
 
 Two instruction blocks competed:
 
-- AgentBridge block: *"Do NOT use bash, glob, grep, read, write, edit, or
+- Hsx2Agent block: *"Do NOT use bash, glob, grep, read, write, edit, or
   run_command."*
 - `<tool_preferences>` block: *"Use built-in tools instead of bash tools
   whenever possible."*

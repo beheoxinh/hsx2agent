@@ -74,7 +74,7 @@ typing and resumes when you send or move focus away.
 
 ## Settings
 
-Open **AgentBridge › UI/UX** in the IDE settings:
+Open **Hsx2Agent › UI/UX** in the IDE settings:
 
 | Setting                                   | Default | Description                                        |
 |-------------------------------------------|---------|----------------------------------------------------|

@@ -490,11 +490,11 @@ must be gated together — gating only one is insufficient.
 After fixing the `RunContentExecutor` two-flag bug, audited all tool-window-opening paths in
 `psi/tools/**` for analogous footguns. Found three more:
 
-| File                                              | Symptom                                                                                                                                | Fix                                                                                                                                                          |
-|---------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `HttpRequestTool.java:329`                        | `RunContentExecutor` builder pinned `withActivateToolWindow(false)` but left `withFocusToolWindow` at default `true` — same as Run.    | Added `.withFocusToolWindow(false)` next to the existing pin.                                                                                                |
-| `TerminalTool.java:113`                           | `TerminalToolWindowManager.createNewSession(basePath, title, shellCommand, true, true)` — 4th param is `requestFocus`, hard-coded `true`. | Switched to `boolean requestFocus = !PsiBridgeService.isChatToolWindowActive(project);`                                                                      |
-| `GitStageTool.java:113`<br>`DatabaseTool.java:72` | Both unconditionally called `tw.activate(null)` on Local Changes / Database tool windows when "Follow Agent Files" was on.             | Wrapped in the same `chatActive ? tw.show() : tw.activate(null)` pattern already used by `GitTool`/`GitCommitTool`/`BuildProjectTool`.                       |
+| File                                              | Symptom                                                                                                                                   | Fix                                                                                                                                    |
+|---------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `HttpRequestTool.java:329`                        | `RunContentExecutor` builder pinned `withActivateToolWindow(false)` but left `withFocusToolWindow` at default `true` — same as Run.       | Added `.withFocusToolWindow(false)` next to the existing pin.                                                                          |
+| `TerminalTool.java:113`                           | `TerminalToolWindowManager.createNewSession(basePath, title, shellCommand, true, true)` — 4th param is `requestFocus`, hard-coded `true`. | Switched to `boolean requestFocus = !PsiBridgeService.isChatToolWindowActive(project);`                                                |
+| `GitStageTool.java:113`<br>`DatabaseTool.java:72` | Both unconditionally called `tw.activate(null)` on Local Changes / Database tool windows when "Follow Agent Files" was on.                | Wrapped in the same `chatActive ? tw.show() : tw.activate(null)` pattern already used by `GitTool`/`GitCommitTool`/`BuildProjectTool`. |
 
 **Pattern to look for going forward**: any IntelliJ API that takes both an *activate / show*
 flag **and** a *request focus / autoFocusContent* flag — they must be gated **together** on
@@ -518,14 +518,16 @@ while typing in the chat prompt with Follow Agent enabled, even after the per-to
 treated any component in the same IDE main frame as "inside chat":
 
 ```java
-ownerWindow == twWindow && SwingUtilities.isDescendingFrom(twRoot, ownerWindow)
+ownerWindow ==twWindow &&SwingUtilities.
+
+isDescendingFrom(twRoot, ownerWindow)
 ```
 
-Because the AgentBridge tool window root is itself a descendant of the IDE frame, this condition
+Because the Hsx2Agent tool window root is itself a descendant of the IDE frame, this condition
 was true for sibling tool-window/editor components too. As a result, the veto path allowed focus
 changes into VCS, Terminal, and Run content as if they were chat-internal focus changes.
 
-**Fix**: Restrict chat-boundary detection to the actual AgentBridge component hierarchy
+**Fix**: Restrict chat-boundary detection to the actual Hsx2Agent component hierarchy
 (`comp == chatRoot || SwingUtilities.isDescendingFrom(comp, chatRoot)`) and remove the same-frame
 fallback. This restores the guard's intended behavior: programmatic focus moves to sibling tool
 windows in the IDE frame are vetoed, while focus moves within the chat UI are allowed.
@@ -554,21 +556,21 @@ _All previously documented root causes (RC1–RC4) have been fixed. See Attempts
 
 ## Code Locations (Current State)
 
-| File                       | Line | Status                                                                                                                                                       |
-|----------------------------|------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `PsiBridgeService.java`    | 321  | ✅ `chatWasActive` captured at start, completion re-checks                                                                                                    |
-| `PsiBridgeService.java`    | 469  | ✅ Focus restore requires both start+end active                                                                                                               |
-| `ChatToolWindowContent.kt` | 165  | ✅ 150ms alarm checks chat-active before firing                                                                                                               |
+| File                       | Line | Status                                                                                                                                                                                                |
+|----------------------------|------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `PsiBridgeService.java`    | 321  | ✅ `chatWasActive` captured at start, completion re-checks                                                                                                                                             |
+| `PsiBridgeService.java`    | 469  | ✅ Focus restore requires both start+end active                                                                                                                                                        |
+| `ChatToolWindowContent.kt` | 165  | ✅ 150ms alarm checks chat-active before firing                                                                                                                                                        |
 | `FocusGuard.java`          | all  | ✅ `VetoableChangeListener` vetoes programmatic focus steals to sibling editor/tool-window components; targeted to same-Window only; circuit breaker at 20 vetoes; synchronous EDT uninstall via latch |
-| `FileTool.java`            | 257  | ✅ `navigate(focus)` check is inside `invokeLater`                                                                                                            |
-| `FileTool.java`            | 286  | ✅ `selectInProjectView` skips if chat active; only scrolls if already open                                                                                   |
-| `GitTool.java`             | 400  | ✅ VCS `show()`/`activate()` check is inside `invokeLater`                                                                                                    |
-| `BuildProjectTool.java`    | 82   | ✅ Build window check is inside `invokeLater`                                                                                                                 |
-| `Tool.java`                | 209  | ✅ Run panel `activateToolWindow` AND `focusToolWindow` (Attempt 12) gated by chat-active check inside `invokeLater`                                          |
-| `SearchTextTool.java`      | 175  | ✅ Find tool window skipped when chat active                                                                                                                  |
-| `PlatformApiCompat.java`   | ~475 | ✅ VCS log `showRevisionInMainLog` guarded (both listener and race-condition paths)                                                                           |
-| `FileNavigator.kt`         | 30   | ✅ `handleFileLink` passes `focus=!isChatToolWindowActive()`                                                                                                  |
-| `ProjectBuildSupport.java` | 92   | ✅ `restoreFocusIfNeeded` skips when chat active                                                                                                              |
+| `FileTool.java`            | 257  | ✅ `navigate(focus)` check is inside `invokeLater`                                                                                                                                                     |
+| `FileTool.java`            | 286  | ✅ `selectInProjectView` skips if chat active; only scrolls if already open                                                                                                                            |
+| `GitTool.java`             | 400  | ✅ VCS `show()`/`activate()` check is inside `invokeLater`                                                                                                                                             |
+| `BuildProjectTool.java`    | 82   | ✅ Build window check is inside `invokeLater`                                                                                                                                                          |
+| `Tool.java`                | 209  | ✅ Run panel `activateToolWindow` AND `focusToolWindow` (Attempt 12) gated by chat-active check inside `invokeLater`                                                                                   |
+| `SearchTextTool.java`      | 175  | ✅ Find tool window skipped when chat active                                                                                                                                                           |
+| `PlatformApiCompat.java`   | ~475 | ✅ VCS log `showRevisionInMainLog` guarded (both listener and race-condition paths)                                                                                                                    |
+| `FileNavigator.kt`         | 30   | ✅ `handleFileLink` passes `focus=!isChatToolWindowActive()`                                                                                                                                           |
+| `ProjectBuildSupport.java` | 92   | ✅ `restoreFocusIfNeeded` skips when chat active                                                                                                                                                       |
 
 ---
 

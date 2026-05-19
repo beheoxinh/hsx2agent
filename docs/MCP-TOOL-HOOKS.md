@@ -20,7 +20,7 @@ To reset: use **Settings → Tools → Restore Default Hooks**.
 
 ### Directory Structure
 
-The hooks directory lives inside your project's AgentBridge storage directory
+The hooks directory lives inside your project's Hsx2Agent storage directory
 (default: `<project>/.agentbridge/hooks/`):
 
    ```
@@ -83,10 +83,28 @@ Each file is named after the MCP tool it applies to: `<tool-id>.json`.
 
 ```json
 {
-  "permission": [{ "script": "scripts/check-policy.sh" }],
-  "pre":        [{ "script": "scripts/sanitize-args.sh" }],
-  "success":    [{ "script": "scripts/post-tips.sh", "async": true }],
-  "failure":    [{ "script": "scripts/retry-build.sh", "timeout": 120 }],
+  "permission": [
+    {
+      "script": "scripts/check-policy.sh"
+    }
+  ],
+  "pre": [
+    {
+      "script": "scripts/sanitize-args.sh"
+    }
+  ],
+  "success": [
+    {
+      "script": "scripts/post-tips.sh",
+      "async": true
+    }
+  ],
+  "failure": [
+    {
+      "script": "scripts/retry-build.sh",
+      "timeout": 120
+    }
+  ],
   "prependString": "IMPORTANT: Follow project conventions.",
   "appendString": "\n\nRemember: run tests before committing."
 }
@@ -137,7 +155,7 @@ This means you can:
 
 ## Settings UI
 
-Each tool in **Settings → Tools → AgentBridge → Tools** shows a 🪝 icon when hooks are
+Each tool in **Settings → Tools → Hsx2Agent → Tools** shows a 🪝 icon when hooks are
 configured for it. Clicking the tool row opens a dialog where you can:
 
 - Edit **Prepend Text** and **Append Text** (static text modifiers)
@@ -168,7 +186,9 @@ Runs before the tool executes. All entries must allow; any deny stops the chain.
 ```json
 {
   "toolName": "git_push",
-  "arguments": { "branch": "main" },
+  "arguments": {
+    "branch": "main"
+  },
   "argumentsJson": "{\"branch\":\"main\"}",
   "projectName": "my-project",
   "timestamp": "2025-05-03T12:00:00Z"
@@ -178,11 +198,16 @@ Runs before the tool executes. All entries must allow; any deny stops the chain.
 **Output (stdout):**
 
 ```json
-{"decision": "allow"}
+{
+  "decision": "allow"
+}
 ```
 
 ```json
-{"decision": "deny", "reason": "Cannot push to protected branch 'main'"}
+{
+  "decision": "deny",
+  "reason": "Cannot push to protected branch 'main'"
+}
 ```
 
 ### `pre` — Modify Arguments or Block
@@ -192,11 +217,18 @@ Runs after permission, before the tool executes. Can modify arguments or block w
 **Output:**
 
 ```json
-{"arguments": {"message": "feat: updated message", "all": true}}
+{
+  "arguments": {
+    "message": "feat: updated message",
+    "all": true
+  }
+}
 ```
 
 ```json
-{"error": "Commit message does not follow conventional commits"}
+{
+  "error": "Commit message does not follow conventional commits"
+}
 ```
 
 **Merge semantics:** When modifying arguments, return only the fields you want to change.
@@ -220,11 +252,15 @@ Runs after the tool succeeds. Can replace output, append to it, or change the er
 **Output:**
 
 ```json
-{"output": "Committed abc1234. Remember to create a PR."}
+{
+  "output": "Committed abc1234. Remember to create a PR."
+}
 ```
 
 ```json
-{"append": "\nTip: run tests before pushing."}
+{
+  "append": "\nTip: run tests before pushing."
+}
 ```
 
 ### `failure` — Transform or Recover from Errors
@@ -235,11 +271,16 @@ to a success**.
 **Output:**
 
 ```json
-{"output": "Build succeeded after clean rebuild", "state": "success"}
+{
+  "output": "Build succeeded after clean rebuild",
+  "state": "success"
+}
 ```
 
 ```json
-{"append": "\nSuggestion: try ./gradlew clean first"}
+{
+  "append": "\nSuggestion: try ./gradlew clean first"
+}
 ```
 
 ## State Override
@@ -267,8 +308,12 @@ Multiple entries per trigger run sequentially. Each entry receives the **current
 ```json
 {
   "success": [
-    { "script": "scripts/add-review-link.sh" },
-    { "script": "scripts/append-tips.sh" }
+    {
+      "script": "scripts/add-review-link.sh"
+    },
+    {
+      "script": "scripts/append-tips.sh"
+    }
   ]
 }
 ```
@@ -284,27 +329,27 @@ executor. These are available to every hook script without configuration.
 
 #### Project Context
 
-| Variable                      | Description                                            | Example                        |
-|-------------------------------|--------------------------------------------------------|--------------------------------|
-| `AGENTBRIDGE_PROJECT_DIR`     | Absolute path to the project root                      | `/home/user/my-project`        |
+| Variable                      | Description                                            | Example                                    |
+|-------------------------------|--------------------------------------------------------|--------------------------------------------|
+| `AGENTBRIDGE_PROJECT_DIR`     | Absolute path to the project root                      | `/home/user/my-project`                    |
 | `AGENTBRIDGE_HOOKS_DIR`       | Absolute path to the hooks directory                   | `/home/user/my-project/.agentbridge/hooks` |
-| `AGENTBRIDGE_MCP_PORT`        | HTTP port of the running MCP server                    | `8580`                         |
-| `AGENTBRIDGE_AGENT_NAME`      | Name of the connected agent (from MCP initialize)      | `Claude Code`, `github-copilot` |
-| `AGENTBRIDGE_SOURCE_ROOTS`    | Newline-separated list of source root directories      | `/home/user/my-project/src/main/java` |
-| `AGENTBRIDGE_TEST_ROOTS`      | Newline-separated list of test source directories      | `/home/user/my-project/src/test/java` |
-| `AGENTBRIDGE_GENERATED_ROOTS` | Newline-separated list of generated source directories | `/home/user/my-project/build/generated` |
+| `AGENTBRIDGE_MCP_PORT`        | HTTP port of the running MCP server                    | `8580`                                     |
+| `AGENTBRIDGE_AGENT_NAME`      | Name of the connected agent (from MCP initialize)      | `Claude Code`, `github-copilot`            |
+| `AGENTBRIDGE_SOURCE_ROOTS`    | Newline-separated list of source root directories      | `/home/user/my-project/src/main/java`      |
+| `AGENTBRIDGE_TEST_ROOTS`      | Newline-separated list of test source directories      | `/home/user/my-project/src/test/java`      |
+| `AGENTBRIDGE_GENERATED_ROOTS` | Newline-separated list of generated source directories | `/home/user/my-project/build/generated`    |
 | `AGENTBRIDGE_RESOURCE_ROOTS`  | Newline-separated list of resource directories         | `/home/user/my-project/src/main/resources` |
-| `AGENTBRIDGE_EXCLUDED_DIRS`   | Newline-separated list of excluded directories         | `/home/user/my-project/build`  |
+| `AGENTBRIDGE_EXCLUDED_DIRS`   | Newline-separated list of excluded directories         | `/home/user/my-project/build`              |
 
 #### Tool Arguments
 
 Every top-level string or primitive argument is also injected as `HOOK_ARG_<key>`:
 
-| Variable              | Source                           | Example            |
-|-----------------------|----------------------------------|--------------------|
-| `HOOK_ARG_command`    | `arguments.command`              | `npm run build`    |
-| `HOOK_ARG_path`       | `arguments.path`                 | `src/Main.java`    |
-| `HOOK_ARG_message`    | `arguments.message`              | `feat: add hooks`  |
+| Variable           | Source              | Example           |
+|--------------------|---------------------|-------------------|
+| `HOOK_ARG_command` | `arguments.command` | `npm run build`   |
+| `HOOK_ARG_path`    | `arguments.path`    | `src/Main.java`   |
+| `HOOK_ARG_message` | `arguments.message` | `feat: add hooks` |
 
 This lets scripts access arguments directly from env vars without JSON parsing:
 
@@ -324,10 +369,15 @@ Additional env vars can be set per-entry via the `env` field in the hook config:
 
 ```json
 {
-  "pre": [{
-    "script": "scripts/enforce-author.sh",
-    "env": { "BOT_NAME": "my-bot", "BOT_EMAIL": "bot@example.com" }
-  }]
+  "pre": [
+    {
+      "script": "scripts/enforce-author.sh",
+      "env": {
+        "BOT_NAME": "my-bot",
+        "BOT_EMAIL": "bot@example.com"
+      }
+    }
+  ]
 }
 ```
 
@@ -339,7 +389,7 @@ Scripts run with the hooks directory as their working directory (where the JSON 
 
 - **stdin:** JSON payload (tool name, arguments, output, error state, timing)
 - **stdout:** JSON response (the hook's decision/modification)
-- **stderr:** Logged by AgentBridge but otherwise ignored
+- **stderr:** Logged by Hsx2Agent but otherwise ignored
 
 ### Exit Codes
 
@@ -381,12 +431,12 @@ result=$(hook_query '{"action":"classify_path","path":"/home/user/project/src/Ma
 # → {"path":"/home/user/project/src/Main.java","inProject":true,"classification":"sources","inContentRoot":true}
 ```
 
-| Response field    | Type    | Description                                                       |
-|-------------------|---------|-------------------------------------------------------------------|
-| `path`            | string  | The requested path                                                |
-| `inProject`       | boolean | Whether the path is under the project base directory              |
-| `classification`  | string  | One of: `sources`, `test_sources`, `resources`, `generated_sources`, `excluded`, `content`, or `""` |
-| `inContentRoot`   | boolean | Whether the file is inside a content root (and not excluded)      |
+| Response field   | Type    | Description                                                                                         |
+|------------------|---------|-----------------------------------------------------------------------------------------------------|
+| `path`           | string  | The requested path                                                                                  |
+| `inProject`      | boolean | Whether the path is under the project base directory                                                |
+| `classification` | string  | One of: `sources`, `test_sources`, `resources`, `generated_sources`, `excluded`, `content`, or `""` |
+| `inContentRoot`  | boolean | Whether the file is inside a content root (and not excluded)                                        |
 
 ### `POST /hooks/tool` — Call Read-Only MCP Tools
 
@@ -400,39 +450,52 @@ rejected with an error.
 **Request:**
 
 ```json
-{"tool": "search_text", "arguments": {"query": "deprecated", "file_pattern": "*.java"}}
+{
+  "tool": "search_text",
+  "arguments": {
+    "query": "deprecated",
+    "file_pattern": "*.java"
+  }
+}
 ```
 
 **Response (success):**
 
 ```json
-{"result": "5 matches:\nsrc/Foo.java:12: ...", "error": false, "truncated": false}
+{
+  "result": "5 matches:\nsrc/Foo.java:12: ...",
+  "error": false,
+  "truncated": false
+}
 ```
 
 **Response (error):**
 
 ```json
-{"error": true, "message": "Tool 'write_file' is not allowed from hooks. Only read-only and search tools are available."}
+{
+  "error": true,
+  "message": "Tool 'write_file' is not allowed from hooks. Only read-only and search tools are available."
+}
 ```
 
 **Available tool categories** (non-exhaustive):
 
-| Tool                    | Kind   | Description                                    |
-|-------------------------|--------|------------------------------------------------|
-| `search_text`           | SEARCH | Search for text patterns across project files  |
-| `search_symbols`        | SEARCH | Search for classes, methods, fields by name    |
-| `find_references`       | SEARCH | Find all usages of a symbol                    |
-| `read_file`             | READ   | Read file content                              |
-| `get_file_outline`      | READ   | Get structure of a file (classes, methods)      |
-| `list_project_files`    | READ   | List files with optional pattern filtering     |
-| `list_directory_tree`   | READ   | Tree-formatted directory listing               |
-| `find_file`             | READ   | Find files by name pattern                     |
-| `get_project_info`      | READ   | Project name, SDK, modules                     |
-| `git_status`            | READ   | Working tree status and branch info            |
-| `git_diff`              | READ   | Show changes as diff                           |
-| `git_log`               | READ   | Commit history                                 |
-| `get_compilation_errors` | READ  | Check for compilation errors                   |
-| `get_highlights`        | READ   | Get editor highlights (errors, warnings)       |
+| Tool                     | Kind   | Description                                   |
+|--------------------------|--------|-----------------------------------------------|
+| `search_text`            | SEARCH | Search for text patterns across project files |
+| `search_symbols`         | SEARCH | Search for classes, methods, fields by name   |
+| `find_references`        | SEARCH | Find all usages of a symbol                   |
+| `read_file`              | READ   | Read file content                             |
+| `get_file_outline`       | READ   | Get structure of a file (classes, methods)    |
+| `list_project_files`     | READ   | List files with optional pattern filtering    |
+| `list_directory_tree`    | READ   | Tree-formatted directory listing              |
+| `find_file`              | READ   | Find files by name pattern                    |
+| `get_project_info`       | READ   | Project name, SDK, modules                    |
+| `git_status`             | READ   | Working tree status and branch info           |
+| `git_diff`               | READ   | Show changes as diff                          |
+| `git_log`                | READ   | Commit history                                |
+| `get_compilation_errors` | READ   | Check for compilation errors                  |
+| `get_highlights`         | READ   | Get editor highlights (errors, warnings)      |
 
 **Shell helper:**
 
@@ -449,7 +512,7 @@ result=$(hook_tool "read_file" '{"path":"src/Main.java"}')
 
 ## POSIX Shell Library (`_lib.sh`)
 
-AgentBridge ships a shared POSIX shell library that provides helpers for all common hook
+Hsx2Agent ships a shared POSIX shell library that provides helpers for all common hook
 operations. Source it at the top of every hook script:
 
 ```sh
@@ -459,40 +522,40 @@ operations. Source it at the top of every hook script:
 
 ### Payload Helpers
 
-| Function               | Description                                         |
-|------------------------|-----------------------------------------------------|
-| `hook_read_payload`    | Reads and caches stdin JSON payload                 |
-| `hook_get <field>`     | Extract a top-level string from the cached payload  |
+| Function               | Description                                                |
+|------------------------|------------------------------------------------------------|
+| `hook_read_payload`    | Reads and caches stdin JSON payload                        |
+| `hook_get <field>`     | Extract a top-level string from the cached payload         |
 | `hook_get_arg <field>` | Extract `arguments.<field>` (prefers `HOOK_ARG_*` env var) |
 
 ### Response Helpers
 
-| Function                     | Description                                |
-|------------------------------|--------------------------------------------|
-| `hook_json_deny <reason>`    | Emit deny decision (PERMISSION hooks)      |
-| `hook_json_error <msg>`      | Emit blocking error (PRE hooks)            |
-| `hook_json_append <text>`    | Emit append modifier (SUCCESS/FAILURE)     |
-| `hook_json_args <json>`      | Emit modified arguments (PRE hooks, merge) |
+| Function                  | Description                                |
+|---------------------------|--------------------------------------------|
+| `hook_json_deny <reason>` | Emit deny decision (PERMISSION hooks)      |
+| `hook_json_error <msg>`   | Emit blocking error (PRE hooks)            |
+| `hook_json_append <text>` | Emit append modifier (SUCCESS/FAILURE)     |
+| `hook_json_args <json>`   | Emit modified arguments (PRE hooks, merge) |
 
 ### Path Helpers
 
-| Function                        | Description                                    |
-|---------------------------------|------------------------------------------------|
-| `hook_is_in_project <path>`     | Check if path is under `AGENTBRIDGE_PROJECT_DIR` |
+| Function                        | Description                                           |
+|---------------------------------|-------------------------------------------------------|
+| `hook_is_in_project <path>`     | Check if path is under `AGENTBRIDGE_PROJECT_DIR`      |
 | `hook_is_in_source_root <path>` | Check if path is under any `AGENTBRIDGE_SOURCE_ROOTS` |
 
 ### IDE API Helpers
 
-| Function                     | Description                                      |
-|------------------------------|--------------------------------------------------|
-| `hook_query <json>`          | Query `/hooks/query` endpoint (classify paths)   |
-| `hook_tool <id> [args_json]` | Call a read-only MCP tool via `/hooks/tool`       |
+| Function                     | Description                                    |
+|------------------------------|------------------------------------------------|
+| `hook_query <json>`          | Query `/hooks/query` endpoint (classify paths) |
+| `hook_tool <id> [args_json]` | Call a read-only MCP tool via `/hooks/tool`    |
 
 ### Utility Helpers
 
-| Function                   | Description                                     |
-|----------------------------|-------------------------------------------------|
-| `hook_escape_json <text>`  | Escape text for safe JSON embedding             |
+| Function                  | Description                         |
+|---------------------------|-------------------------------------|
+| `hook_escape_json <text>` | Escape text for safe JSON embedding |
 
 ### Example: Full Hook Script
 
@@ -537,11 +600,13 @@ agent is actually connected (Copilot, Claude Code, etc.) rather than a hardcoded
 
 ```json
 {
-  "pre": [{
-    "script": "scripts/enforce-commit-author.sh",
-    "failSilently": false,
-    "timeout": 5
-  }]
+  "pre": [
+    {
+      "script": "scripts/enforce-commit-author.sh",
+      "failSilently": false,
+      "timeout": 5
+    }
+  ]
 }
 ```
 
@@ -552,11 +617,13 @@ arguments. The agent never knows the author was changed.
 
 ```json
 {
-  "pre": [{
-    "script": "scripts/enforce-gh-bot-identity.sh",
-    "failSilently": false,
-    "timeout": 5
-  }]
+  "pre": [
+    {
+      "script": "scripts/enforce-gh-bot-identity.sh",
+      "failSilently": false,
+      "timeout": 5
+    }
+  ]
 }
 ```
 
@@ -668,8 +735,8 @@ fi
 
 ## Storage Location
 
-Hooks are stored in the `hooks/` subdirectory of the project's AgentBridge storage directory.
-The storage location is configured in **Settings → Tools → AgentBridge → Storage**:
+Hooks are stored in the `hooks/` subdirectory of the project's Hsx2Agent storage directory.
+The storage location is configured in **Settings → Tools → Hsx2Agent → Storage**:
 
 | Mode      | Hooks directory                                        |
 |-----------|--------------------------------------------------------|
@@ -705,23 +772,23 @@ This overwrites all existing hook configs and scripts with the bundled originals
 
 ## Comparison with GitHub Copilot Hooks
 
-| Capability                     | Copilot Hooks | AgentBridge Hooks |
-|--------------------------------|---------------|-------------------|
-| Pre-tool deny                  | ✅             | ✅                 |
-| Pre-tool argument modification | ❌             | ✅                 |
-| Post-tool output modification  | ❌             | ✅                 |
-| Post-tool output append        | ❌             | ✅                 |
-| Static prepend/append text     | ❌             | ✅                 |
-| Error state override           | ❌             | ✅                 |
-| Hook chaining                  | ❌             | ✅                 |
-| Per-tool configuration         | ✅             | ✅                 |
-| Async (fire-and-forget) mode   | ✅             | ✅                 |
-| JSON stdin/stdout protocol     | ❌             | ✅                 |
-| Hot-reload without restart     | ❌             | ✅                 |
-| Read-only tool access from hooks | ❌           | ✅                 |
-| IDE project model queries      | ❌             | ✅                 |
-| Environment variable injection | ❌             | ✅                 |
-| POSIX shell library            | ❌             | ✅                 |
-| Connected agent identity       | ❌             | ✅                 |
-| Built-in defaults with restore | ❌             | ✅                 |
-| Hooks outside of tool calls    | ✅             | ❌                 |
+| Capability                       | Copilot Hooks | Hsx2Agent Hooks |
+|----------------------------------|---------------|-----------------|
+| Pre-tool deny                    | ✅             | ✅               |
+| Pre-tool argument modification   | ❌             | ✅               |
+| Post-tool output modification    | ❌             | ✅               |
+| Post-tool output append          | ❌             | ✅               |
+| Static prepend/append text       | ❌             | ✅               |
+| Error state override             | ❌             | ✅               |
+| Hook chaining                    | ❌             | ✅               |
+| Per-tool configuration           | ✅             | ✅               |
+| Async (fire-and-forget) mode     | ✅             | ✅               |
+| JSON stdin/stdout protocol       | ❌             | ✅               |
+| Hot-reload without restart       | ❌             | ✅               |
+| Read-only tool access from hooks | ❌             | ✅               |
+| IDE project model queries        | ❌             | ✅               |
+| Environment variable injection   | ❌             | ✅               |
+| POSIX shell library              | ❌             | ✅               |
+| Connected agent identity         | ❌             | ✅               |
+| Built-in defaults with restore   | ❌             | ✅               |
+| Hooks outside of tool calls      | ✅             | ❌               |

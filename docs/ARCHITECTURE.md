@@ -5,7 +5,7 @@
 ```mermaid
 graph TB
     subgraph IDE["IntelliJ IDEA IDE"]
-        subgraph Plugin["AgentBridge Plugin (Java 21)"]
+        subgraph Plugin["Hsx2Agent Plugin (Java 21)"]
             UI["Tool Window<br/>(JCEF Chat)"]
             
             subgraph Services["Services Layer"]
@@ -80,14 +80,18 @@ Central service that manages the active agent profile and client lifecycle:
 - Provides shared UI preferences (attach trigger, follow-agent-files)
 
 ```java
+
 @Service(Service.Level.PROJECT)
 public final class ActiveAgentManager implements Disposable {
     private AbstractAgentClient acpClient;
     private AgentConfig cachedConfig;
-    
+
     public void setActiveProfile(AgentProfile profile);
+
     public AbstractAgentClient getClient();
+
     public void startAgent();
+
     public void stopAgent();
 }
 ```
@@ -121,21 +125,21 @@ All agent clients extend `AbstractAgentClient`, which provides common functional
 
 For agents that use the Agent Client Protocol (JSON-RPC 2.0 over stdio):
 
-| Client | Agent | Notes |
-|--------|-------|-------|
-| `CopilotClient` | GitHub Copilot CLI | Full ACP, permission requests |
-| `JunieClient` | JetBrains Junie | ACP without permissions |
-| `KiroClient` | Amazon Kiro | ACP with tool filtering |
-| `OpenCodeClient` | OpenCode | ACP with config-based permissions |
+| Client           | Agent              | Notes                             |
+|------------------|--------------------|-----------------------------------|
+| `CopilotClient`  | GitHub Copilot CLI | Full ACP, permission requests     |
+| `JunieClient`    | JetBrains Junie    | ACP without permissions           |
+| `KiroClient`     | Amazon Kiro        | ACP with tool filtering           |
+| `OpenCodeClient` | OpenCode           | ACP with config-based permissions |
 
 #### Claude-Based Clients
 
 For Anthropic Claude agents (different protocol):
 
-| Client | Agent | Notes |
-|--------|-------|-------|
-| `ClaudeCliClient` | Claude Code CLI | Uses claude-code-acp wrapper |
-| `AnthropicDirectClient` | Anthropic API | Direct API calls, no CLI |
+| Client                  | Agent           | Notes                        |
+|-------------------------|-----------------|------------------------------|
+| `ClaudeCliClient`       | Claude Code CLI | Uses claude-code-acp wrapper |
+| `AnthropicDirectClient` | Anthropic API   | Direct API calls, no CLI     |
 
 ### 3. Profile-Based Configuration
 
@@ -157,7 +161,8 @@ graph LR
     MCP -->|"HTTP POST<br/>localhost:port"| PSI["PsiBridgeService<br/>(IntelliJ)"]
 ```
 
-- **MCP Server** (`mcp-server/`): Standalone JAR spawned by Agent CLI, receives tool calls via stdio, forwards to PSI Bridge via HTTP
+- **MCP Server** (`mcp-server/`): Standalone JAR spawned by Agent CLI, receives tool calls via stdio, forwards to PSI
+  Bridge via HTTP
 - **PSI Bridge** (`PsiBridgeService`): HTTP server inside IntelliJ process, executes tools using IntelliJ APIs
 - **Bridge file**: `~/.copilot/psi-bridge.json` contains the dynamic port
 
@@ -205,16 +210,16 @@ sequenceDiagram
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `services/ActiveAgentManager.java` | Active profile and client lifecycle |
-| `services/AgentProfileManager.java` | Profile collection management |
-| `acp/client/AcpClient.java` | Base ACP client (JSON-RPC 2.0) |
-| `acp/client/CopilotClient.java` | GitHub Copilot implementation |
-| `acp/client/JunieClient.java` | JetBrains Junie implementation |
-| `agent/claude/ClaudeCliClient.java` | Claude Code CLI implementation |
-| `bridge/ProfileBasedAgentConfig.java` | Profile → AgentConfig conversion |
-| `psi/PsiBridgeService.java` | 92 MCP tools via IntelliJ APIs |
+| File                                  | Purpose                             |
+|---------------------------------------|-------------------------------------|
+| `services/ActiveAgentManager.java`    | Active profile and client lifecycle |
+| `services/AgentProfileManager.java`   | Profile collection management       |
+| `acp/client/AcpClient.java`           | Base ACP client (JSON-RPC 2.0)      |
+| `acp/client/CopilotClient.java`       | GitHub Copilot implementation       |
+| `acp/client/JunieClient.java`         | JetBrains Junie implementation      |
+| `agent/claude/ClaudeCliClient.java`   | Claude Code CLI implementation      |
+| `bridge/ProfileBasedAgentConfig.java` | Profile → AgentConfig conversion    |
+| `psi/PsiBridgeService.java`           | 92 MCP tools via IntelliJ APIs      |
 
 ---
 
@@ -229,6 +234,7 @@ sequenceDiagram
 ### Sensitive Operations
 
 Always require approval:
+
 - `git_push --force`
 - `run_command` (shell commands)
 - File deletions

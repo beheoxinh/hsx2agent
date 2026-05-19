@@ -410,7 +410,7 @@ Events pushed to JCEF and SSE clients via `ChatWebServer.pushJsEvent()`:
 
 ### Event Log Compaction
 
-The event log size is configurable via **Settings → AgentBridge → Chat History → History Limits → Web event log size** (
+The event log size is configurable via **Settings → Hsx2Agent → Chat History → History Limits → Web event log size** (
 default: 600).
 Streaming events are compacted when their finalizer arrives:
 
@@ -434,7 +434,7 @@ displayed as tool chips within the sub-agent's section.
 
 ## Configurable History Limits
 
-All history limits are configurable via **Settings → AgentBridge → Chat History → History Limits**.
+All history limits are configurable via **Settings → Hsx2Agent → Chat History → History Limits**.
 Persisted in `chatHistory.xml` per project via `ChatHistorySettings`.
 
 | Setting                 | Default | Description                                                                    |

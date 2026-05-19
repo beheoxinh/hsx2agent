@@ -1,6 +1,6 @@
 # Tool Guardrails
 
-AgentBridge provides several layers of guardrails to ensure AI coding agents
+Hsx2Agent provides several layers of guardrails to ensure AI coding agents
 use IDE-integrated MCP tools instead of raw CLI tools. This document explains
 why these guardrails exist, what they do, and how they work together.
 
@@ -10,7 +10,7 @@ why these guardrails exist, what they do, and how they work together.
 
 Agent CLIs (Copilot, Claude, etc.) come with built-in tools like `bash`, `grep`,
 `view`, and `edit`. These tools operate directly on the filesystem, bypassing the
-IDE entirely. When an agent uses them instead of the AgentBridge MCP equivalents,
+IDE entirely. When an agent uses them instead of the Hsx2Agent MCP equivalents,
 three categories of harm occur:
 
 ### 1. Tool hooks are bypassed
@@ -23,7 +23,7 @@ audit log has gaps.
 
 ### 2. Follow-agent mode is bypassed
 
-AgentBridge makes agent actions visible to the user — terminal commands appear
+Hsx2Agent makes agent actions visible to the user — terminal commands appear
 in the IDE, file changes are highlighted, git operations show in the VCS panel.
 Native tools are invisible: the user sees nothing and has no way to monitor or
 intervene in what the agent is doing.
@@ -58,7 +58,7 @@ advertise them in the system prompt (e.g., Copilot's `<environment_context>`
 block: "Available tools: git, curl, gh"). When the agent sees these tools
 listed, it's more likely to use them directly instead of MCP equivalents.
 
-**Configuration:** Per-agent checkbox in Settings → AgentBridge → [Agent Name]
+**Configuration:** Per-agent checkbox in Settings → Hsx2Agent → [Agent Name]
 → "Hide system PATH from agent". Enabled by default for Copilot.
 
 **Limitations:** Tools installed in shared system directories (e.g., `git` in
@@ -97,7 +97,7 @@ agent-specific context.
 
 **What:** When the agent uses a native built-in tool despite the instructions,
 the plugin detects it in real-time and injects a corrective nudge into the next
-MCP tool result: `[User nudge]: You used native bash tools. Use Agentbridge MCP
+MCP tool result: `[User nudge]: You used native bash tools. Use Hsx2Agent MCP
 tools instead — native tools bypass the plugin's identity hooks, follow-agent
 visibility, and IDE buffer sync.`
 
@@ -105,7 +105,7 @@ visibility, and IDE buffer sync.`
 familiar patterns, especially under complex multi-step reasoning. The nudge
 provides immediate, contextual feedback that steers the agent back on track.
 
-**Configuration:** Settings → AgentBridge → Agent Settings → "Reprimand nudge
+**Configuration:** Settings → Hsx2Agent → Agent Settings → "Reprimand nudge
 mode": Disabled / Send silently / Enabled (with cancel bubble).
 
 **Implementation:** `CopilotClient.buildReprimand()`, `AgentNudgeService`,
@@ -149,12 +149,12 @@ Agent makes tool calls
 
 No single layer is sufficient on its own. Each addresses a different failure mode:
 
-| Failure mode                                  | Addressed by        |
-|-----------------------------------------------|---------------------|
-| CLI detects system tools and advertises them   | Layer 1 (PATH)      |
-| CLI exposes built-in tools (bash, grep, etc.)  | Layer 5 (--excluded) |
+| Failure mode                                   | Addressed by              |
+|------------------------------------------------|---------------------------|
+| CLI detects system tools and advertises them   | Layer 1 (PATH)            |
+| CLI exposes built-in tools (bash, grep, etc.)  | Layer 5 (--excluded)      |
 | Agent ignores tool list and uses what it knows | Layers 2+3 (instructions) |
-| Agent ignores instructions under pressure      | Layer 4 (nudges)    |
+| Agent ignores instructions under pressure      | Layer 4 (nudges)          |
 
 ---
 

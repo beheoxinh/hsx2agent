@@ -1,4 +1,4 @@
-# Semantic Memory for AgentBridge — Architecture & Implementation
+# Semantic Memory for Hsx2Agent — Architecture & Implementation
 
 > **Attribution**: This feature is inspired by and adapted from
 > [MemPalace](https://github.com/milla-jovovich/mempalace) by milla-jovovich,
@@ -11,7 +11,7 @@
 
 ## Overview
 
-AgentBridge includes a **semantic memory system** that persists across sessions,
+Hsx2Agent includes a **semantic memory system** that persists across sessions,
 giving agents awareness of prior decisions, preferences, milestones, and problems.
 The system is **opt-in** (disabled by default), **local-only** (no data leaves the
 machine), and runs entirely within the IntelliJ process using bundled and downloaded
@@ -516,22 +516,22 @@ by code evidence":
 
 **DrawerDocument** gains three fields:
 
-| Field | Type | Description |
-|---|---|---|
-| `evidence` | JSON string array | File paths, FQN symbols, line refs (e.g., `["com.example.UserService", "AuthController.kt:42"]`) |
-| `verificationState` | String enum | `unverified` (default), `verified`, `stale` |
-| `lastVerifiedAt` | ISO 8601 | When last validated against the codebase |
+| Field               | Type              | Description                                                                                      |
+|---------------------|-------------------|--------------------------------------------------------------------------------------------------|
+| `evidence`          | JSON string array | File paths, FQN symbols, line refs (e.g., `["com.example.UserService", "AuthController.kt:42"]`) |
+| `verificationState` | String enum       | `unverified` (default), `verified`, `stale`                                                      |
+| `lastVerifiedAt`    | ISO 8601          | When last validated against the codebase                                                         |
 
 **KgTriple** gains:
 
-| Field | Type | Description |
-|---|---|---|
+| Field      | Type              | Description                            |
+|------------|-------------------|----------------------------------------|
 | `evidence` | JSON string array | Same format as DrawerDocument evidence |
 
 ### New MCP Tools
 
-| Tool | Description |
-|---|---|
+| Tool             | Description                                                                         |
+|------------------|-------------------------------------------------------------------------------------|
 | `memory_refresh` | P2 — force re-scan of a topic after sweeping changes (most validation is automatic) |
 
 ### Validation Triggers

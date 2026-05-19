@@ -1,4 +1,4 @@
-# _lib.ps1 — PowerShell library for AgentBridge hook scripts.
+# _lib.ps1 — PowerShell library for Hsx2Agent hook scripts.
 # Dot-source this at the top of every hook script:
 #   . "$PSScriptRoot\_lib.ps1"
 #

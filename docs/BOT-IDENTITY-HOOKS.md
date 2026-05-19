@@ -1,6 +1,6 @@
 # Bot Identity Hooks
 
-The AgentBridge plugin repository ships three internal hooks that enforce **bot identity** when
+The Hsx2Agent plugin repository ships three internal hooks that enforce **bot identity** when
 an AI agent creates GitHub content (PRs, issues, comments, API calls, commits). This ensures that
 agent-authored actions are attributed to a dedicated bot account rather than the developer's
 personal GitHub account.
@@ -10,11 +10,11 @@ These hooks live in `.agentbridge/hooks/` alongside the plugin's own hook config
 
 ## What the hooks do
 
-| Hook script | Trigger | Effect |
-|-------------|---------|--------|
-| `enforce-gh-bot-identity.js` | `run_command` / `run_in_terminal` pre-hook | Intercepts `gh pr create`, `gh issue create`, `gh api` write calls, etc. and injects `GH_TOKEN=<bot token>` |
-| `enforce-http-bot-identity.sh` | `http_request` pre-hook | Intercepts POST/PATCH/PUT/DELETE calls to `api.github.com` and injects `Authorization: bearer <bot token>` |
-| `enforce-commit-author.sh` | `git_commit` pre-hook | Sets the commit `author` field to the connected agent's identity (e.g. `Copilot <Copilot@users.noreply.github.com>`) |
+| Hook script                    | Trigger                                    | Effect                                                                                                               |
+|--------------------------------|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
+| `enforce-gh-bot-identity.js`   | `run_command` / `run_in_terminal` pre-hook | Intercepts `gh pr create`, `gh issue create`, `gh api` write calls, etc. and injects `GH_TOKEN=<bot token>`          |
+| `enforce-http-bot-identity.sh` | `http_request` pre-hook                    | Intercepts POST/PATCH/PUT/DELETE calls to `api.github.com` and injects `Authorization: bearer <bot token>`           |
+| `enforce-commit-author.sh`     | `git_commit` pre-hook                      | Sets the commit `author` field to the connected agent's identity (e.g. `Copilot <Copilot@users.noreply.github.com>`) |
 
 Token resolution (all three hooks try these in order):
 
@@ -76,10 +76,10 @@ You have two options:
    `https://github.com/organizations/<org>/settings/apps/new` (org).
 2. Give it any name (e.g. `myname-agentbridge-bot`).
 3. Under *Permissions*, grant:
-   - **Repository → Contents**: Read & Write (for commits/releases)
-   - **Repository → Pull requests**: Read & Write
-   - **Repository → Issues**: Read & Write
-   - **Repository → Metadata**: Read-only (required by GitHub)
+    - **Repository → Contents**: Read & Write (for commits/releases)
+    - **Repository → Pull requests**: Read & Write
+    - **Repository → Issues**: Read & Write
+    - **Repository → Metadata**: Read-only (required by GitHub)
 4. Set the app as **Not accessible to other users** (private).
 5. Under *Install App*, install it on your fork.
 6. Generate a private key (under *Private keys*) and install as described above.
@@ -110,11 +110,11 @@ automatically. Note: PAT actions are attributed to your personal account, not a 
 All credential files live in `~/.agentbridge/` (outside the repository), so they are never
 accidentally committed.
 
-| File | Purpose |
-|------|---------|
-| `~/.agentbridge/github-app.pem` | GitHub App RSA private key |
-| `~/.agentbridge/github-app-id` | GitHub App ID (numeric, e.g. `12345`) |
-| `~/.agentbridge/bot-token` | Static PAT fallback |
+| File                            | Purpose                               |
+|---------------------------------|---------------------------------------|
+| `~/.agentbridge/github-app.pem` | GitHub App RSA private key            |
+| `~/.agentbridge/github-app-id`  | GitHub App ID (numeric, e.g. `12345`) |
+| `~/.agentbridge/bot-token`      | Static PAT fallback                   |
 
 Environment variables (`AGENTBRIDGE_APP_PEM`, `AGENTBRIDGE_APP_ID`, `AGENTBRIDGE_BOT_TOKEN`) can
 override any of the above — useful in CI or when you want per-session credentials.

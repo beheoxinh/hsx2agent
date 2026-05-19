@@ -1,18 +1,18 @@
 # Database Tools
 
-AgentBridge is a bridge to the IntelliJ IDE. Every tool should proxy something IntelliJ
+Hsx2Agent is a bridge to the IntelliJ IDE. Every tool should proxy something IntelliJ
 already does well — it should not invent its own implementations.
 
 **JetBrains' built-in MCP server** (the `com.intellij.mcpServer` plugin, available from
-IntelliJ 2026.1) provides comprehensive database tooling natively. AgentBridge
+IntelliJ 2026.1) provides comprehensive database tooling natively. Hsx2Agent
 proxies those tools in-process so agents benefit from follow-agent activation, single-endpoint
 routing, and MCP hooks — without any extra configuration.
 
-AgentBridge supplements with the one thing the native MCP does not cover: adding new data sources.
+Hsx2Agent supplements with the one thing the native MCP does not cover: adding new data sources.
 
 ---
 
-## JetBrains' native database MCP tools (proxied by AgentBridge)
+## JetBrains' native database MCP tools (proxied by Hsx2Agent)
 
 Available when both the **Database Tools and SQL** plugin and the **JetBrains AI Assistant**
 plugin are installed, and IntelliJ 2026.1+ (when `com.intellij.mcpServer` first shipped).
@@ -33,7 +33,7 @@ See https://www.jetbrains.com/help/idea/mcp-server.html#database_specific_tools
 
 ### How the proxy works
 
-AgentBridge calls these tools **in-process** via reflection, bypassing the HTTP transport layer
+Hsx2Agent calls these tools **in-process** via reflection, bypassing the HTTP transport layer
 entirely. The sequence:
 
 1. `PsiBridgeService` (in `plugin-core`) calls `JetBrainsProxyTool.createAll(project)` during startup.
@@ -64,9 +64,9 @@ of mcpserver JARs, which avoids Marketplace issues on earlier SDK versions.
 
 ---
 
-## What AgentBridge provides natively
+## What Hsx2Agent provides natively
 
-AgentBridge provides exactly one database tool of its own: **`database_add_source`** (experimental
+Hsx2Agent provides exactly one database tool of its own: **`database_add_source`** (experimental
 plugin only). This fills the one gap in JetBrains' native MCP — adding a new data source
 programmatically from a JDBC connection string.
 
@@ -112,7 +112,7 @@ official, maintained, and tested. There is no value in duplicating it.
 
 ## Why `database_execute_query` cannot be in the main plugin
 
-If AgentBridge were to implement its own `execute_sql_query` in the main plugin (for users
+If Hsx2Agent were to implement its own `execute_sql_query` in the main plugin (for users
 without the AI Assistant plugin), it would need `DatabaseConnectionManager` from
 `database-impl.jar`. The main plugin's class loader only sees `database-plugin-frontend.jar`.
 Both JARs contain classes with the same FQN, causing runtime classloader conflicts:

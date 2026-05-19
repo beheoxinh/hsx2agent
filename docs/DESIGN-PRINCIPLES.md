@@ -51,7 +51,7 @@ However, even within this code, platform-detection should use `SystemInfo` rathe
 
 ## 2. MCP tools: be a bridge, not an inventor
 
-AgentBridge's job is to expose IntelliJ's capabilities over MCP — not to invent new
+Hsx2Agent's job is to expose IntelliJ's capabilities over MCP — not to invent new
 capabilities. Every MCP tool should answer the question: *"what IntelliJ action am I
 wrapping?"*
 

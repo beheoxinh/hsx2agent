@@ -27,7 +27,7 @@ The new commit is still made and visible at the top of the log when you scroll t
 
 ### Reproduction
 
-1. Enable **Follow Agent Files** in the AgentBridge tool window settings.
+1. Enable **Follow Agent Files** in the Hsx2Agent tool window settings.
 2. Have the agent run `git_commit` (or `git_log`, `git_show`).
 3. Observe the VCS Log open. The bubble appears in the bottom-right; the highlighted commit is
    *not* the one just created.

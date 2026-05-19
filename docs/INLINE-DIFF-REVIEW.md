@@ -38,7 +38,7 @@ or as `APPROVED` (the agent moves on but every change still shows up in the pane
 | **What triggers a review**   | The first agent-originated edit after the project opens. There is no manual start.                                                                                                      |
 | **What's tracked**           | File *modifications*, *additions*, and *deletions* by agent tools.                                                                                                                      |
 | **What's ignored**           | User typing, branch switches, reformats not triggered by the agent.                                                                                                                     |
-| **Where changes show up**    | The **Review** tab in the AgentBridge tool window, a banner at the top of each edited editor, and persistent diff highlights (green / yellow / red) in the gutter.                      |
+| **Where changes show up**    | The **Review** tab in the Hsx2Agent tool window, a banner at the top of each edited editor, and persistent diff highlights (green / yellow / red) in the gutter.                        |
 | **Default approval state**   | `PENDING` (Auto-Approve off). Every new edit needs your decision before destructive git operations may proceed.                                                                         |
 | **Auto-Approve mode**        | When enabled, new edits land as `APPROVED`; existing pending rows are swept to `APPROVED`. The list still grows so you can audit later.                                                 |
 | **How you respond**          | **Accept** keeps the change (row flips to `APPROVED`, stays listed). **Revert** restores pre-edit content and sends a nudge back to the agent.                                          |
@@ -52,7 +52,7 @@ or as `APPROVED` (the agent moves on but every change still shows up in the pane
 
 ### 1. Review tab (side panel)
 
-The **Review** tab in the AgentBridge tool window is the primary surface. It lists every
+The **Review** tab in the Hsx2Agent tool window is the primary surface. It lists every
 tracked file as a row showing:
 
 - A **status icon** (Added, Modified, or Deleted).
@@ -265,7 +265,7 @@ controls what happens:
 | `AUTO_SEND` (default) | The nudge is sent on its own as a new prompt as soon as the turn ends. (Original behaviour.)                                |
 | `RESTORE_INTO_INPUT`  | The nudge text is **prepended to the chat input**, the input is focused, and nothing is auto-sent. You decide when to send. |
 
-Configure this in `Settings → Tools → AgentBridge → Chat input → Unhandled nudges`.
+Configure this in `Settings → Tools → Hsx2Agent → Chat input → Unhandled nudges`.
 
 ---
 
@@ -347,7 +347,7 @@ and aren't meaningful to other developers.
 |----------------------------------------------------------------------|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Auto-Approve agent edits** (toolbar toggle, persisted per-project) | OFF         | When ON, new edits land as `APPROVED` and existing pending rows are swept. Toggle-on releases any blocked git gate.                                                           |
 | **Auto-Clean on New Prompt** (toolbar toggle, persisted per-project) | OFF         | When ON, every approved row is removed before the next user prompt is sent. Pending rows are never auto-cleaned.                                                              |
-| **Unhandled nudges** (`Settings → Tools → AgentBridge → Chat input`) | `AUTO_SEND` | `AUTO_SEND`: pending nudges are sent on their own as a new prompt at end-of-turn. `RESTORE_INTO_INPUT`: pending nudges are prepended to the chat input and focus moves to it. |
+| **Unhandled nudges** (`Settings → Tools → Hsx2Agent → Chat input`)   | `AUTO_SEND` | `AUTO_SEND`: pending nudges are sent on their own as a new prompt at end-of-turn. `RESTORE_INTO_INPUT`: pending nudges are prepended to the chat input and focus moves to it. |
 
 The legacy *"Review agent edits"* master switch is gone; the persisted field stays on
 `McpServerSettings` for back-compat (read once for migration, then ignored).

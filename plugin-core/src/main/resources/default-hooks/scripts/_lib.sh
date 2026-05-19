@@ -1,5 +1,5 @@
 #!/bin/sh
-# _lib.sh — POSIX shell library for AgentBridge hook scripts.
+# _lib.sh — POSIX shell library for Hsx2Agent hook scripts.
 # Source this at the top of every hook script:
 #   . "${0%/*}/_lib.sh"
 #

@@ -1,6 +1,6 @@
 # The Case for IDE-Native Coding Agents
 
-AgentBridge is one concrete experiment in keeping agentic coding close to the way many of us already work in a
+Hsx2Agent is one concrete experiment in keeping agentic coding close to the way many of us already work in a
 full IDE.
 
 Historically, developers have often split into two broad camps. Some prefer lightweight editors because they are fast,
@@ -25,13 +25,13 @@ through the IDE in the same feedback loop a human would.
 
 ## Related work and external references
 
-AgentBridge is not the only attempt to improve the interface between agents and development tools. The broader ecosystem
+Hsx2Agent is not the only attempt to improve the interface between agents and development tools. The broader ecosystem
 is clearly moving from "prompt plus shell" toward richer, more structured interfaces.
 
 [MCP](https://modelcontextprotocol.io/introduction) is probably the most visible example. The project describes MCP as
 "an open-source standard for connecting AI applications to external systems" and compares it to "a USB-C port for AI
-applications". That is exactly the direction AgentBridge depends on: agents should not need to rediscover everything
-from raw text if a better tool interface exists. AgentBridge's narrower bet is that a JetBrains IDE is one of the most
+applications". That is exactly the direction Hsx2Agent depends on: agents should not need to rediscover everything
+from raw text if a better tool interface exists. Hsx2Agent's narrower bet is that a JetBrains IDE is one of the most
 valuable external systems to connect.
 
 The [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) is another important precedent.
@@ -39,25 +39,26 @@ It standardized how editors get language features such as autocomplete, go to de
 language server. LSP made language intelligence more portable across tools, and many agent integrations now expose
 LSP-like symbol search or diagnostics. I think that is useful, but still smaller than the full IDE surface. JetBrains'
 [Program Structure Interface](https://plugins.jetbrains.com/docs/intellij/psi.html) is described as the layer that
-creates the "syntactic and semantic code model" powering platform features. AgentBridge tries to expose more of that
+creates the "syntactic and semantic code model" powering platform features. Hsx2Agent tries to expose more of that
 platform, not only the few features that fit neatly into an LSP-shaped box.
 
 The SWE-agent paper and project also make a useful point in the title alone:
 ["Agent-Computer Interfaces Enable Automated Software Engineering"](https://arxiv.org/abs/2405.15793). Their
 open-source project focuses on agents autonomously using tools to fix real GitHub issues. That framing matters: the
-interface you give the agent changes what the agent can do. AgentBridge agrees with that thesis, but explores a
+interface you give the agent changes what the agent can do. Hsx2Agent agrees with that thesis, but explores a
 different interface: not primarily a terminal-centric computer interface, but an IDE-native one.
 
 Hooks are another path the ecosystem is exploring. Claude Code documents hooks as
 ["user-defined shell commands, HTTP endpoints, or LLM prompts"](https://code.claude.com/docs/en/hooks) that run at
 specific lifecycle points, including before and after tool use. I think hooks are valuable, especially when they call
 deterministic tools. My concern is mostly timing and synchronization: if a hook fixes or reformats something after the
-agent's edit, the agent may already be reasoning from stale context. AgentBridge tries to make that feedback part of the
+agent's edit, the agent may already be reasoning from stale context. Hsx2Agent tries to make that feedback part of the
 same IDE-aware tool response when possible.
 
 The JetBrains documentation also backs the core IDE-native argument. IntelliJ inspections
 ["detect and correct abnormal code ... before you compile it"](https://www.jetbrains.com/help/idea/code-inspection.html)
-and can find probable bugs, dead code, spelling problems, and structural issues. [Intention actions](https://www.jetbrains.com/help/idea/intention-actions.html)
+and can find probable bugs, dead code, spelling problems, and structural
+issues. [Intention actions](https://www.jetbrains.com/help/idea/intention-actions.html)
 are described as the IDE analyzing code as you work and searching for ways to optimize it.
 [Refactoring support](https://www.jetbrains.com/help/idea/refactoring-source-code.html) is documented as a first-class
 IDE workflow with previews, conflict handling, and popular automated refactorings. These are exactly the kinds of
@@ -73,7 +74,7 @@ prompted or if a hook tells them to. By then the agent may have lost some of the
 I have seen agents implement a feature, later review their own code, find a warning, and then "fix" the warning by
 changing behavior that was actually required. The problem was detected, but too late in the reasoning flow.
 
-AgentBridge tries to surface IDE feedback immediately in the tool response. If an edit creates highlights, formatting
+Hsx2Agent tries to surface IDE feedback immediately in the tool response. If an edit creates highlights, formatting
 changes, or import changes, the agent can react while it still remembers why it made the edit. That keeps the warning
 tied to the original goal instead of turning it into a separate clean-up task with weaker context.
 
@@ -111,7 +112,7 @@ sometimes ignore a long refactoring menu because reading it takes longer than do
 inspect the available actions quickly, choose the right one, and let IntelliJ apply it. That is where coding agents can
 actually benefit more from a full IDE than humans do.
 
-AgentBridge exposes these IDE-native operations as tools: semantic navigation, usage search, refactoring, quick-fixes,
+Hsx2Agent exposes these IDE-native operations as tools: semantic navigation, usage search, refactoring, quick-fixes,
 inspections, test discovery, run configurations, debugging, Git operations, project structure, database browsing, and
 more. The goal is not to make the model pretend to be IntelliJ. The goal is to let IntelliJ do the things IntelliJ is
 already good at.
@@ -126,7 +127,7 @@ But hooks can still happen late in the flow. If a hook reformats a file after an
 version in context and make the next patch against stale text. That can cause avoidable conflicts or accidental
 rewrites.
 
-AgentBridge tries to keep this tighter. File writes go through IntelliJ's document model, auto-formatting and import
+Hsx2Agent tries to keep this tighter. File writes go through IntelliJ's document model, auto-formatting and import
 optimization can run as part of the IDE-aware edit path, and the result is reported back to the agent immediately.
 Symbol-based edits go further by targeting methods, classes, and fields instead of fragile line ranges.
 
@@ -140,7 +141,7 @@ but because the IDE already has connected context. It knows the project, open ed
 database connections, warnings, and generated files. Keeping those tools in one environment can reveal useful
 relationships that isolated terminal commands miss.
 
-AgentBridge follows the same idea. Git operations go through the IDE's VCS layer where possible. Test runs appear in
+Hsx2Agent follows the same idea. Git operations go through the IDE's VCS layer where possible. Test runs appear in
 the IDE test runner. Builds show up in the Build window. Database tools use configured IntelliJ data sources. The agent
 is not only editing files on disk; it is working inside the same project model the developer is using.
 
@@ -150,7 +151,7 @@ Agentic coding is still new. It is too early to say which interaction model will
 terminal harnesses, cloud agents, IDE plugins, and specialized MCP servers are all exploring useful pieces of the
 problem.
 
-AgentBridge is my argument for one particular direction: if a developer already benefits from a full IDE, an agent may
+Hsx2Agent is my argument for one particular direction: if a developer already benefits from a full IDE, an agent may
 benefit even more. The agent can offload deterministic operations to IDE APIs, react to feedback earlier, and spend
 more of its reasoning on the actual software change.
 
@@ -160,6 +161,6 @@ integration, and test tooling are part of the daily workflow.
 
 ---
 
-**Disclosure:** This text is a collaboration between me, the AgentBridge maintainer, and GitHub Copilot. I provided the
+**Disclosure:** This text is a collaboration between me, the Hsx2Agent maintainer, and GitHub Copilot. I provided the
 core argument, examples, opinions, and direction. Copilot helped turn those notes into a structured essay, tighten the
 language, and add external references. The viewpoint is mine; AI helped with editing and drafting.

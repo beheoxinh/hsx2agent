@@ -207,7 +207,7 @@ Every A2A agent publishes a JSON manifest at `/.well-known/agent.json`:
 
 ```json
 {
-  "name": "AgentBridge IDE",
+  "name": "Hsx2Agent IDE",
   "description": "IntelliJ IDE agent — code editing, navigation, testing, git",
   "url": "http://localhost:8643/a2a",
   "version": "1.0",
@@ -335,7 +335,7 @@ graph TB
     end
 
     subgraph IDE["IntelliJ IDEA"]
-        subgraph Plugin["AgentBridge Plugin"]
+        subgraph Plugin["Hsx2Agent Plugin"]
             A2AServer["A2A Server<br/>localhost:8643"]
             A2AClient["A2A Client"]
             TaskMgr["TaskManager<br/>(lifecycle)"]
@@ -505,7 +505,7 @@ public final class AgentCardEndpoint {
 
     public JsonObject buildAgentCard(Project project) {
         var card = new JsonObject();
-        card.addProperty("name", "AgentBridge IDE");
+        card.addProperty("name", "Hsx2Agent IDE");
         card.addProperty("url",
                 "http://localhost:" + getPort() + "/a2a");
         card.addProperty("version", "1.0");
@@ -681,7 +681,7 @@ Two new MCP tools expose A2A delegation to any agent running in the plugin:
 ```mermaid
 sequenceDiagram
     participant Agent as Coding Agent
-    participant Plugin as AgentBridge
+    participant Plugin as Hsx2Agent
     participant A2AC as A2A Client
     participant Ext as Knowledge Agent (Teams)
     Agent ->> Plugin: tools/call ask_external_agent<br/>{agent: "teams", question: "What pagination<br/>style did the team agree on?"}
