@@ -8,6 +8,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBTabbedPane
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -19,6 +20,9 @@ import javax.swing.*
  * Root settings page for AgentBridge storage. Holds the shared storage
  * location choice; child pages (Tool Statistics, Memory, Chat History)
  * configure specific stores below it.
+ *
+ * This page now includes "Project Files" and "Scratch File Types" as sub-tabs
+ * to keep the root settings menu clean.
  */
 class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
     private val project: Project
@@ -26,17 +30,45 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
 
     private val settings = AgentBridgeStorageSettings.getInstance()
 
-    private var mainPanel: JPanel? = null
+    private var mainPanel: JComponent? = null
+
+    // Tab 1: General (Storage Location)
+    private var locationPanel: JPanel? = null
     private var projectDefaultButton: JRadioButton? = null
     private var userHomeButton: JRadioButton? = null
     private var customButton: JRadioButton? = null
     private var customField: TextFieldWithBrowseButton? = null
+
+    // Tab 2: Project Files
+    private val projectFilesConfigurable = ProjectFilesConfigurable()
+
+    // Tab 3: Scratch File Types
+    private val scratchTypesConfigurable = ScratchTypesConfigurable()
 
     override fun getDisplayName(): String = "Storage"
 
     override fun getId(): String = ID
 
     override fun createComponent(): JComponent {
+        val tabbedPane = JBTabbedPane()
+
+        tabbedPane.addTab("General", createLocationPanel())
+
+        projectFilesConfigurable.createComponent().let {
+            tabbedPane.addTab("Project Files", it)
+        }
+
+        scratchTypesConfigurable.createComponent().let {
+            tabbedPane.addTab("Scratch File Types", it)
+        }
+
+        mainPanel = tabbedPane
+
+        reset()
+        return tabbedPane
+    }
+
+    private fun createLocationPanel(): JComponent {
         val projectDefault = JRadioButton("Project directory")
         val userHome = JRadioButton("User home directory")
         val custom = JRadioButton("Custom directory")
@@ -60,7 +92,7 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
         customButton = custom
         customField = pathField
 
-        mainPanel = FormBuilder.createFormBuilder()
+        val panel = FormBuilder.createFormBuilder()
             .addComponent(
                 JBLabel(
                     "<html><body style='width: 520px'>Configure where Hsx2Agent stores per-project data files " +
@@ -89,12 +121,18 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
                 border = JBUI.Borders.empty(8)
             }
 
-        reset()
+        locationPanel = panel
         updateCustomField()
-        return requireNotNull(mainPanel)
+        return panel
     }
 
     override fun isModified(): Boolean {
+        return isLocationModified() ||
+            projectFilesConfigurable.isModified ||
+            scratchTypesConfigurable.isModified
+    }
+
+    private fun isLocationModified(): Boolean {
         val selectedMode = selectedMode()
         return selectedMode != settings.storageLocationMode ||
             customPathText() != (settings.customStorageRoot ?: "")
@@ -102,6 +140,12 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
 
     @Throws(ConfigurationException::class)
     override fun apply() {
+        applyLocation()
+        projectFilesConfigurable.apply()
+        scratchTypesConfigurable.apply()
+    }
+
+    private fun applyLocation() {
         val mode = selectedMode()
         val customPath = customPathText()
         if (mode == StorageLocationMode.CUSTOM && customPath.isBlank()) {
@@ -112,6 +156,12 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
     }
 
     override fun reset() {
+        resetLocation()
+        projectFilesConfigurable.reset()
+        scratchTypesConfigurable.reset()
+    }
+
+    private fun resetLocation() {
         when (settings.storageLocationMode) {
             StorageLocationMode.PROJECT -> projectDefaultButton?.isSelected = true
             StorageLocationMode.USER_HOME -> userHomeButton?.isSelected = true
@@ -123,10 +173,13 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
 
     override fun disposeUIResources() {
         mainPanel = null
+        locationPanel = null
         projectDefaultButton = null
         userHomeButton = null
         customButton = null
         customField = null
+        projectFilesConfigurable.disposeUIResources()
+        scratchTypesConfigurable.disposeUIResources()
     }
 
     private fun selectedMode(): StorageLocationMode = when {

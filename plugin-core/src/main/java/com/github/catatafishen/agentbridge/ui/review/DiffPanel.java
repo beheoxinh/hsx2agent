@@ -98,7 +98,10 @@ public final class DiffPanel extends JPanel implements Disposable {
         });
         diffAnimationTimer.setRepeats(true);
 
-        splitter = new OnePixelSplitter(true, 0.5f);
+        com.github.catatafishen.agentbridge.settings.SidePanelPosition initialPosition =
+            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().getSidePanelPosition();
+        boolean splitterVertical = initialPosition.isVertical();
+        splitter = new OnePixelSplitter(splitterVertical, 0.5f);
         splitter.setFirstComponent(createSectionPanel(pendingHeader, pendingList));
         splitter.setSecondComponent(createSectionPanel(approvedHeader, approvedList));
 
@@ -125,13 +128,16 @@ public final class DiffPanel extends JPanel implements Disposable {
 
     /**
      * Updates internal splitter orientation based on tool window position.
-     * When at TOP/BOTTOM, uses horizontal split (side-by-side columns).
-     * When at LEFT/RIGHT, uses vertical split (top/bottom rows).
+     * When at TOP/BOTTOM, uses vertical split (pending top / approved bottom).
+     * When at LEFT/RIGHT, uses horizontal split (pending left / approved right).
      */
     public void updateLayoutOrientation(@NotNull com.github.catatafishen.agentbridge.settings.SidePanelPosition position) {
-        splitter.setOrientation(!position.isVertical());
+        boolean isVertical = position.isVertical();
+        splitter.setOrientation(isVertical);
         splitter.revalidate();
         splitter.repaint();
+        this.revalidate();
+        this.repaint();
     }
 
     @Override

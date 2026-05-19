@@ -86,10 +86,11 @@ class BroadcastChatPanel(
     override fun addPromptEntry(
         text: String,
         contextFiles: List<Triple<String, String, Int>>?,
-        bubbleHtml: String?
+        bubbleHtml: String?,
+        isSilent: Boolean
     ): String {
-        nativePanel.addPromptEntry(text, contextFiles, bubbleHtml)
-        return jcefPanel.addPromptEntry(text, contextFiles, bubbleHtml)
+        nativePanel.addPromptEntry(text, contextFiles, bubbleHtml, isSilent)
+        return jcefPanel.addPromptEntry(text, contextFiles, bubbleHtml, isSilent)
     }
 
     override fun removePromptEntry(entryId: String) {

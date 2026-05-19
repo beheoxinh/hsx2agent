@@ -16,7 +16,7 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
     fun getConversationText(): String {
         val sb = StringBuilder()
         for (e in entries) when (e) {
-            is EntryData.Prompt -> sb.appendLine(">>> ${e.text}")
+            is EntryData.Prompt -> if (!e.isSilent) sb.appendLine(">>> ${e.text}")
             is EntryData.Text -> {
                 sb.append(e.raw); sb.appendLine()
             }
@@ -153,7 +153,7 @@ ul,ol{margin:4px 0;padding-left:22px}
     }
 
     private fun renderExportEntry(e: EntryData): String = when (e) {
-        is EntryData.Prompt -> "<div class='prompt'><span class='prompt-b'>${escapeHtml(e.text)}</span></div>\n"
+        is EntryData.Prompt -> if (!e.isSilent) "<div class='prompt'><span class='prompt-b'>${escapeHtml(e.text)}</span></div>\n" else ""
         is EntryData.Text -> "<div class='response'>${markdownToHtml(e.raw)}</div>\n"
         is EntryData.Thinking -> "<details class='thinking'><summary>\uD83D\uDCAD Thought process</summary><pre>${
             escapeHtml(

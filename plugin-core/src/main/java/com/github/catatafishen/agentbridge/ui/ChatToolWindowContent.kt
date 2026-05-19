@@ -1291,7 +1291,12 @@ class ChatToolWindowContent(
         submitTurn(rawText, contextItems)
     }
 
-    private fun submitTurn(rawText: String, contextItems: List<ContextItemData>, isAutoCommit: Boolean = false) {
+    private fun submitTurn(
+        rawText: String,
+        contextItems: List<ContextItemData>,
+        isAutoCommit: Boolean = false,
+        isSilent: Boolean = false
+    ) {
         isLastTurnAutoCommit = isAutoCommit
         consolePanel.disableQuickReplies()
         statusBanner?.dismissCurrent()
@@ -1311,8 +1316,8 @@ class ChatToolWindowContent(
                 Triple(item.name, item.path, if (item.isSelection) item.startLine else 0)
             }
         } else null
-        val bubbleHtml = buildBubbleHtml(rawText, contextItems)
-        val entryId = consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
+        val bubbleHtml = if (isSilent) null else buildBubbleHtml(rawText, contextItems)
+        val entryId = consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml, isSilent)
         appendNewEntries()
 
         // Only clear the text area if we are sending what was currently in it (vs an external 'Continue' trigger)
@@ -1370,9 +1375,9 @@ class ChatToolWindowContent(
     }
 
     /** Submits a human nudge to the pending queue, which triggers the nudge listener to show the bubble. */
-    private fun submitNudge(text: String) {
+    private fun submitNudge(text: String, showBubble: Boolean = true) {
         isLastTurnAutoCommit = false
-        AgentNudgeService.getInstance(project).addNudge(text, NudgeSource.HUMAN, true)
+        AgentNudgeService.getInstance(project).addNudge(text, NudgeSource.HUMAN, showBubble)
         refreshShortcutHints()
     }
 
@@ -1549,7 +1554,8 @@ class ChatToolWindowContent(
                 submitTurn(
                     "Commit all approved changes now. Use a descriptive conventional commit message. No more actions or research needed.",
                     emptyList(),
-                    isAutoCommit = true
+                    isAutoCommit = true,
+                    isSilent = true
                 )
             }
         }
@@ -2493,9 +2499,9 @@ class ChatToolWindowContent(
         consolePanel.onContinueTurn = { _ ->
             ApplicationManager.getApplication().invokeLater {
                 if (isSending) {
-                    submitNudge("Continue")
+                    submitNudge("Continue", showBubble = false)
                 } else {
-                    submitTurn("Continue", emptyList())
+                    submitTurn("Continue", emptyList(), isSilent = true)
                 }
             }
         }

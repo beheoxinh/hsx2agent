@@ -184,8 +184,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     override fun addPromptEntry(
         text: String,
         contextFiles: List<Triple<String, String, Int>>?,
-        bubbleHtml: String?
+        bubbleHtml: String?,
+        isSilent: Boolean
     ): String {
+        if (isSilent) return java.util.UUID.randomUUID().toString()
         return addPromptEntryAt(text, contextFiles) { row ->
             addRow(row, spacing = JBUI.scale(10))
         }
@@ -796,12 +798,14 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         for (entry in entries) {
             when (entry) {
                 is EntryData.Prompt -> {
-                    finalizeTurn()
-                    val ctxTriples = entry.contextFiles?.map { Triple(it.name, it.path, it.line) }
-                    if (prevAddRow != null) {
-                        addPromptEntryAt(entry.text, ctxTriples, prevAddRow)
-                    } else {
-                        addPromptEntry(entry.text, ctxTriples)
+                    if (!entry.isSilent) {
+                        finalizeTurn()
+                        val ctxTriples = entry.contextFiles?.map { Triple(it.name, it.path, it.line) }
+                        if (prevAddRow != null) {
+                            addPromptEntryAt(entry.text, ctxTriples, prevAddRow)
+                        } else {
+                            addPromptEntry(entry.text, ctxTriples)
+                        }
                     }
                 }
 

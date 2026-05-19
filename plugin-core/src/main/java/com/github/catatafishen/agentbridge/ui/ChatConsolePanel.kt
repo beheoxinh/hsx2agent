@@ -404,7 +404,8 @@ class ChatConsolePanel(
     override fun addPromptEntry(
         text: String,
         contextFiles: List<Triple<String, String, Int>>?,
-        bubbleHtml: String?
+        bubbleHtml: String?,
+        isSilent: Boolean
     ): String {
         placeholderText = null
         toolJustCompleted = false
@@ -414,9 +415,16 @@ class ChatConsolePanel(
         currentTurnId = java.util.UUID.randomUUID().toString()
         val ts = timestamp()
         val ctxRefs = contextFiles?.map { (name, path, line) -> ContextFileRef(name, path, line) }
-        entries.add(EntryData.Prompt(text, ts, ctxRefs, id = currentTurnId))
-        val encodedBubble = if (bubbleHtml != null) encodeBase64(bubbleHtml) else ""
-        executeJs("ChatController.addUserMessage('${escJs(text)}','${displayTs(ts)}','$encodedBubble','$currentTurnId');ChatController.showWorkingIndicator()")
+
+        // Even if silent, we store it in entries for consistent numbering/replay,
+        // but we skip the JS call that renders the bubble in the UI.
+        entries.add(EntryData.Prompt(text, ts, ctxRefs, id = currentTurnId, isSilent = isSilent))
+
+        if (!isSilent) {
+            val encodedBubble = if (bubbleHtml != null) encodeBase64(bubbleHtml) else ""
+            executeJs("ChatController.addUserMessage('${escJs(text)}','${displayTs(ts)}','$encodedBubble','$currentTurnId');ChatController.showWorkingIndicator()")
+        }
+
         fireEntriesChanged()
         return currentTurnId
     }
@@ -1034,7 +1042,9 @@ class ChatConsolePanel(
         while (i < entries.size) {
             when (val e = entries[i]) {
                 is EntryData.Prompt -> {
-                    turns.add(serializeUserTurn(e))
+                    if (!e.isSilent) {
+                        turns.add(serializeUserTurn(e))
+                    }
                     i++
                 }
 

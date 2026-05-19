@@ -35,7 +35,8 @@ interface ChatPanelApi : Disposable {
     fun addPromptEntry(
         text: String,
         contextFiles: List<Triple<String, String, Int>>? = null,
-        bubbleHtml: String? = null
+        bubbleHtml: String? = null,
+        isSilent: Boolean = false
     ): String
 
     fun removePromptEntry(entryId: String)

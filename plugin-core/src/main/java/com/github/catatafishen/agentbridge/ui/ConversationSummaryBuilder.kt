@@ -50,12 +50,14 @@ internal object ConversationSummaryBuilder {
         for (e in entries) {
             when (e) {
                 is EntryData.Prompt -> {
-                    flush()
-                    currentPrompt = e
-                    agentTextBuf.clear()
-                    toolCount = 0
-                    thinkCount = 0
-                    subAgentCount = 0
+                    if (!e.isSilent) {
+                        flush()
+                        currentPrompt = e
+                        agentTextBuf.clear()
+                        toolCount = 0
+                        thinkCount = 0
+                        subAgentCount = 0
+                    }
                 }
 
                 is EntryData.Text -> agentTextBuf.append(e.raw)

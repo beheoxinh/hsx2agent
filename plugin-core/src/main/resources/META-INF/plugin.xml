@@ -271,20 +271,6 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
       id="com.github.catatafishen.agentbridge.storage.toolStats"
       displayName="Tool Statistics"/>
 
-    <!-- ── Project Files ── -->
-    <projectConfigurable
-      parentId="com.github.catatafishen.agentbridge.settings"
-      instance="com.github.catatafishen.agentbridge.settings.ProjectFilesConfigurable"
-      id="com.github.catatafishen.agentbridge.projectFiles"
-      displayName="Project Files"/>
-
-    <!-- ── Scratch File Types ── -->
-    <projectConfigurable
-      parentId="com.github.catatafishen.agentbridge.settings"
-      instance="com.github.catatafishen.agentbridge.settings.ScratchTypesConfigurable"
-      id="com.github.catatafishen.agentbridge.scratchTypes"
-      displayName="Scratch File Types"/>
-
     <!-- ── Memory (semantic memory / MemPalace, under Storage) ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.storage"
