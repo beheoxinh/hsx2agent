@@ -87,8 +87,8 @@ sealed class EntryData {
         override val timestamp: String = "",
         val contextFiles: List<ContextFileRef>? = null,
         val id: String = "",
-        val isSilent: Boolean = false,
         override val entryId: String = id.ifEmpty { java.util.UUID.randomUUID().toString() },
+        val isSilent: Boolean = false,
     ) : EntryData()
 
     class Text @JvmOverloads constructor(

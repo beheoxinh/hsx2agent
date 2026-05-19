@@ -695,12 +695,12 @@ internal class PromptsPanel(
             val turns = sessionStore.query(params).toList()
             val items = turns.map { turn ->
                 val prompt = EntryData.Prompt(
-                    text = turn.userMessage(),
-                    timestamp = turn.timestamp().toString(),
-                    contextFiles = null,
-                    id = turn.turnId(),
-                    isSilent = false,
-                    entryId = turn.turnId()
+                    turn.userMessage(),
+                    turn.timestamp().toString(),
+                    null,
+                    turn.turnId(),
+                    turn.turnId(),
+                    false
                 )
                 PromptItem(prompt, null, emptyList(), turn.sessionId(), turn.turnId())
             }
