@@ -1428,6 +1428,72 @@ file-nav {
     border-color: var(--accent, #58a6ff);
 }
 
+.tcv-detail {
+    flex-basis: 100%;
+    margin-top: var(--sp-4, 8px);
+}
+
+.tcv-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin-bottom: var(--sp-4, 8px);
+    font-size: 0.8em;
+}
+
+.tcv-meta-item {
+    color: var(--muted);
+}
+
+.tcv-meta-item strong {
+    color: var(--fg);
+}
+
+.tcv-meta-ts {
+    opacity: 0.6;
+}
+
+.tcv-label {
+    color: var(--muted);
+    font-size: 0.78em;
+    font-weight: 700;
+    margin: var(--sp-4, 8px) 0 var(--sp-2, 4px);
+    text-transform: uppercase;
+}
+
+.tcv-diff-btn {
+    background: none;
+    border: 1px solid var(--muted);
+    border-radius: 3px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.75em;
+    padding: 1px 5px;
+    vertical-align: middle;
+}
+
+.tcv-diff-btn:hover {
+    border-color: var(--fg);
+    color: var(--fg);
+}
+
+.tcv-detail pre {
+    max-height: 320px;
+    overflow: auto;
+    background: var(--bg);
+    color: var(--fg);
+    border-radius: 6px;
+    padding: var(--sp-4, 8px);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: var(--code-font);
+    font-size: var(--code-font-size);
+}
+
+.tcv-detail pre code {
+    font: inherit;
+}
+
 /* ── JSON syntax highlighting in tool call detail panels ── */
 .tcv-detail .sh-key, .tcv-stage-detail .sh-key {
     color: var(--tool-read, #64b9b9);
