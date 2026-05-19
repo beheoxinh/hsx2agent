@@ -18,8 +18,8 @@ object AgentIconProvider {
 
     fun getDefaultIcon(): Icon = defaultIcon
 
-    fun getIconForProfile(profileId: String?): Icon {
-        val icon = when (profileId) {
+    fun getIconForProfile(profileId: String?): Icon? {
+        return when (profileId) {
             ClaudeCliClient.PROFILE_ID -> claudeIcon
             AgentProfileManager.COPILOT_PROFILE_ID -> copilotIcon
             AgentProfileManager.OPENCODE_PROFILE_ID -> opencodeIcon
@@ -29,7 +29,6 @@ object AgentIconProvider {
             CodexAppServerClient.PROFILE_ID -> codexIcon
             else -> null
         }
-        return icon ?: defaultIcon
     }
 
     private fun loadIcon(filename: String): Icon {

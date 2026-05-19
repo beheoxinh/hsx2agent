@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
+import com.github.catatafishen.agentbridge.session.db.ConversationListener;
 import com.github.catatafishen.agentbridge.session.db.ConversationStatistics;
 import com.github.catatafishen.agentbridge.ui.AgentIconProvider;
 import com.github.catatafishen.agentbridge.ui.BillingCalculator;
@@ -73,6 +74,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     // Selected client section
     private final JLabel clientIconLabel = new JLabel();
     private final JLabel clientNameLabel = new JLabel();
+    private final JPanel clientSection;
 
     // Current turn section (also displays the most recent completed turn between turns)
     private final JLabel turnHeaderLabel = new JLabel("Active turn");
@@ -154,18 +156,22 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         JPanel clientRow = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0));
         clientRow.setOpaque(false);
         clientRow.setBorder(BorderFactory.createEmptyBorder(0, JBUI.scale(8), JBUI.scale(4), JBUI.scale(8)));
+
+        clientIconLabel.setMinimumSize(new Dimension(JBUI.scale(16), JBUI.scale(16)));
+        clientIconLabel.setPreferredSize(new Dimension(JBUI.scale(16), JBUI.scale(16)));
+        clientIconLabel.setMaximumSize(new Dimension(JBUI.scale(16), JBUI.scale(16)));
+
         clientRow.add(clientIconLabel);
         clientRow.add(clientNameLabel);
 
-        JPanel clientSection = new JPanel();
+        clientSection = new JPanel();
         clientSection.setLayout(new BoxLayout(clientSection, BoxLayout.Y_AXIS));
         clientSection.setOpaque(false);
         clientSection.add(createSectionHeader("Selected client"));
         clientSection.add(clientRow);
         leftAlignSection(clientSection);
-        // Populate the icon + name BEFORE measuring preferred size in leftAlignChild —
-        // otherwise the row is capped at the empty-label height (≈0px) and the value
-        // becomes invisible after the asynchronous refreshClientSection() updates it.
+        // Initial state: hide until an agent is connected
+        clientSection.setVisible(false);
         refreshClientSection();
         leftAlignChild(clientRow);
 
@@ -316,6 +322,13 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         switchListener = () -> ApplicationManager.getApplication().invokeLater(this::refreshClientSection);
         agentManager.addSwitchListener(switchListener);
+
+        project.getMessageBus().connect(this).subscribe(ConversationListener.TOPIC, new ConversationListener() {
+            @Override
+            public void connectionChanged(boolean connected) {
+                ApplicationManager.getApplication().invokeLater(() -> refreshClientSection());
+            }
+        });
 
         timerPanel.setOnStatsChanged(this::refresh);
         billing.setOnBillingChanged(this::refresh);
@@ -484,9 +497,18 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     }
 
     private void refreshClientSection() {
+        if (!agentManager.isConnected()) {
+            clientSection.setVisible(false);
+            return;
+        }
+        clientSection.setVisible(true);
         String profileId = agentManager.getActiveProfileId();
         Icon icon = AgentIconProvider.INSTANCE.getIconForProfile(profileId);
-        clientIconLabel.setIcon(icon);
+        if (icon != null) {
+            clientIconLabel.setIcon(com.intellij.util.IconUtil.toSize(icon, JBUI.scale(16), JBUI.scale(16)));
+        } else {
+            clientIconLabel.setIcon(null);
+        }
         clientNameLabel.setText(agentManager.getActiveProfile().getDisplayName());
     }
 

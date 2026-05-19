@@ -5,16 +5,12 @@ import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.services.AgentProfileManager.AgentProfileListener
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
-import com.intellij.openapi.options.ShowSettingsUtil
 import com.github.catatafishen.agentbridge.session.db.ConversationListener
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.settings.*
-import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings
-import com.github.catatafishen.agentbridge.settings.BinaryDetector
-import com.github.catatafishen.agentbridge.settings.McpServerSettings
-import com.github.catatafishen.agentbridge.settings.SmartAgentDetector
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.popup.JBPopupFactory
