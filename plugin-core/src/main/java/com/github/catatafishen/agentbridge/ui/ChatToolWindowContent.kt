@@ -1899,9 +1899,11 @@ class ChatToolWindowContent(
             val icon = if (isConnected) {
                 AgentIconProvider.getIconForProfile(profile.id)
             } else {
-                AgentIconProvider.getDefaultIcon()
+                null
             }
-            e.presentation.icon = icon
+            // If connected but no profile icon, or if disconnected, use the default Restart icon
+            // which is guaranteed to be the correct size (16x16).
+            e.presentation.icon = icon ?: AllIcons.Actions.Restart
             e.presentation.setText(profile.displayName, true)
         }
 

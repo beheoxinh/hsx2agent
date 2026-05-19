@@ -7,14 +7,17 @@ import com.intellij.openapi.util.IconLoader
 import javax.swing.Icon
 
 object AgentIconProvider {
-    private val defaultIcon: Icon = loadIcon("agentbridge.svg")
-    private val claudeIcon: Icon = loadIcon("claude.svg")
-    private val copilotIcon: Icon = loadIcon("copilot.svg")
-    private val opencodeIcon: Icon = loadIcon("opencode.svg")
-    private val junieIcon: Icon = loadIcon("junie.svg")
-    private val kiroIcon: Icon = loadIcon("kiro.svg")
-    private val codexIcon: Icon = loadIcon("codex.svg")
-    private val hermesIcon: Icon = loadIcon("hermes.svg")
+    @JvmField
+    val ICON: Icon = com.intellij.util.IconUtil.toSize(loadIcon("agentbridge.svg"), 16, 16)
+
+    private val defaultIcon: Icon = ICON
+    private val claudeIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("claude.svg"), 16, 16)
+    private val copilotIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("copilot.svg"), 16, 16)
+    private val opencodeIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("opencode.svg"), 16, 16)
+    private val junieIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("junie.svg"), 16, 16)
+    private val kiroIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("kiro.svg"), 16, 16)
+    private val codexIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("codex.svg"), 16, 16)
+    private val hermesIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("hermes.svg"), 16, 16)
 
     fun getDefaultIcon(): Icon = defaultIcon
 
@@ -32,6 +35,6 @@ object AgentIconProvider {
     }
 
     private fun loadIcon(filename: String): Icon {
-        return IconLoader.getIcon("/icons/$filename", AgentIconProvider::class.java)
+        return IconLoader.getIcon("/icons/expui/$filename", AgentIconProvider::class.java)
     }
 }
