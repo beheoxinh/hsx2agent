@@ -3108,6 +3108,7 @@ class ChatToolWindowContent(
     }
 
     private fun restoreConversation(onComplete: () -> Unit = {}) {
+        LiveToolCallService.getInstance(project).clear()
         ApplicationManager.getApplication().executeOnPooledThread {
             V1ToV2Migrator.migrateIfNeeded(project.basePath)
             val result = conversationStore.loadRecentEntries(project.basePath)
