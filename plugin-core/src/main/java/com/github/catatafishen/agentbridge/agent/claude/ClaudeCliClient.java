@@ -263,48 +263,61 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         return Collections.unmodifiableList(list);
     }
 
+    private @Nullable String detectModelFromSettings() {
+        Path path = Path.of(SystemProperties.getUserHome(), ".claude", "settings.json");
+        if (!Files.exists(path)) return null;
+
+        try {
+            String content = Files.readString(path, StandardCharsets.UTF_8);
+            JsonObject settings = JsonParser.parseString(content).getAsJsonObject();
+            if (settings.has("env")) {
+                JsonObject env = settings.getAsJsonObject("env");
+                if (env.has("ANTHROPIC_MODEL")) {
+                    return env.get("ANTHROPIC_MODEL").getAsString();
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("Could not read Claude settings from " + path + ": " + e.getMessage());
+        }
+        return null;
+    }
+
     @Override
     public @NotNull List<Model> getAvailableModels() {
         List<String> custom = profile.getCustomCliModels();
+        String detectedModel = detectModelFromSettings();
 
-        if (profile.isCustomOnly()) {
-            List<Model> customModels = new ArrayList<>();
-            Set<String> seenIds = new HashSet<>();
-            for (String entry : custom) {
-                if (!entry.isBlank()) {
-                    String[] parts = entry.split("=", 2);
-                    String id = parts[0].trim();
-                    String name = parts.length > 1 ? parts[1].trim() : id;
-                    if (seenIds.add(id)) {
-                        customModels.add(new Model(id, name, null, null));
-                    }
+        List<Model> result = new ArrayList<>();
+        Set<String> seenIds = new HashSet<>();
+
+        // 1. Add detected model first if it exists
+        if (detectedModel != null && !detectedModel.isBlank()) {
+            seenIds.add(detectedModel);
+            result.add(new Model(detectedModel, detectedModel + " (Auto-detected from settings.json)", null, null));
+        }
+
+        // 2. Add known models if not in custom-only mode
+        if (!profile.isCustomOnly()) {
+            for (Model m : KNOWN_MODELS) {
+                if (seenIds.add(m.id())) {
+                    result.add(m);
                 }
             }
-            return Collections.unmodifiableList(customModels);
         }
 
-        if (custom.isEmpty()) {
-            return KNOWN_MODELS;
-        }
-
-        // Known model IDs for dedup
-        Set<String> knownIds = new HashSet<>();
-        for (var m : KNOWN_MODELS) {
-            knownIds.add(m.id());
-        }
-
-        List<Model> merged = new ArrayList<>(KNOWN_MODELS);
+        // 3. Add custom models from profile
         for (String entry : custom) {
             if (!entry.isBlank()) {
                 String[] parts = entry.split("=", 2);
                 String id = parts[0].trim();
                 String name = parts.length > 1 ? parts[1].trim() : id;
-                if (!knownIds.contains(id)) {
-                    merged.add(new Model(id, name, null, null));
+                if (seenIds.add(id)) {
+                    result.add(new Model(id, name, null, null));
                 }
             }
         }
-        return Collections.unmodifiableList(merged);
+
+        return Collections.unmodifiableList(result);
     }
 
     // ── Prompt execution ─────────────────────────────────────────────────────
