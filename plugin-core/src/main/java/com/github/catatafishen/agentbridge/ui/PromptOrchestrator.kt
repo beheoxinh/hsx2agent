@@ -777,7 +777,8 @@ class PromptOrchestrator(
                 result = result, description = description,
                 isSubAgent = isSubAgent, isInternal = isInternal,
                 autoDenied = autoDenied, denialReason = denialReason,
-                arguments = arguments, title = record?.acpTitle, kind = kind
+                arguments = arguments, title = record?.acpTitle, kind = kind,
+                hookStages = update.hookStages()
             )
         )
 
@@ -793,7 +794,8 @@ class PromptOrchestrator(
         val result: String?, val description: String?,
         val isSubAgent: Boolean, val isInternal: Boolean,
         val autoDenied: Boolean = false, val denialReason: String? = null,
-        val arguments: String? = null, val title: String? = null, val kind: String? = null
+        val arguments: String? = null, val title: String? = null, val kind: String? = null,
+        val hookStages: List<com.github.catatafishen.agentbridge.services.hooks.HookStageResult>? = null
     )
 
     private fun updateToolCallUi(toolCallId: String, recordId: String, uiStatus: String, update: ToolCallUiUpdate) {
@@ -841,7 +843,8 @@ class PromptOrchestrator(
                     denialReason = update.denialReason,
                     arguments = update.arguments,
                     title = update.title,
-                    kind = update.kind
+                    kind = update.kind,
+                    hookStages = update.hookStages
                 )
             )
         }

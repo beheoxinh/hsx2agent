@@ -70,7 +70,8 @@ interface ChatPanelApi : Disposable {
         val autoDenied: Boolean = false,
         val denialReason: String? = null,
         val arguments: String? = null,
-        val title: String? = null
+        val title: String? = null,
+        val hookStages: List<com.github.catatafishen.agentbridge.services.hooks.HookStageResult>? = null
     )
 
     fun updateToolCall(id: String, status: String, update: ToolCallUpdate = ToolCallUpdate())

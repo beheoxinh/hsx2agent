@@ -49,6 +49,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         var description: String? = null,
         var autoDenied: Boolean = false,
         var denialReason: String? = null,
+        var hookStages: List<com.github.catatafishen.agentbridge.services.hooks.HookStageResult> = emptyList()
     )
 
     private val toolCallData = mutableMapOf<String, ToolCallData>()
@@ -314,6 +315,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
             update.kind?.let { data.status = status }
             if (update.autoDenied) data.autoDenied = true
             update.denialReason?.let { data.denialReason = it }
+            update.hookStages?.let { data.hookStages = it }
         }
         if (allChips.values.none { it.isSpinning() }) spinTimer.stop()
     }
@@ -347,7 +349,8 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                     toolDescription = mcpDescription,
                     autoDenied = data.autoDenied,
                     denialReason = data.denialReason,
-                    failed = failed
+                    failed = failed,
+                    hookStages = data.hookStages
                 )
             )
         }

@@ -600,7 +600,8 @@ class ChatConsolePanel(
                 update.autoDenied,
                 update.denialReason,
                 update.description,
-                update.kind
+                update.kind,
+                update.hookStages
             )
         )
 
@@ -632,7 +633,8 @@ class ChatConsolePanel(
 
     private data class ToolCallStatusData(
         val recordId: String?, val details: String?, val status: String,
-        val autoDenied: Boolean, val denialReason: String?, val description: String?, val kind: String?
+        val autoDenied: Boolean, val denialReason: String?, val description: String?, val kind: String?,
+        val hookStages: List<com.github.catatafishen.agentbridge.services.hooks.HookStageResult>? = null
     )
 
     /** Updates the in-memory entry data for a tool-call chip from the latest status report. */
@@ -648,6 +650,7 @@ class ChatConsolePanel(
             it.denialReason = update.denialReason
             if (update.description != null) it.description = update.description
             if (update.kind != null) it.kind = update.kind
+            if (update.hookStages != null) it.hookStages = update.hookStages
         }
     }
 
@@ -1815,7 +1818,8 @@ class ChatConsolePanel(
                     toolDescription = mcpDescription,
                     autoDenied = autoDenied,
                     denialReason = denialReason,
-                    failed = failed
+                    failed = failed,
+                    hookStages = entry?.hookStages ?: emptyList()
                 )
             )
         }

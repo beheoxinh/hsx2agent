@@ -10,8 +10,7 @@ import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.Color
-import java.awt.Dimension
+import java.awt.*
 import javax.swing.*
 
 internal object ToolCallPopup {
@@ -36,7 +35,8 @@ internal object ToolCallPopup {
         val toolDescription: String? = null,
         val autoDenied: Boolean = false,
         val denialReason: String? = null,
-        val failed: Boolean = false
+        val failed: Boolean = false,
+        val hookStages: List<com.github.catatafishen.agentbridge.services.hooks.HookStageResult> = emptyList()
     )
 
     private fun popupWidth() = JBUI.scale(650)
@@ -56,7 +56,8 @@ internal object ToolCallPopup {
             request.toolDescription,
             request.autoDenied,
             request.denialReason,
-            request.failed
+            request.failed,
+            request.hookStages
         )
 
         val width = popupWidth()
@@ -108,6 +109,7 @@ internal object ToolCallPopup {
         autoDenied: Boolean = false,
         denialReason: String? = null,
         failed: Boolean = false,
+        hookStages: List<com.github.catatafishen.agentbridge.services.hooks.HookStageResult> = emptyList()
     ): JBPanel<JBPanel<*>> {
         val panel = object : JBPanel<JBPanel<*>>(), Scrollable {
             override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
@@ -127,6 +129,15 @@ internal object ToolCallPopup {
             background = bg
             border = JBUI.Borders.empty(8, 12)
         }
+
+        // Execution Pipeline
+        panel.add(PipelineComponent(hookStages, autoDenied, failed))
+        panel.add(Box.createVerticalStrut(JBUI.scale(12)))
+        panel.add(JSeparator().apply {
+            alignmentX = JComponent.LEFT_ALIGNMENT
+            maximumSize = Dimension(Int.MAX_VALUE, 1)
+        })
+        panel.add(Box.createVerticalStrut(JBUI.scale(12)))
 
         if (autoDenied) {
             val denialPanel = JBPanel<JBPanel<*>>().apply {
@@ -195,6 +206,90 @@ internal object ToolCallPopup {
             font = JBUI.Fonts.smallFont().asBold()
             border = JBUI.Borders.empty(4, 0, 6, 0)
             alignmentX = JComponent.LEFT_ALIGNMENT
+        }
+    }
+
+    private class PipelineComponent(
+        hookStages: List<com.github.catatafishen.agentbridge.services.hooks.HookStageResult>,
+        autoDenied: Boolean,
+        failed: Boolean
+    ) : JPanel() {
+        init {
+            isOpaque = false
+            layout = FlowLayout(FlowLayout.CENTER, JBUI.scale(8), 0)
+            alignmentX = JComponent.LEFT_ALIGNMENT
+
+            add(StageNode("Input", true))
+            add(Arrow())
+
+            add(StageNode("Permission", !autoDenied, if (autoDenied) "Denied" else "Allowed"))
+            add(Arrow())
+
+            val preHooks = hookStages.filter { it.trigger() == "pre" }
+            val preFailed = preHooks.any { it.outcome() == "blocked" || it.outcome() == "error" }
+            add(
+                StageNode(
+                    "Pre-hooks",
+                    !preFailed && !autoDenied,
+                    if (preHooks.isEmpty()) "Skipped" else "${preHooks.size} run"
+                )
+            )
+            add(Arrow())
+
+            val toolSuccess = !failed && !autoDenied && !preFailed
+            add(StageNode("Execution", toolSuccess))
+            add(Arrow())
+
+            val postHooks = hookStages.filter { it.trigger() == "success" || it.trigger() == "failure" }
+            add(StageNode("Post-hooks", toolSuccess, if (postHooks.isEmpty()) "Skipped" else "${postHooks.size} run"))
+            add(Arrow())
+
+            add(StageNode("Output", toolSuccess))
+        }
+    }
+
+    private class StageNode(label: String, success: Boolean, subtext: String? = null) : JPanel() {
+        init {
+            isOpaque = false
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+
+            val circle = object : JPanel() {
+                override fun paintComponent(g: Graphics) {
+                    val g2 = g as Graphics2D
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                    g2.color = if (success) {
+                        JBColor(Color(0x4A, 0x90, 0x4A), Color(130, 190, 130)) // Green
+                    } else {
+                        NativeChatColors.ERROR
+                    }
+                    g2.fillOval(0, 0, width - 1, height - 1)
+                }
+            }.apply {
+                preferredSize = Dimension(JBUI.scale(14), JBUI.scale(14))
+                maximumSize = preferredSize
+                alignmentX = JComponent.CENTER_ALIGNMENT
+            }
+            add(circle)
+            add(Box.createVerticalStrut(JBUI.scale(4)))
+            add(JBLabel(label).apply {
+                font = JBUI.Fonts.smallFont().asBold()
+                alignmentX = JComponent.CENTER_ALIGNMENT
+            })
+            if (subtext != null) {
+                add(JBLabel(subtext).apply {
+                    font = JBUI.Fonts.miniFont()
+                    foreground = UIUtil.getInactiveTextColor()
+                    alignmentX = JComponent.CENTER_ALIGNMENT
+                })
+            }
+        }
+    }
+
+    private class Arrow : JBLabel("\u2192") {
+        init {
+            foreground = UIUtil.getInactiveTextColor()
+            font = JBUI.Fonts.label().asBold()
+            border = JBUI.Borders.empty(0, 4, 18, 4)
         }
     }
 }

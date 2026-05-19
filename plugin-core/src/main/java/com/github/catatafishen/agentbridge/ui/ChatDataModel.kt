@@ -134,6 +134,9 @@ sealed class EntryData {
 
         /** Canonical tool name from ACP: MCP name for bridged tools, kind for native tools. */
         var acpName: String? = null
+
+        /** Ordered list of hook execution stages (persisted in hook_executions table). */
+        var hookStages: List<com.github.catatafishen.agentbridge.services.hooks.HookStageResult> = emptyList()
     }
 
     class SubAgent @JvmOverloads constructor(

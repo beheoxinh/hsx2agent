@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.session.db;
 
+import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.ui.ContextFileRef;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.github.catatafishen.agentbridge.ui.NudgeSource;
@@ -469,7 +470,7 @@ public final class ConversationReader {
                 int isMcpVal = rs.getInt(9);
                 boolean isMcpPresent = !rs.wasNull();
                 String pluginTool = (isMcpPresent && isMcpVal == 1) ? stripMcpPrefix(toolName) : null;
-                return new EntryData.ToolCall(
+                EntryData.ToolCall tc = new EntryData.ToolCall(
                     toolName,          // title = canonical tool name
                     rs.getString(2),   // arguments
                     nullToEmpty(rs.getString(3)),  // kind
@@ -482,7 +483,33 @@ public final class ConversationReader {
                     pluginTool,        // from is_mcp + tool_name
                     timestamp, agent, model, eventId
                 );
+                tc.setHookStages(loadHookStages(conn, eventId));
+                return tc;
             }
+        }
+    }
+
+    @NotNull
+    private List<HookStageResult> loadHookStages(
+        @NotNull Connection conn, @NotNull String toolEventId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("""
+            SELECT trigger_kind, entry_id, outcome, duration_ms, outcome_reason
+            FROM hook_executions WHERE tool_event_id = ? ORDER BY timestamp ASC
+            """)) {
+            ps.setString(1, toolEventId);
+            List<HookStageResult> stages = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    stages.add(new HookStageResult(
+                        rs.getString(1), // trigger
+                        rs.getString(2), // scriptName
+                        rs.getString(3), // outcome
+                        rs.getLong(4),   // durationMs
+                        rs.getString(5)  // detail
+                    ));
+                }
+            }
+            return stages;
         }
     }
 

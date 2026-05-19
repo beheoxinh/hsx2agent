@@ -9,6 +9,7 @@ import com.github.catatafishen.agentbridge.settings.ChatInputSettings
 import com.github.catatafishen.agentbridge.settings.SidePanelPosition
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
 import com.github.catatafishen.agentbridge.ui.EntryData
+import com.github.catatafishen.agentbridge.ui.TurnTracePopup
 import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_CHARS
 import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_ROWS
 import com.intellij.icons.AllIcons
@@ -229,12 +230,20 @@ internal class PromptsPanel(
                 if (!cellBounds.contains(e.point)) return
                 val item = listModel.getElementAt(idx) ?: return
 
-                // Check for delete button click (top-right area)
+                // Check for action button clicks in the top-right area
                 val relX = e.point.x - cellBounds.x
                 val relY = e.point.y - cellBounds.y
-                if (relY < JBUI.scale(20) && relX > cellBounds.width - JBUI.scale(26)) {
-                    confirmDeleteTurn(item, idx)
-                    return
+                if (relY < JBUI.scale(22)) {
+                    // Delete button (far right)
+                    if (relX > cellBounds.width - JBUI.scale(26)) {
+                        confirmDeleteTurn(item, idx)
+                        return
+                    }
+                    // Trace button (to the left of delete)
+                    if (relX > cellBounds.width - JBUI.scale(52) && (item.stats?.toolCallCount ?: 0) > 0) {
+                        openTrace(item)
+                        return
+                    }
                 }
 
                 val entryId = promptEntryId(item.prompt)
@@ -802,11 +811,27 @@ internal class PromptsPanel(
         }
     }
 
+    private fun openTrace(item: PromptItem) {
+        val turnId = item.turnId
+        if (turnId.isEmpty()) return
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val toolCalls = sessionStore.loadTurnEntries(turnId).filterIsInstance<EntryData.ToolCall>()
+            ApplicationManager.getApplication().invokeLater {
+                TurnTracePopup.show(TurnTracePopup.Request(project, turnId, toolCalls))
+            }
+        }
+    }
+
     private class BubbleRenderer : ListCellRenderer<PromptItem> {
         private val outer = JPanel(BorderLayout(0, JBUI.scale(2)))
         private val headerPanel = JPanel(BorderLayout())
         private val tsLabel = JLabel()
         private val statsLabel = JLabel()
+        private val traceLabel = JLabel(AllIcons.Actions.ShowAsTree).apply {
+            toolTipText = "Show execution trace"
+            border = JBUI.Borders.emptyLeft(6)
+        }
         private val deleteLabel = JLabel(AllIcons.Actions.Close).apply {
             toolTipText = "Delete prompt"
             border = JBUI.Borders.emptyLeft(4)
@@ -814,6 +839,7 @@ internal class PromptsPanel(
         private val rightHeader = JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0)).apply {
             isOpaque = false
             add(statsLabel)
+            add(traceLabel)
             add(deleteLabel)
         }
 
@@ -866,6 +892,7 @@ internal class PromptsPanel(
             val turnIdSuffix = value.turnId.takeIf { it.length >= 8 }?.let { " · ${it.take(8)}…" } ?: ""
             tsLabel.text = formatTimestamp(value.prompt.timestamp) + turnIdSuffix
             statsLabel.text = formatStats(value.stats)
+            traceLabel.isVisible = (value.stats?.toolCallCount ?: 0) > 0
             textArea.text = truncatePrompt(value.prompt.text.trim())
 
             val commitsText = formatCommits(value.commits)

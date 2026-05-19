@@ -258,14 +258,15 @@ public sealed interface SessionUpdate
         boolean autoDenied,
         @Nullable String denialReason,
         @Nullable String arguments,
-        @Nullable ToolKind kind
+        @Nullable ToolKind kind,
+        @Nullable List<com.github.catatafishen.agentbridge.services.hooks.HookStageResult> hookStages
     ) implements SessionUpdate {
         public ToolCallUpdate(@NotNull String toolCallId, @NotNull ToolCallStatus status, @Nullable String result, @Nullable String error, @Nullable String description) {
-            this(toolCallId, status, result, error, description, false, null, null, null);
+            this(toolCallId, status, result, error, description, false, null, null, null, null);
         }
 
         public ToolCallUpdate(@NotNull String toolCallId, @NotNull ToolCallStatus status, @Nullable String result, @Nullable String error, @Nullable String description, boolean autoDenied, @Nullable String denialReason) {
-            this(toolCallId, status, result, error, description, autoDenied, denialReason, null, null);
+            this(toolCallId, status, result, error, description, autoDenied, denialReason, null, null, null);
         }
     }
 
