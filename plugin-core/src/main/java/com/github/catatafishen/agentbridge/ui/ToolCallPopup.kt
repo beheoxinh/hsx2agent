@@ -47,8 +47,8 @@ internal object ToolCallPopup {
         val hookStages: List<com.github.catatafishen.agentbridge.services.hooks.HookStageResult> = emptyList()
     )
 
-    private fun popupWidth() = JBUI.scale(650)
-    private fun popupHeight() = JBUI.scale(420)
+    private fun popupWidth() = JBUI.scale(975)
+    private fun popupHeight() = JBUI.scale(840)
 
     fun show(project: Project, toolCallId: String, contextComponent: Component) {
         val liveId = toolCallId.toLongOrNull()
