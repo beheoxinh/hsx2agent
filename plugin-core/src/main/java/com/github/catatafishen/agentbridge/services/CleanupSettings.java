@@ -26,6 +26,11 @@ public final class CleanupSettings implements PersistentStateComponent<CleanupSe
         public boolean autoCloseAgentTabs = true; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
 
         /**
+         * If true, also hide tool windows that were automatically opened by the agent.
+         */
+        public boolean autoHideAgentToolWindows = true; // NOSONAR
+
+        /**
          * If true, also close terminal tabs that may still be running.
          * Only applies when {@link #autoCloseAgentTabs} is true.
          */
@@ -62,6 +67,14 @@ public final class CleanupSettings implements PersistentStateComponent<CleanupSe
 
     public void setAutoCloseAgentTabs(boolean value) {
         state.autoCloseAgentTabs = value;
+    }
+
+    public boolean isAutoHideAgentToolWindows() {
+        return state.autoHideAgentToolWindows;
+    }
+
+    public void setAutoHideAgentToolWindows(boolean value) {
+        state.autoHideAgentToolWindows = value;
     }
 
     public boolean isAutoCloseRunningTerminals() {

@@ -33,6 +33,7 @@ public final class AgentTabTracker implements Disposable {
 
     private final Project project;
     private final List<TabRef> trackedTabs = new ArrayList<>();
+    private final java.util.Set<String> activatedToolWindows = new java.util.HashSet<>();
 
     public AgentTabTracker(@NotNull Project project) {
         this.project = project;
@@ -50,28 +51,60 @@ public final class AgentTabTracker implements Disposable {
     }
 
     /**
+     * Registers a tool window as agent-activated if it was previously hidden.
+     */
+    public synchronized void trackToolWindowIfHidden(@NotNull String toolWindowId) {
+        ToolWindow tw = ToolWindowManager.getInstance(project).getToolWindow(toolWindowId);
+        if (tw != null && !tw.isVisible()) {
+            activatedToolWindows.add(toolWindowId);
+        }
+    }
+
+    /**
      * Closes all tracked tabs from previous turns. Must be called at the start
      * of a new turn. Respects cleanup settings.
      */
     public void closeTrackedTabs() {
         CleanupSettings settings = CleanupSettings.getInstance(project);
-        if (!settings.isAutoCloseAgentTabs()) return;
+        if (!settings.isAutoCloseAgentTabs() && !settings.isAutoHideAgentToolWindows()) return;
 
         List<TabRef> toClose;
+        List<String> toHide;
         synchronized (this) {
             toClose = new ArrayList<>(trackedTabs);
             trackedTabs.clear();
+            toHide = new ArrayList<>(activatedToolWindows);
+            activatedToolWindows.clear();
         }
 
-        if (toClose.isEmpty()) return;
+        if (toClose.isEmpty() && toHide.isEmpty()) return;
 
         boolean closeRunningTerminals = settings.isAutoCloseRunningTerminals();
+        boolean autoCloseAgentTabs = settings.isAutoCloseAgentTabs();
+        boolean autoHideAgentToolWindows = settings.isAutoHideAgentToolWindows();
+
         ApplicationManager.getApplication().invokeLater(() -> {
-            for (TabRef ref : toClose) {
-                try {
-                    closeTab(ref, closeRunningTerminals);
-                } catch (Exception e) {
-                    LOG.debug("Failed to close tab " + ref.toolWindowId + "/" + ref.tabName, e);
+            if (autoCloseAgentTabs) {
+                for (TabRef ref : toClose) {
+                    try {
+                        closeTab(ref, closeRunningTerminals);
+                    } catch (Exception e) {
+                        LOG.debug("Failed to close tab " + ref.toolWindowId + "/" + ref.tabName, e);
+                    }
+                }
+            }
+
+            if (autoHideAgentToolWindows) {
+                for (String twId : toHide) {
+                    try {
+                        ToolWindow tw = ToolWindowManager.getInstance(project).getToolWindow(twId);
+                        if (tw != null && tw.isVisible()) {
+                            tw.hide(null);
+                            LOG.debug("Hidden agent-activated tool window: " + twId);
+                        }
+                    } catch (Exception e) {
+                        LOG.debug("Failed to hide tool window " + twId, e);
+                    }
                 }
             }
         });

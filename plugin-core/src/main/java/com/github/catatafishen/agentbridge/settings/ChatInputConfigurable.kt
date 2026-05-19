@@ -137,6 +137,11 @@ class ChatInputConfigurable(private val project: Project) :
                 .bindSelected({ cleanup.isAutoCloseAgentTabs }, { cleanup.isAutoCloseAgentTabs = it })
         }
         row {
+            checkBox("Auto-hide agent-opened tool windows")
+                .comment("Hide tool windows (e.g. Git Log) that were automatically opened/shown by the agent.")
+                .bindSelected({ cleanup.isAutoHideAgentToolWindows }, { cleanup.isAutoHideAgentToolWindows = it })
+        }
+        row {
             checkBox("Also close running terminal tabs")
                 .bindSelected(
                     { cleanup.isAutoCloseRunningTerminals },

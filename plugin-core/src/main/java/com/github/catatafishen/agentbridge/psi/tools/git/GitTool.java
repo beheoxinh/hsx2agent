@@ -8,6 +8,7 @@ import com.github.catatafishen.agentbridge.psi.ToolError;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
+import com.github.catatafishen.agentbridge.services.AgentTabTracker;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.ui.renderers.GitOperationRenderer;
 import com.intellij.openapi.application.ApplicationManager;
@@ -617,6 +618,7 @@ public abstract class GitTool extends Tool {
                     var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
                     var tw = twm.getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
                     if (tw != null) {
+                        AgentTabTracker.getInstance(project).trackToolWindowIfHidden(com.intellij.openapi.wm.ToolWindowId.VCS);
                         if (PsiBridgeService.isChatToolWindowActive(project)) {
                             tw.show();
                         } else {
@@ -650,7 +652,19 @@ public abstract class GitTool extends Tool {
         if (hash == null) return;
         EdtUtil.invokeLater(() -> {
             try {
-                PlatformApiCompat.showRevisionInLogAfterRefresh(project, hash, repoRoot);
+                Runnable preNav = () -> {
+                    var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
+                    var tw = twm.getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
+                    if (tw != null) {
+                        AgentTabTracker.getInstance(project).trackToolWindowIfHidden(com.intellij.openapi.wm.ToolWindowId.VCS);
+                        if (!PsiBridgeService.isChatToolWindowActive(project)) {
+                            tw.activate(null);
+                        } else {
+                            tw.show();
+                        }
+                    }
+                };
+                PlatformApiCompat.showRevisionInLogAfterRefresh(project, hash, repoRoot, preNav);
             } catch (Exception ignored) {
                 // best-effort UI follow-along
             }
