@@ -366,7 +366,7 @@ class AcpConnectPanel(
         }
         panel.add(profileCombo, BorderLayout.CENTER)
 
-        val searchButton = InplaceButton("Search for installed agents", AllIcons.Actions.FindAndShowNextMatches) {
+        val searchButton = InplaceButton("Search for installed agents", AllIcons.Actions.Download) {
             SmartAgentDetector(project).detectAllInBackground(true)
         }.apply {
             accessibleContext.accessibleName = "Search for installed agents"
