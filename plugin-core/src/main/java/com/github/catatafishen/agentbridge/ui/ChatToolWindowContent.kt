@@ -2498,10 +2498,11 @@ class ChatToolWindowContent(
         }
         consolePanel.onContinueTurn = { _ ->
             ApplicationManager.getApplication().invokeLater {
+                val continueMsg = "tiếp tục những gì dang dở đã bị dừng ngang chừng"
                 if (isSending) {
-                    submitNudge("Continue", showBubble = false)
+                    submitNudge(continueMsg, showBubble = false)
                 } else {
-                    submitTurn("Continue", emptyList(), isSilent = true)
+                    submitTurn(continueMsg, emptyList(), isSilent = true)
                 }
             }
         }
