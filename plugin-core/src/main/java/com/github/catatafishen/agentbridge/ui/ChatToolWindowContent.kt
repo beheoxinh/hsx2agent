@@ -339,6 +339,7 @@ class ChatToolWindowContent(
     }
 
     private fun buildAndShowChatPanel() {
+        conversationStore.resetCurrentSessionId(project.basePath)
         LiveToolCallService.getInstance(project).clear()
         sidePanel?.clearToolCalls()
         sidePanel?.reloadToolCalls()
