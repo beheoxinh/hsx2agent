@@ -195,7 +195,7 @@ class AcpMessageParser {
             arguments = params.get(KEY_RAW_INPUT).getAsJsonObject().toString();
         }
 
-        return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, description, false, null, arguments, kind);
+        return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, description, false, null, arguments, kind, null);
     }
 
     private @Nullable String extractResultText(JsonObject params) {
