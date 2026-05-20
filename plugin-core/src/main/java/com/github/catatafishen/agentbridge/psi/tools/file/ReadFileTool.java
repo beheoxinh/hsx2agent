@@ -85,6 +85,7 @@ public class ReadFileTool extends FileTool {
         String result = ReadAction.nonBlocking(() -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+            String pathFinal = vf.getPath();
 
             String content;
             if (FILE_CACHE.containsKey(pathFinal)) {
