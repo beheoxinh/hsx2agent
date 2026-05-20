@@ -22,6 +22,7 @@ import javax.swing.*
  * Group expand/collapse state is persisted via PropertiesComponent.
  */
 class ModelPickerPopup(
+    private val project: com.intellij.openapi.project.Project,
     groups: List<ModelGrouper.Group>
 ) {
 
@@ -79,7 +80,10 @@ class ModelPickerPopup(
         val pref = content.preferredSize
         val width = pref.width.coerceAtLeast(JBUI.scale(320)).coerceAtMost(JBUI.scale(600))
         val height = pref.height.coerceAtMost(JBUI.scale(500))
-        scrollPane.preferredSize = Dimension(width, height)
+        val dim = Dimension(width, height)
+        scrollPane.preferredSize = dim
+        scrollPane.minimumSize = dim
+        scrollPane.maximumSize = dim
     }
 
     fun createPopup(): JBPopup {
@@ -87,7 +91,10 @@ class ModelPickerPopup(
         val scrollPane = JBScrollPane(content).apply {
             border = null
             horizontalScrollBarPolicy = JBScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+            viewport.isOpaque = false
+            isOpaque = false
             updateSizeConstraints(this, content)
+            doLayout()
         }
 
         // Bind keyboard navigation to the focused component (scrollPane) via InputMap/ActionMap
@@ -96,13 +103,16 @@ class ModelPickerPopup(
 
         val p = JBPopupFactory.getInstance()
             .createComponentPopupBuilder(scrollPane, scrollPane)
+            .setProject(project)
             .setRequestFocus(true)
             .setFocusable(true)
             .setResizable(false)
-            .setMovable(false)
+            .setMovable(true)
             .setCancelOnClickOutside(true)
             .setCancelOnWindowDeactivation(true)
             .setCancelKeyEnabled(true)
+            .setLocateByContent(true)
+            .setLocateWithinScreenBounds(true)
             .setBorderColor(JBColor.border())
             .createPopup()
         this.popup = p

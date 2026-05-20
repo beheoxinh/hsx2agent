@@ -2333,7 +2333,7 @@ class ChatToolWindowContent(
             val grouper = com.github.catatafishen.agentbridge.ui.util.ModelGrouper(favorites.toSet())
             val groups = grouper.group(models)
 
-            val picker = ModelPickerPopup(groups)
+            val picker = ModelPickerPopup(project, groups)
             picker.onModelSelected = { index ->
                 if (index != selectedModelIndex && index in loadedModels.indices) {
                     val model = loadedModels[index]
