@@ -14,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Map;
 
 /**
  * Reads a file via IntelliJ's editor buffer.
@@ -24,6 +25,8 @@ public class ReadFileTool extends FileTool {
     private static final String PARAM_START_LINE = "start_line";
     private static final String PARAM_END_LINE = "end_line";
     static final int MAX_READ_LINES = 2000;
+
+    private static final Map<String, String> FILE_CACHE = FileContentCache.synchronizedCache(100);
 
     public ReadFileTool(Project project) {
         super(project);
@@ -91,7 +94,15 @@ public class ReadFileTool extends FileTool {
             VirtualFile vf = resolveVirtualFile(pathFinal);
             if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathFinal;
 
-            String content = readFileContent(vf);
+            String content;
+            if (FILE_CACHE.containsKey(pathFinal)) {
+                content = FILE_CACHE.get(pathFinal);
+            } else {
+                content = readFileContent(vf);
+                if (!content.startsWith("Error")) {
+                    FILE_CACHE.put(pathFinal, content);
+                }
+            }
             if (content.startsWith("Error")) return content;
 
             if (startLine > 0 || endLine > 0) {

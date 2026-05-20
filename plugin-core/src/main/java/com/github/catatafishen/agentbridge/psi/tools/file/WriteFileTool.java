@@ -27,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -39,6 +40,7 @@ import java.util.concurrent.TimeoutException;
 public class WriteFileTool extends FileTool {
 
     private static final Logger LOG = Logger.getInstance(WriteFileTool.class);
+    private static final Map<String, String> FILE_CACHE = FileContentCache.synchronizedCache(100);
 
     protected static final String PARAM_CONTENT = "content";
     protected static final String PARAM_START_LINE = "start_line";
@@ -188,6 +190,7 @@ public class WriteFileTool extends FileTool {
         );
         if (doc != null) {
             String oldContent = doc.getText();
+            FILE_CACHE.put(pathStr, newContent);
             notifyBeforeEdit(project, vf, doc);
             try {
                 WriteCommandAction.runWriteCommandAction(
@@ -308,6 +311,7 @@ public class WriteFileTool extends FileTool {
             WriteCommandAction.runWriteCommandAction(
                 project, "Edit File", null,
                 () -> doc.replaceString(finalIdx, finalIdx + finalLen, normalizedNew));
+            FILE_CACHE.put(pathStr, doc.getText());
         } finally {
             notifyEditComplete();
         }
@@ -375,6 +379,7 @@ public class WriteFileTool extends FileTool {
             WriteCommandAction.runWriteCommandAction(
                 project, "Edit File (Line Range)", null,
                 () -> doc.replaceString(fStart, fEnd, fNew));
+            FILE_CACHE.put(pathStr, doc.getText());
         } finally {
             notifyEditComplete();
         }
@@ -472,6 +477,7 @@ public class WriteFileTool extends FileTool {
                     doc.replaceString(start, start + normalizedOld.length(), normalizedNew);
                 }
             });
+            FILE_CACHE.put(pathStr, doc.getText());
         } finally {
             notifyEditComplete();
         }
