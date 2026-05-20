@@ -339,7 +339,6 @@ class ChatToolWindowContent(
     }
 
     private fun buildAndShowChatPanel() {
-        conversationStore.resetCurrentSessionId(project.basePath)
         LiveToolCallService.getInstance(project).clear()
         sidePanel?.clearToolCalls()
         sidePanel?.reloadToolCalls()
@@ -2818,7 +2817,7 @@ class ChatToolWindowContent(
         if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return false
         if (KeyStroke.getKeyStrokeForEvent(event) !in pasteStrokes) return false
         val focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
-        if (!SwingUtilities.isDescendingFrom(focused, contentComponent)) return false
+        if (focused == null || !SwingUtilities.isDescendingFrom(focused, contentComponent)) return false
 
         // Image and file pastes take precedence over the smart-paste-to-scratch text path.
         // They are handled regardless of the smart-paste setting because they have no

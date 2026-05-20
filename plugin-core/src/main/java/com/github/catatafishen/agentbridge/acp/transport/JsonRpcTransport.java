@@ -303,7 +303,8 @@ public class JsonRpcTransport {
             JsonObject error = obj.getAsJsonObject(KEY_ERROR);
             String errorMsg = error.has(KEY_MESSAGE) ? error.get(KEY_MESSAGE).getAsString() : "Unknown error";
             if (error.has("data") && !error.get("data").isJsonNull()) {
-                String data = error.get("data").getAsString();
+                JsonElement dataElem = error.get("data");
+                String data = dataElem.isJsonPrimitive() ? dataElem.getAsString() : dataElem.toString();
                 if (!data.isBlank()) errorMsg = errorMsg + ": " + data;
             }
             int code = error.has(KEY_CODE) ? error.get(KEY_CODE).getAsInt() : -1;
