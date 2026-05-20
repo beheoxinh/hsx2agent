@@ -96,7 +96,7 @@ public final class HermesClient extends AcpClient {
 
     @Override
     protected String loadSession(String cwd, String sessionId)
-            throws InterruptedException, ExecutionException, TimeoutException {
+        throws InterruptedException, ExecutionException, TimeoutException {
         String result = sendLoadSessionRequest("session/resume", cwd, sessionId);
         markSessionHistoryLoadedInternally();
         return result;
@@ -128,6 +128,11 @@ public final class HermesClient extends AcpClient {
      */
     static boolean hasToolPrefix(String protocolTitle) {
         return protocolTitle.startsWith(TOOL_PREFIX);
+    }
+
+    @Override
+    public boolean supportsModelGrouping() {
+        return true;
     }
 
     @Override

@@ -77,13 +77,16 @@ class ModelPickerPopup(
     private val focusableRows = mutableListOf<FocusableRow>()
 
     private fun updateSizeConstraints(scrollPane: JBScrollPane, content: JComponent) {
+        // Ensure content is laid out so preferredSize is accurate
+        content.doLayout()
         val pref = content.preferredSize
         val width = pref.width.coerceAtLeast(JBUI.scale(320)).coerceAtMost(JBUI.scale(600))
-        val height = pref.height.coerceAtMost(JBUI.scale(500))
+        val height = pref.height.coerceAtLeast(JBUI.scale(100)).coerceAtMost(JBUI.scale(500))
         val dim = Dimension(width, height)
         scrollPane.preferredSize = dim
         scrollPane.minimumSize = dim
         scrollPane.maximumSize = dim
+        scrollPane.size = dim
     }
 
     fun createPopup(): JBPopup {
@@ -111,6 +114,7 @@ class ModelPickerPopup(
             .setCancelOnClickOutside(true)
             .setCancelOnWindowDeactivation(true)
             .setCancelKeyEnabled(true)
+            .setAdText(null)
             .setLocateByContent(true)
             .setLocateWithinScreenBounds(true)
             .setBorderColor(JBColor.border())
