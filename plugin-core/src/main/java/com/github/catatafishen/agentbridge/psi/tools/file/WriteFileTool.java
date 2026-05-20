@@ -109,9 +109,9 @@ public class WriteFileTool extends FileTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        if (!args.has("path") || args.get("path").isJsonNull())
+        String pathStr = resolvePathArg(args);
+        if (pathStr == null)
             return ToolUtils.ERROR_PATH_REQUIRED;
-        String pathStr = args.get("path").getAsString();
         String guardError = guardExternalWrite(pathStr);
         if (guardError != null) return guardError;
         boolean autoFormat = resolveAutoFormat(args);

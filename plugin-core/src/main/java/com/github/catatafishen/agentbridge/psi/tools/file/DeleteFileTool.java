@@ -71,8 +71,8 @@ public final class DeleteFileTool extends FileTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        if (!args.has("path")) return ToolUtils.ERROR_PATH_REQUIRED;
-        String pathStr = args.get("path").getAsString();
+        String pathStr = resolvePathArg(args);
+        if (pathStr == null) return ToolUtils.ERROR_PATH_REQUIRED;
         String guardError = guardExternalWrite(pathStr);
         if (guardError != null) return guardError;
 

@@ -57,8 +57,8 @@ public final class RedoTool extends FileTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        if (!args.has("path")) return ToolUtils.ERROR_PATH_REQUIRED;
-        String pathStr = args.get("path").getAsString();
+        String pathStr = resolvePathArg(args);
+        if (pathStr == null) return ToolUtils.ERROR_PATH_REQUIRED;
         int count = args.has(PARAM_COUNT) ? args.get(PARAM_COUNT).getAsInt() : 1;
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();

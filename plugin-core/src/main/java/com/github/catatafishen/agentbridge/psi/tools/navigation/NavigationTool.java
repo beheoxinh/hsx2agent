@@ -76,9 +76,12 @@ public abstract class NavigationTool extends Tool {
     }
 
     protected String readScopeParam(com.google.gson.JsonObject args) {
-        return args.has(PARAM_SCOPE) && !args.get(PARAM_SCOPE).isJsonNull()
-            ? args.get(PARAM_SCOPE).getAsString()
-            : SCOPE_PROJECT;
+        if (args.has(PARAM_SCOPE) && !args.get(PARAM_SCOPE).isJsonNull())
+            return args.get(PARAM_SCOPE).getAsString();
+        // Fallback for tools that previously accepted "search_scope"
+        if (args.has("search_scope") && !args.get("search_scope").isJsonNull())
+            return args.get("search_scope").getAsString();
+        return SCOPE_PROJECT;
     }
 
     /**

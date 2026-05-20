@@ -58,10 +58,10 @@ public final class MoveFileTool extends FileTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        if (!args.has("path") || !args.has(PARAM_DESTINATION))
+        String pathStr = resolvePathArg(args);
+        if (pathStr == null || !args.has(PARAM_DESTINATION))
             return ToolError.of(McpErrorCode.MISSING_PARAM,
-                "'path' and 'destination' parameters are required");
-        String pathStr = args.get("path").getAsString();
+                "'path' (or 'filePath') and 'destination' parameters are required");
         String destStr = args.get(PARAM_DESTINATION).getAsString();
 
         // Resolve files outside ReadAction so refreshAndFindFileByPath can be used as a fallback

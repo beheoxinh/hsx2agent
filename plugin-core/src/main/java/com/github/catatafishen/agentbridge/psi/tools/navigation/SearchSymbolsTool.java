@@ -85,25 +85,33 @@ public final class SearchSymbolsTool extends NavigationTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
-        String query = args.has(PARAM_QUERY) ? args.get(PARAM_QUERY).getAsString() : "";
+        String query = null;
+        if (args.has(PARAM_QUERY) && !args.get(PARAM_QUERY).isJsonNull()) {
+            query = args.get(PARAM_QUERY).getAsString();
+        } else if (args.has("searchQuery") && !args.get("searchQuery").isJsonNull()) {
+            query = args.get("searchQuery").getAsString();
+        }
+        query = query != null ? query : "";
+
         String typeFilter = args.has("type") ? args.get("type").getAsString() : "";
         String scopeName = readScopeParam(args);
         int[] pagination = readPaginationParams(args, -1); // -1 means "use per-mode default"
         int maxResults = pagination[0];
         int offset = pagination[1];
 
-        showSearchFeedback("🔍 Searching symbols: " + query);
+        final String queryFinal = query;
+        showSearchFeedback("🔍 Searching symbols: " + queryFinal);
         String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
-            if (query.isEmpty() || "*".equals(query)) {
+            if (queryFinal.isEmpty() || "*".equals(queryFinal)) {
                 if (!SCOPE_PROJECT.equalsIgnoreCase(scopeName)) {
                     return "Error: Wildcard symbol listing is only supported with scope='project'. "
                         + "Use an exact query name when searching scope='libraries' or scope='all'.";
                 }
                 return searchWildcard(typeFilter, maxResults > 0 ? maxResults : 200, offset);
             }
-            return searchExact(query, typeFilter, resolveScope(scopeName), maxResults > 0 ? maxResults : 50, offset);
+            return searchExact(queryFinal, typeFilter, resolveScope(scopeName), maxResults > 0 ? maxResults : 50, offset);
         });
-        showSearchFeedback("✓ Symbol search complete: " + query);
+        showSearchFeedback("✓ Symbol search complete: " + queryFinal);
         return result;
     }
 

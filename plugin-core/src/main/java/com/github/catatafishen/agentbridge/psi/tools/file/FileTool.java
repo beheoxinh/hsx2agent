@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.google.gson.JsonObject;
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor;
 import com.intellij.codeInsight.actions.ReformatCodeProcessor;
 import com.intellij.openapi.application.WriteAction;
@@ -22,7 +23,6 @@ import com.intellij.openapi.editor.markup.HighlighterTargetArea;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.ReadonlyStatusHandler;
@@ -640,5 +640,14 @@ public abstract class FileTool extends Tool {
     @Override
     public @NotNull ToolRegistry.Category category() {
         return ToolRegistry.Category.FILE;
+    }
+
+    protected String resolvePathArg(@NotNull JsonObject args) {
+        if (args.has("path") && !args.get("path").isJsonNull()) {
+            return args.get("path").getAsString();
+        } else if (args.has("filePath") && !args.get("filePath").isJsonNull()) {
+            return args.get("filePath").getAsString();
+        }
+        return null;
     }
 }
