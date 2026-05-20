@@ -75,11 +75,19 @@ class ModelPickerPopup(
 
     private val focusableRows = mutableListOf<FocusableRow>()
 
+    private fun updateSizeConstraints(scrollPane: JBScrollPane, content: JComponent) {
+        val pref = content.preferredSize
+        val width = pref.width.coerceAtLeast(JBUI.scale(320)).coerceAtMost(JBUI.scale(600))
+        val height = pref.height.coerceAtMost(JBUI.scale(500))
+        scrollPane.preferredSize = Dimension(width, height)
+    }
+
     fun createPopup(): JBPopup {
         val content = buildContent()
         val scrollPane = JBScrollPane(content).apply {
             border = null
             horizontalScrollBarPolicy = JBScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+            updateSizeConstraints(this, content)
         }
 
         // Bind keyboard navigation to the focused component (scrollPane) via InputMap/ActionMap
@@ -91,8 +99,11 @@ class ModelPickerPopup(
             .setRequestFocus(true)
             .setFocusable(true)
             .setResizable(false)
+            .setMovable(false)
             .setCancelOnClickOutside(true)
             .setCancelOnWindowDeactivation(true)
+            .setCancelKeyEnabled(true)
+            .setBorderColor(JBColor.border())
             .createPopup()
         this.popup = p
         return p
@@ -204,7 +215,7 @@ class ModelPickerPopup(
                 "Label.infoForeground",
                 JBUI.CurrentTheme.Label.disabledForeground()
             )
-            border = JBUI.Borders.empty(2, 8)
+            border = JBUI.Borders.empty(6, 8, 4, 8)
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
@@ -273,7 +284,7 @@ class ModelPickerPopup(
         val row = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = true
             background = UIManager.getColor(MENU_ITEM_BG)
-            border = JBUI.Borders.empty(2, 20, 2, 8)
+            border = JBUI.Borders.empty(4, 20, 4, 8)
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
 
             addMouseListener(object : MouseAdapter() {
@@ -355,8 +366,10 @@ class ModelPickerPopup(
         val newContent = buildContent()
         val scrollPane = oldOuter?.parent?.parent as? JBScrollPane ?: return
         scrollPane.viewport.view = newContent
+        updateSizeConstraints(scrollPane, newContent)
         scrollPane.revalidate()
         scrollPane.repaint()
+        popup?.pack(true, true)
     }
 
     private fun selectModel(index: Int) {
