@@ -150,8 +150,10 @@ public final class ReloadFromDiskTool extends FileTool {
                 }
             }
         }
-        String pathStr = resolvePathArg(args);
-        if (pathStr != null && !pathStr.isBlank()) out.add(pathStr);
+        if (args.has(PARAM_PATH) && !args.get(PARAM_PATH).isJsonNull()) {
+            String s = args.get(PARAM_PATH).getAsString();
+            if (!s.isBlank()) out.add(s);
+        }
         return out;
     }
 

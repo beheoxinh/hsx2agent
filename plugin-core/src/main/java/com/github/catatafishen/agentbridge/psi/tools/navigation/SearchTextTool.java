@@ -120,16 +120,9 @@ public final class SearchTextTool extends NavigationTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
-        String query = null;
-        if (args.has(PARAM_QUERY) && !args.get(PARAM_QUERY).isJsonNull()) {
-            query = args.get(PARAM_QUERY).getAsString();
-        } else if (args.has("searchQuery") && !args.get("searchQuery").isJsonNull()) {
-            query = args.get("searchQuery").getAsString();
-        }
-
-        if (query == null)
+        if (!args.has(PARAM_QUERY) || args.get(PARAM_QUERY).isJsonNull())
             return "Error: 'query' parameter is required";
-
+        String query = args.get(PARAM_QUERY).getAsString();
         String filePattern = args.has(PARAM_FILE_PATTERN) ? args.get(PARAM_FILE_PATTERN).getAsString() : "";
         boolean isRegex = args.has(PARAM_REGEX) && args.get(PARAM_REGEX).getAsBoolean();
         boolean caseSensitive = !args.has(PARAM_CASE_SENSITIVE) || args.get(PARAM_CASE_SENSITIVE).getAsBoolean();

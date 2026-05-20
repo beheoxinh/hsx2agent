@@ -73,26 +73,18 @@ public class ReadFileTool extends FileTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
-        String pathStr = null;
-        if (args.has("path") && !args.get("path").isJsonNull()) {
-            pathStr = args.get("path").getAsString();
-        } else if (args.has("filePath") && !args.get("filePath").isJsonNull()) {
-            pathStr = args.get("filePath").getAsString();
-        }
-
-        if (pathStr == null)
+        if (!args.has("path") || args.get("path").isJsonNull())
             return ToolUtils.ERROR_PATH_REQUIRED;
-
+        String pathStr = args.get("path").getAsString();
         int startLine = args.has(PARAM_START_LINE) ? args.get(PARAM_START_LINE).getAsInt() : -1;
         int endLine = args.has(PARAM_END_LINE) ? args.get(PARAM_END_LINE).getAsInt() : -1;
 
         // Use a separate container to capture the actual line range for highlighting
         int[] effectiveRange = new int[]{startLine, endLine};
 
-        final String pathFinal = pathStr;
         String result = ReadAction.nonBlocking(() -> {
-            VirtualFile vf = resolveVirtualFile(pathFinal);
-            if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathFinal;
+            VirtualFile vf = resolveVirtualFile(pathStr);
+            if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
             String content;
             if (FILE_CACHE.containsKey(pathFinal)) {
@@ -110,8 +102,10 @@ public class ReadFileTool extends FileTool {
             }
 
             // If no range specified, we highlight the whole file (or the read portion)
+            // Splitting by \n to count lines accurately
+            String[] lines = content.split("\n", -1);
             effectiveRange[0] = 1;
-            effectiveRange[1] = MAX_READ_LINES;
+            effectiveRange[1] = Math.min(lines.length, MAX_READ_LINES);
 
             String hint = getDirectoryMarkingHint(vf);
             return applyReadHintAndTruncate(content, hint);
@@ -167,7 +161,8 @@ public class ReadFileTool extends FileTool {
         }
 
         if (totalLines > MAX_READ_LINES) {
-            String truncated = String.join("\n", Arrays.copyOf(lines, MAX_READ_LINES));
+            int end = Math.min(MAX_READ_LINES, lines.length);
+            String truncated = String.join("\n", Arrays.copyOf(lines, end));
             sb.append("[Showing first ").append(MAX_READ_LINES)
                 .append(" lines. Use start_line/end_line to read specific sections.]\n");
             sb.append(truncated);

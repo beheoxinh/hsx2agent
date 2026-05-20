@@ -51,27 +51,16 @@ public final class ListLiveToolCallsTool extends ProjectTool {
         ToolCallTracker tracker = ToolCallTracker.getInstance(project);
         Map<String, ToolCallRecord> records = tracker.getLiveRecordsSnapshot();
 
-        if (records.isEmpty()) {
-            return "No live tool calls.";
-        }
-
-        StringBuilder sb = new StringBuilder("--- Live Tool Call Records ---\n");
+        System.out.println("--- Live Tool Call Records ---");
         for (Map.Entry<String, ToolCallRecord> entry : records.entrySet()) {
             ToolCallRecord r = entry.getValue();
-            sb.append("ID: ").append(r.getRecordId())
-                .append(", Status: ").append(r.getState())
-                .append(", Tool: ").append(r.getEffectiveToolName())
-                .append("\n  Args: ").append(r.getMcpArgs() != null ? r.getMcpArgs() : (r.getAcpArgs() != null ? r.getAcpArgs() : "null"))
-                .append("\n");
+            System.out.println("ID: " + r.getRecordId() +
+                ", Status: " + r.getState() +
+                ", ACP Client: " + r.getAcpClientId() +
+                ", MCP Tool: " + r.getEffectiveToolName());
         }
-        sb.append("--- End Live Tool Call Records ---");
+        System.out.println("--- End Live Tool Call Records ---");
 
-        // Gửi thông báo Notification tới IDE để mày không cần chủ động gọi
-        com.intellij.notification.NotificationGroupManager.getInstance()
-            .getNotificationGroup("AgentBridge Notifications")
-            .createNotification("Agent Tool Error", sb.toString(), com.intellij.notification.NotificationType.WARNING)
-            .notify(project);
-
-        return sb.toString();
+        return "Printed " + records.size() + " live records to IDE console.";
     }
 }

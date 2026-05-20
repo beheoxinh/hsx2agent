@@ -61,10 +61,10 @@ public final class RenameFileTool extends FileTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        String pathStr = resolvePathArg(args);
-        if (pathStr == null || !args.has(PARAM_NEW_NAME))
+        if (!args.has("path") || !args.has(PARAM_NEW_NAME))
             return ToolError.of(McpErrorCode.MISSING_PARAM,
-                "'path' (or 'filePath') and 'new_name' parameters are required");
+                "'path' and 'new_name' parameters are required");
+        String pathStr = args.get("path").getAsString();
         String newName = args.get(PARAM_NEW_NAME).getAsString();
 
         // Resolve the file outside ReadAction so refreshAndFindFileByPath can be used as a fallback.
