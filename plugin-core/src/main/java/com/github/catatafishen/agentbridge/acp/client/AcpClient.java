@@ -713,18 +713,11 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     @Nullable String loadResumeSessionId() {
         try {
-            // The .current-session-id file is the source of truth for conversation history.
-            // If it exists, we MUST try to resume that session ID so the agent's context
-            // remains aligned with the UI history.
-            return ConversationService.getInstance(project).getCurrentSessionId(project.getBasePath());
+            ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
+            return manager.getSettings().getResumeSessionId();
         } catch (Exception e) {
-            LOG.warn("Failed to load resume session ID from ConversationService", e);
-            try {
-                ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
-                return manager.getSettings().getResumeSessionId();
-            } catch (Exception ex) {
-                return null;
-            }
+            LOG.warn("Failed to load resume session ID", e);
+            return null;
         }
     }
 

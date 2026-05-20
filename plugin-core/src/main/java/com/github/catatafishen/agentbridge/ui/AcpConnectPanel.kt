@@ -893,8 +893,6 @@ class AcpConnectPanel(
                 // Delete the session ID file so restoreConversation() finds nothing and
                 // the chat pane opens empty rather than restoring the previous session.
                 ConversationService.getInstance(project).resetCurrentSessionId(project.basePath)
-                // Clear all conversation history to ensure a completely fresh start without old session interference
-                ConversationService.getInstance(project).deleteAllHistory()
             }
 
             is SessionChoice.Latest -> {
