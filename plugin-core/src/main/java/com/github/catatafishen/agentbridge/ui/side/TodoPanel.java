@@ -359,7 +359,8 @@ final class TodoPanel extends JPanel implements Disposable {
     private @Nullable Path resolveSessionDir() {
         try {
             ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
-            return manager.getClient().getSessionDirectory();
+            var client = manager.getClientIfRunning();
+            return client != null ? client.getSessionDirectory() : null;
         } catch (Exception ignored) {
             return null;
         }

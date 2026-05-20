@@ -3325,7 +3325,7 @@ class ChatToolWindowContent(
         // Clear the persisted resume ID so the next session/new starts completely fresh.
         agentManager.settings.setResumeSessionId(null)
         ApplicationManager.getApplication().executeOnPooledThread {
-            agentManager.getClient().clearPersistedSession()
+            agentManager.getClientIfRunning()?.clearPersistedSession()
         }
         resetSessionState()
         sidePanel?.clearToolCalls()

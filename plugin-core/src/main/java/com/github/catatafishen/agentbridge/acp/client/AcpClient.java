@@ -691,6 +691,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     @Override
     public void dropCurrentSession() {
         currentSessionId = null;
+        persistResumeSessionId(null);
     }
 
     @Override

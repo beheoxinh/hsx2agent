@@ -1743,7 +1743,8 @@ public final class ChatWebServer implements Disposable {
         }
         try {
             ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
-            java.nio.file.Path sessionDir = manager.getClient().getSessionDirectory();
+            var client = manager.getClientIfRunning();
+            java.nio.file.Path sessionDir = client != null ? client.getSessionDirectory() : null;
             if (sessionDir == null) {
                 sendJson(exchange, NULL_CONTENT_JSON);
                 return;
@@ -1957,7 +1958,8 @@ public final class ChatWebServer implements Disposable {
     }
 
     private @Nullable java.nio.file.Path resolveAgentSessionDir() {
-        return ActiveAgentManager.getInstance(project).getClient().getSessionDirectory();
+        var client = ActiveAgentManager.getInstance(project).getClientIfRunning();
+        return client != null ? client.getSessionDirectory() : null;
     }
 
     /**
