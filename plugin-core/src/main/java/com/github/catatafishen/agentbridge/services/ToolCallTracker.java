@@ -107,6 +107,13 @@ public final class ToolCallTracker {
         this.project = project;
     }
 
+    /**
+     * Diagnostic: Return a map representation of live records.
+     */
+    public synchronized Map<String, ToolCallRecord> getLiveRecordsSnapshot() {
+        return new LinkedHashMap<>(liveRecords);
+    }
+
     // ── Static accessor ──────────────────────────────────────────────────────
 
     public static ToolCallTracker getInstance(@NotNull Project project) {
@@ -142,6 +149,7 @@ public final class ToolCallTracker {
         @NotNull ToolCallRecord.RoutingType routingType,
         @Nullable String toolUseId
     ) {
+        LOG.debug("ACP Register: clientId=" + acpClientId + ", name=" + acpName + ", title=" + acpTitle + ", args=" + args + ", toolUseId=" + toolUseId);
         int seq = ++acpSequence;
 
         // Priority 0: toolUseId direct match (Claude CLI)
@@ -198,6 +206,7 @@ public final class ToolCallTracker {
         @Nullable String kind,
         @Nullable String toolUseId
     ) {
+        LOG.debug("MCP Register: name=" + toolName + ", args=" + args + ", toolUseId=" + toolUseId);
         long startTime = System.currentTimeMillis();
 
         // Priority 0: toolUseId direct match
