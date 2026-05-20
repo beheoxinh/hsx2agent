@@ -2341,7 +2341,7 @@ class ChatToolWindowContent(
         override fun update(e: AnActionEvent) {
             val profile = agentManager.activeProfile
             e.presentation.text = currentModelSelectorText()
-            e.presentation.isEnabled = modelsStatusText == null && loadedModels.isNotEmpty()
+            e.presentation.isEnabled = !isSending && modelsStatusText == null && loadedModels.isNotEmpty()
             // Hide entirely when models loaded successfully but list is empty
             // (agent uses configOptions for model selection instead), but keep it visible
             // for Claude CLI so user sees it's empty (or loading).
