@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.session.db;
 
 import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
+import com.github.catatafishen.agentbridge.session.exporters.ExportUtils;
 import com.github.catatafishen.agentbridge.ui.ContextFileRef;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.github.catatafishen.agentbridge.ui.FileRef;
@@ -474,7 +475,7 @@ public final class ConversationWriter {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)) {
             ps.setString(1, tc.getEntryId());
-            ps.setString(2, canonicalToolName(tc));
+            ps.setString(2, ExportUtils.canonicalToolName(tc));
             ps.setString(3, tc.getKind());
             ps.setString(4, emptyToNull(clientId));
             // category mirrors tool_kind initially; enrichToolCallStats overwrites with
@@ -505,38 +506,6 @@ public final class ConversationWriter {
             ps.setString(16, tc.getTitle());
             ps.executeUpdate();
         }
-    }
-
-    /**
-     * Returns the canonical tool name for DB storage: uses pluginTool when available (confirms
-     * MCP correlation), then acpName (canonical ACP name: MCP name for bridged tools, kind for
-     * native tools). Falls back to stripping known MCP prefixes from the title (for legacy data
-     * that predates acpName). Titles without a known prefix are returned as-is.
-     */
-    @NotNull
-    private static String canonicalToolName(@NotNull EntryData.ToolCall tc) {
-        if (tc.getPluginTool() != null) return tc.getPluginTool();
-        if (tc.getAcpName() != null) return tc.getAcpName();
-        return stripKnownMcpPrefix(tc.getTitle());
-    }
-
-    private static final String[] KNOWN_MCP_PREFIXES = {
-        "agentbridge-", "agentbridge_", "mcp_agentbridge_", "@agentbridge/"
-    };
-
-    /**
-     * Strips known MCP server prefixes from a title. Only strips prefixes that
-     * unambiguously identify an MCP tool — arbitrary dashes in human-readable
-     * descriptions are left intact.
-     */
-    @NotNull
-    private static String stripKnownMcpPrefix(@NotNull String title) {
-        for (String prefix : KNOWN_MCP_PREFIXES) {
-            if (title.startsWith(prefix)) {
-                return title.substring(prefix.length());
-            }
-        }
-        return title;
     }
 
     private void insertSubAgent(
@@ -669,27 +638,38 @@ public final class ConversationWriter {
             if (stages.isEmpty()) return;
             Connection conn = database.getConnection();
             if (conn == null) return;
-            try (PreparedStatement ps = conn.prepareStatement("""
-                INSERT INTO hook_executions (
-                    tool_event_id, trigger_kind, entry_id, command,
-                    duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """)) {
-                String now = Instant.now().toString();
-                ps.setString(1, toolEventId);
-                ps.setString(10, now);
-                ps.setNull(6, Types.VARCHAR);
-                ps.setNull(7, Types.VARCHAR);
-                for (HookStageResult stage : stages) {
-                    ps.setString(2, stage.trigger());
-                    ps.setString(3, stage.scriptName());
-                    ps.setString(4, stage.scriptName());
-                    ps.setLong(5, stage.durationMs());
-                    ps.setString(8, stage.outcome());
-                    ps.setString(9, stage.detail());
-                    ps.addBatch();
+            try {
+                try (PreparedStatement check = conn.prepareStatement("SELECT 1 FROM events WHERE id = ?")) {
+                    check.setString(1, toolEventId);
+                    try (ResultSet rs = check.executeQuery()) {
+                        if (!rs.next()) {
+                            LOG.debug("ConversationWriter: deferring hook stages for " + toolEventId + " (event row not yet persisted)");
+                            return;
+                        }
+                    }
                 }
-                ps.executeBatch();
+                try (PreparedStatement ps = conn.prepareStatement("""
+                    INSERT INTO hook_executions (
+                        tool_event_id, trigger_kind, entry_id, command,
+                        duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """)) {
+                    String now = Instant.now().toString();
+                    ps.setString(1, toolEventId);
+                    ps.setString(10, now);
+                    ps.setNull(6, Types.VARCHAR);
+                    ps.setNull(7, Types.VARCHAR);
+                    for (HookStageResult stage : stages) {
+                        ps.setString(2, stage.trigger());
+                        ps.setString(3, stage.scriptName());
+                        ps.setString(4, stage.scriptName());
+                        ps.setLong(5, stage.durationMs());
+                        ps.setString(8, stage.outcome());
+                        ps.setString(9, stage.detail());
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
+                }
             } catch (SQLException e) {
                 LOG.warn("ConversationWriter: failed to record hook stages for " + toolEventId, e);
             }

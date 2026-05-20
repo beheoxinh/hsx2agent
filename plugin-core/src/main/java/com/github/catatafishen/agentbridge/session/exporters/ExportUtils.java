@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.session.exporters;
 
 import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings;
+import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -76,6 +77,38 @@ public final class ExportUtils {
         }
         String sanitized = sanitizeToolName(base);
         return AGENTBRIDGE_UNDERSCORE + sanitized;
+    }
+
+    /**
+     * Returns the canonical tool name for storage and export: uses pluginTool when available
+     * (confirms MCP correlation), then acpName (canonical ACP name: MCP name for bridged tools,
+     * kind for native tools). Falls back to stripping known MCP prefixes from the title
+     * (for legacy data that predates acpName). Titles without a known prefix are returned as-is.
+     */
+    @NotNull
+    public static String canonicalToolName(@NotNull EntryData.ToolCall tc) {
+        if (tc.getPluginTool() != null) return tc.getPluginTool();
+        if (tc.getAcpName() != null) return tc.getAcpName();
+        return stripKnownMcpPrefix(tc.getTitle());
+    }
+
+    private static final String[] KNOWN_MCP_PREFIXES = {
+        "agentbridge-", "agentbridge_", "mcp_agentbridge_", "@agentbridge/"
+    };
+
+    /**
+     * Strips known MCP server prefixes from a title. Only strips prefixes that
+     * unambiguously identify an MCP tool — arbitrary dashes in human-readable
+     * descriptions are left intact.
+     */
+    @NotNull
+    public static String stripKnownMcpPrefix(@NotNull String title) {
+        for (String prefix : KNOWN_MCP_PREFIXES) {
+            if (title.startsWith(prefix)) {
+                return title.substring(prefix.length());
+            }
+        }
+        return title;
     }
 
     /**

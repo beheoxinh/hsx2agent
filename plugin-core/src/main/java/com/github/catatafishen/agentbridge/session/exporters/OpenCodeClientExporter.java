@@ -422,7 +422,8 @@ public final class OpenCodeClientExporter {
         long now) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
             "INSERT INTO session (id, project_id, slug, directory, title, version, "
-                + "time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
+                + "time_created, time_updated, workspace_id, permission, revert) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             ps.setString(1, sessionId);
             ps.setString(2, projectId);
             ps.setString(3, generateSlug());
@@ -431,6 +432,9 @@ public final class OpenCodeClientExporter {
             ps.setString(6, OPENCODE_VERSION);
             ps.setLong(7, now);
             ps.setLong(8, now);
+            ps.setString(9, ""); // workspace_id
+            ps.setString(10, "{}"); // permission
+            ps.setString(11, "{}"); // revert
             ps.executeUpdate();
         }
     }
@@ -593,7 +597,7 @@ public final class OpenCodeClientExporter {
         JsonObject result = new JsonObject();
         result.addProperty("type", "tool");
         result.addProperty("callID", toolCall.getEntryId());
-        result.addProperty("tool", toolCall.getTitle());
+        result.addProperty("tool", ExportUtils.canonicalToolName(toolCall));
 
         boolean completed = toolCall.getResult() != null;
 
