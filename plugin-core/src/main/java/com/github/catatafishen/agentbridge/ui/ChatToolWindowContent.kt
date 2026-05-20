@@ -136,10 +136,6 @@ class ChatToolWindowContent(
     private lateinit var pasteToScratchHandler: PasteToScratchHandler
     private lateinit var pasteAttachmentHandler: PasteAttachmentHandler
 
-    // Plans tree (populated from ACP plan updates)
-    private lateinit var planTreeModel: javax.swing.tree.DefaultTreeModel
-    private lateinit var planRoot: javax.swing.tree.DefaultMutableTreeNode
-    private lateinit var planDetailsArea: JBTextArea
     private lateinit var sessionInfoLabel: JBLabel
 
     // Billing/usage management
@@ -605,7 +601,6 @@ class ChatToolWindowContent(
         when (update) {
             is SessionUpdate.ToolCall -> handleToolCall(update)
             is SessionUpdate.ToolCallUpdate -> handleToolCallUpdate(update)
-            is SessionUpdate.Plan -> handlePlanUpdate(update)
             else -> Unit
         }
     }
@@ -622,54 +617,7 @@ class ChatToolWindowContent(
         val status = update.status()
         if (status != SessionUpdate.ToolCallStatus.COMPLETED && status != SessionUpdate.ToolCallStatus.FAILED) return
 
-        val filePath = toolCallFiles[update.toolCallId()]
-        if (status == SessionUpdate.ToolCallStatus.COMPLETED && filePath != null) {
-            loadCompletedToolFile(filePath)
-        }
-    }
-
-    private fun loadCompletedToolFile(filePath: String) {
-        ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                val file = java.io.File(filePath)
-                if (file.exists() && file.length() < 100_000) {
-                    val content = file.readText()
-                    ApplicationManager.getApplication().invokeLater {
-                        if (!::planRoot.isInitialized) return@invokeLater
-                        val fileNode = FileTreeNode(file.name)
-                        planRoot.add(fileNode)
-                        planTreeModel.reload()
-                        planDetailsArea.text = "${file.name}\n${"—".repeat(40)}\n\n$content"
-                    }
-                }
-            } catch (_: Exception) {
-                // Plan file loading is best-effort; errors are non-critical
-            }
-        }
-    }
-
-    private fun handlePlanUpdate(update: SessionUpdate.Plan) {
-        val entries = update.entries()
-        ApplicationManager.getApplication().invokeLater {
-            if (!::planRoot.isInitialized) return@invokeLater
-            val toRemove = mutableListOf<javax.swing.tree.DefaultMutableTreeNode>()
-            for (i in 0 until planRoot.childCount) {
-                val child = planRoot.getChildAt(i) as javax.swing.tree.DefaultMutableTreeNode
-                if (child.userObject == "Plan") toRemove.add(child)
-            }
-            toRemove.forEach { planRoot.remove(it) }
-
-            val planNode = javax.swing.tree.DefaultMutableTreeNode("Plan")
-            for (entry in entries) {
-                val label =
-                    "${entry.content()} [${entry.status()}]${
-                        if (entry.priority()?.isNotEmpty() == true) " (${entry.priority()})" else ""
-                    }"
-                planNode.add(javax.swing.tree.DefaultMutableTreeNode(label))
-            }
-            planRoot.add(planNode)
-            planTreeModel.reload()
-        }
+        // Session files feature removed with Plan tab
     }
 
     /** Creates a banner for Copilot CLI setup issues (not installed / not authenticated). */
@@ -850,13 +798,6 @@ class ChatToolWindowContent(
             }
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable, side)
         sidePanel = side
-        side.setOnPlanTitleChanged { newTitle ->
-            if (contentWrappers.isNotEmpty()) {
-                toolWindow.contentManager.getContent(com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_TODOS)
-                    ?.displayName = newTitle
-            }
-            ActivityTracker.getInstance().inc()
-        }
         restoreSidePanelOpenState()
 
         // When the agent calls query_conversation_history with follow-agent enabled, open the side panel.
@@ -1317,7 +1258,10 @@ class ChatToolWindowContent(
         consolePanel.disableQuickReplies()
         statusBanner?.dismissCurrent()
         // Auto-clean approved review rows when a brand-new user turn starts (not nudge / queued follow-up / auto-commit / continue).
-        if (!isAutoCommit && !isContinue && com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isAutoCleanReviewOnNewPrompt) {
+        if (!isAutoCommit && !isContinue && com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(
+                project
+            ).isAutoCleanReviewOnNewPrompt
+        ) {
             try {
                 AgentEditSession.getInstance(project)
                     ?.removeAllApproved()
@@ -1347,7 +1291,15 @@ class ChatToolWindowContent(
         pausedByInputFocus = false
         McpPauseService.getInstance(project).setPaused(false)
         ApplicationManager.getApplication().executeOnPooledThread {
-            promptOrchestrator.execute(prompt, contextItems, selectedModelId, rawText, entryId, isAutoCommit, isContinue)
+            promptOrchestrator.execute(
+                prompt,
+                contextItems,
+                selectedModelId,
+                rawText,
+                entryId,
+                isAutoCommit,
+                isContinue
+            )
         }
     }
 
@@ -2193,8 +2145,7 @@ class ChatToolWindowContent(
                 tabNames.forEachIndexed { i, name ->
                     val wrapper = JPanel(BorderLayout())
                     contentWrappers.add(wrapper)
-                    val displayName = if (i == com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_TODOS)
-                        (sidePanel?.getPlanTitle() ?: name) else name
+                    val displayName = name
                     val content = contentFactory.createContent(wrapper, displayName, false)
                     content.isCloseable = false
                     contentManager.addContent(content)
@@ -3337,14 +3288,6 @@ class ChatToolWindowContent(
         // This is separate from archive() because archive() must NOT delete the ID during
         // agent switches — doExport still needs the session ID for subsequent export steps.
         conversationStore.resetCurrentSessionId(project.basePath)
-        ApplicationManager.getApplication().invokeLater {
-            if (::planRoot.isInitialized) {
-                planRoot.removeAllChildren()
-                planTreeModel.reload()
-                planDetailsArea.text =
-                    "Session files and plan details will appear here.\n\nSelect an item in the tree to see details."
-            }
-        }
     }
 
     fun resetSessionKeepingHistory() {

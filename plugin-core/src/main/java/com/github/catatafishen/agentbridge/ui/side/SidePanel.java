@@ -36,28 +36,23 @@ import java.util.function.Consumer;
 public final class SidePanel extends JPanel implements Disposable {
 
     public static final int TAB_MCP = 0;
-    public static final int TAB_TODOS = 1;
-    public static final int TAB_PROMPT_DB = 2;
+    public static final int TAB_PROMPT_DB = 1;
 
     /**
      * Display names for each tab, in index order. Unmodifiable.
      */
     public static final java.util.List<String> TAB_NAMES =
-        java.util.List.of("MCP/Diff", "Plan", "Prompts");
+        java.util.List.of("MCP/Diff", "Prompts");
 
     private final CardLayout cardLayout = new CardLayout();
     private final JPanel contentContainer = new JPanel(cardLayout);
     private int selectedTab = TAB_MCP;
-
-    private String planBadge = "";
-    private transient @Nullable Consumer<String> onPlanTitleChanged;
 
     private final JComponent mcpPanel;
     private final OnePixelSplitter reviewSplitter;
     private final OnePixelSplitter reviewStatsSplitter;
     private final SessionStatsPanel statsPanel;
     private final transient Project project;
-    private final TodoPanel todoPanel;
     private final DiffPanel reviewPanel;
 
     public SidePanel(@NotNull Project project, @NotNull ChatConsolePanel chatConsole,
@@ -70,8 +65,6 @@ public final class SidePanel extends JPanel implements Disposable {
         Disposer.register(this, reviewPanel);
         Disposer.register(this, sessionStatsPanel);
 
-        todoPanel = new TodoPanel(project);
-        Disposer.register(this, todoPanel);
         PromptsPanel promptsPanel = new PromptsPanel(project, chatConsole);
         Disposer.register(this, promptsPanel);
 
@@ -91,16 +84,8 @@ public final class SidePanel extends JPanel implements Disposable {
         reviewStatsSplitter.setSecondComponent(statsPanel);
 
         contentContainer.add(reviewStatsSplitter, String.valueOf(TAB_MCP));
-        contentContainer.add(todoPanel, String.valueOf(TAB_TODOS));
         contentContainer.add(promptsPanel, String.valueOf(TAB_PROMPT_DB));
         cardLayout.show(contentContainer, String.valueOf(TAB_MCP));
-
-        todoPanel.setOnProgressChanged(() -> {
-            int total = todoPanel.getTotal();
-            int done = todoPanel.getDone();
-            planBadge = total > 0 ? " (" + done + "/" + total + ")" : "";
-            if (onPlanTitleChanged != null) onPlanTitleChanged.accept(getPlanTitle());
-        });
 
         PromptDbService.getInstance(project).registerNavigateCallback(params -> {
             selectTab(TAB_PROMPT_DB);
@@ -135,7 +120,6 @@ public final class SidePanel extends JPanel implements Disposable {
         }
 
         reviewPanel.updateLayoutOrientation(position);
-        todoPanel.updateLayoutOrientation(position);
         revalidate();
         repaint();
     }
@@ -147,7 +131,6 @@ public final class SidePanel extends JPanel implements Disposable {
         if (index == selectedTab) return;
         selectedTab = index;
         cardLayout.show(contentContainer, String.valueOf(index));
-        if (index == TAB_TODOS) todoPanel.refresh();
         updateStatsVisibility();
     }
 
@@ -163,14 +146,6 @@ public final class SidePanel extends JPanel implements Disposable {
      */
     public int getSelectedTab() {
         return selectedTab;
-    }
-
-    public @NotNull String getPlanTitle() {
-        return "Plan" + planBadge;
-    }
-
-    public void setOnPlanTitleChanged(@Nullable Consumer<String> callback) {
-        this.onPlanTitleChanged = callback;
     }
 
     /**
