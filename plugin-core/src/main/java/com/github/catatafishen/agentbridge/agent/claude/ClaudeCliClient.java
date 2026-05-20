@@ -135,6 +135,30 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     private final Map<String, String> cliSessionIds = new ConcurrentHashMap<>();
     private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
 
+    private static final String KEY_CLI_SESSION_MAP_PREFIX = "claude-cli.cliSessionIdMap.";
+
+    private String loadPersistedCliSessionId(String pluginSessionId) {
+        if (project == null) return null;
+        return PropertiesComponent.getInstance(project).getValue(KEY_CLI_SESSION_MAP_PREFIX + pluginSessionId);
+    }
+
+    private void persistCliSessionId(String pluginSessionId, String cliSessionId) {
+        if (project == null) return;
+        PropertiesComponent.getInstance(project).setValue(KEY_CLI_SESSION_MAP_PREFIX + pluginSessionId, cliSessionId);
+    }
+
+    private String loadLegacyResumeId() {
+        if (project == null) return null;
+        String propKey = PROFILE_ID + ".cliResumeSessionId";
+        PropertiesComponent props = PropertiesComponent.getInstance(project);
+        String resumeId = props.getValue(propKey);
+
+        if (resumeId == null || resumeId.isEmpty()) {
+            resumeId = SessionSwitchService.readAndConsumeClaudeResumeIdFile(project.getBasePath());
+        }
+        return resumeId;
+    }
+
     private String resolvedBinaryPath;
 
     public ClaudeCliClient(@NotNull AgentProfile profile,
@@ -177,34 +201,41 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     @Override
     public @NotNull String createSession(@Nullable String cwd) {
-        String sessionId = UUID.randomUUID().toString();
+        if (project == null) return UUID.randomUUID().toString();
+
+        // 1. Load the existing Plugin Session ID for this project.
+        // This ensures that after a restart, we continue using the same session
+        // ID that the UI (ConversationService) is pointing to.
+        String sessionId = com.github.catatafishen.agentbridge.session.db.ConversationService.getInstance(project)
+            .getCurrentSessionId(project.getBasePath());
         sessionCancelled.put(sessionId, new AtomicBoolean(false));
 
-        // Seed cliSessionIds from any pending session-switch export so that buildCommand
-        // can add --resume on the very first prompt of this session.
-        if (project != null) {
-            String propKey = PROFILE_ID + ".cliResumeSessionId";
-            PropertiesComponent props = PropertiesComponent.getInstance(project);
-            String resumeId = props.getValue(propKey);
+        // 2. Check if we already have a CLI session mapping for this plugin session.
+        if (cliSessionIds.containsKey(sessionId)) {
+            LOG.info("Reusing existing Claude CLI mapping for session: " + sessionId);
+            return sessionId;
+        }
 
-            // Fall back to file-based resume ID — PropertiesComponent values set during
-            // dispose() are lost on plugin hot-reload because IntelliJ flushes project state
-            // before dispose runs.
-            if (resumeId == null || resumeId.isEmpty()) {
-                resumeId = SessionSwitchService.readAndConsumeClaudeResumeIdFile(project.getBasePath());
-            }
-
+        // 3. Try to restore the CLI mapping from persistence.
+        String resumeId = loadPersistedCliSessionId(sessionId);
+        if (resumeId == null || resumeId.isEmpty()) {
+            // Fallback to legacy resume ID (from agent switch or manual export)
+            resumeId = loadLegacyResumeId();
             if (resumeId != null && !resumeId.isEmpty()) {
-                cliSessionIds.put(sessionId, resumeId);
-                props.unsetValue(propKey);
-                // Claude CLI handles resume natively via --resume flag — the CLI loads
-                // the full session context itself, so prompt injection is redundant.
-                ActiveAgentManager.setInjectConversationHistory(project, false);
-                LOG.info("Will resume Claude CLI session: " + resumeId + " (injection disabled)");
+                PropertiesComponent.getInstance(project).unsetValue(PROFILE_ID + ".cliResumeSessionId");
             }
         }
 
-        LOG.info("Created ClaudeCLI session: " + sessionId);
+        if (resumeId != null && !resumeId.isEmpty()) {
+            cliSessionIds.put(sessionId, resumeId);
+            // Claude CLI handles resume natively via --resume flag — the CLI loads
+            // the full session context itself, so prompt injection is redundant.
+            ActiveAgentManager.setInjectConversationHistory(project, false);
+            LOG.info("Resuming Claude CLI session: " + resumeId + " for plugin session " + sessionId);
+        } else {
+            LOG.info("Starting fresh Claude CLI session for plugin session: " + sessionId);
+        }
+
         return sessionId;
     }
 
@@ -668,7 +699,9 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         return switch (type) {
             case "system" -> {
                 if (event.has(FIELD_SESSION_ID)) {
-                    cliSessionIds.put(sessionId, event.get(FIELD_SESSION_ID).getAsString());
+                    String cliId = event.get(FIELD_SESSION_ID).getAsString();
+                    cliSessionIds.put(sessionId, cliId);
+                    persistCliSessionId(sessionId, cliId);
                 }
                 yield currentStopReason;
             }
@@ -712,7 +745,9 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             }
             case "result" -> {
                 if (event.has(FIELD_SESSION_ID)) {
-                    cliSessionIds.put(sessionId, event.get(FIELD_SESSION_ID).getAsString());
+                    String cliId = event.get(FIELD_SESSION_ID).getAsString();
+                    cliSessionIds.put(sessionId, cliId);
+                    persistCliSessionId(sessionId, cliId);
                 }
                 boolean isError = event.has(FIELD_SUBTYPE)
                     && SUBTYPE_ERROR.equals(event.get(FIELD_SUBTYPE).getAsString());

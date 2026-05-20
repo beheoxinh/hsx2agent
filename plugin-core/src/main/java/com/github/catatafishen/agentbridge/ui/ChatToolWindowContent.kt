@@ -570,14 +570,30 @@ class ChatToolWindowContent(
     private fun updateSessionInfo() {
         ApplicationManager.getApplication().invokeLater {
             if (!::sessionInfoLabel.isInitialized) return@invokeLater
-            val sid = if (::promptOrchestrator.isInitialized) promptOrchestrator.currentSessionId else null
-            if (sid != null) {
+
+            // The orchestrator's sessionId is null if the agent hasn't been started yet
+            // or if the session is currently being reset.
+            var sid = if (::promptOrchestrator.isInitialized) promptOrchestrator.currentSessionId else null
+
+            // If no active session, show the ID that will be used for resumption (from ConversationService)
+            if (sid == null) {
+                try {
+                    val idFile = com.github.catatafishen.agentbridge.session.exporters.ExportUtils.sessionsDir(project)
+                        .resolve(".current-session-id")
+                    if (idFile.exists()) {
+                        sid = idFile.readText(Charsets.UTF_8).trim()
+                    }
+                } catch (_: Exception) {
+                }
+            }
+
+            if (sid != null && sid.isNotEmpty()) {
                 val shortId = sid.take(8) + "..."
                 val cwd = project.basePath ?: "unknown"
                 sessionInfoLabel.text = "Session: $shortId  ·  $cwd"
                 sessionInfoLabel.foreground = JBColor.foreground()
             } else {
-                sessionInfoLabel.text = "No active session"
+                sessionInfoLabel.text = "New conversation"
                 sessionInfoLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
             }
         }
@@ -3129,7 +3145,10 @@ class ChatToolWindowContent(
             val entries = result?.entries() ?: emptyList()
             val hasMoreOnDisk = result?.hasMoreOnDisk() ?: false
             ApplicationManager.getApplication().invokeLater {
-                restoreEntries(entries, hasMoreOnDisk)
+                if (entries.isNotEmpty()) {
+                    restoreEntries(entries, hasMoreOnDisk)
+                    updateSessionInfo()
+                }
                 onComplete()
             }
         }
