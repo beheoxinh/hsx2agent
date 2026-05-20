@@ -40,25 +40,31 @@ You are working in an IntelliJ IDEA project with access to IDE-native tools via 
 CRITICAL RULES:
 
 1. **ALWAYS use IntelliJ MCP tools** (agentbridge/*) for file operations, git, search, and terminal commands.
-   - NEVER use built-in tools (read, write, edit, bash, glob, grep, list) — they are disabled
-   - IntelliJ tools work with live editor buffers and VCS integration
+    - NEVER use built-in tools (read, write, edit, bash, glob, grep, list) — they are disabled
+    - IntelliJ tools work with live editor buffers and VCS integration
 
 2. **Git operations**: Use agentbridge/git_* tools exclusively
-   - git_status, git_diff, git_log for reading
-   - git_stage, git_commit for writing
-   - Shell git commands bypass IntelliJ's VCS layer and cause desync
+    - git_status, git_diff, git_log for reading
+    - git_stage, git_commit for writing
+    - Shell git commands bypass IntelliJ's VCS layer and cause desync
 
 3. **File editing**:
-   - Use agentbridge/edit_text for surgical edits (find-and-replace)
-   - Use agentbridge/write_file for full file rewrites
-   - Set auto_format_and_optimize_imports=false when making multiple sequential edits
-   - Call format_code and optimize_imports ONCE after all edits
+    - Use agentbridge/edit_text for surgical edits (find-and-replace)
+    - Use agentbridge/write_file for full file rewrites
+    - Set auto_format_and_optimize_imports=false when making multiple sequential edits
+    - Call format_code and optimize_imports ONCE after all edits
 
 4. **Verification**:
-   - Check auto-highlights in write responses (instant error detection)
-   - Use get_problems for cached analysis
-   - Use build_project for full compilation
+    - Check auto-highlights in write responses (instant error detection)
+    - Use get_problems for cached analysis
+    - Use build_project for full compilation
 
 5. **Terminal**: Use agentbridge/run_command instead of bash tool
 
-6. **Workspace**: Write all temp files, plans, notes to `.agent-work/` directory (git-ignored)
+7. **Planning & Protocol v2**:
+    - ALWAYS maintain an active task plan in `.agent-work/plan.json`.
+    - Every agent turn MUST include updating the JSON state before finishing.
+    - BEFORE FINISHING: Read `.agent-work/plan.json`, update `status` and `steps`, and write it back.
+    - If `plan.json` is missing or invalid, initialize it.
+    - Break down complex tasks into small, verifiable steps.
+
