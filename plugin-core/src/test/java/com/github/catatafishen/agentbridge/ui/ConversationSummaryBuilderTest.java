@@ -5,7 +5,11 @@ import org.junit.jupiter.api.Test;
 import java.util.Collections;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConversationSummaryBuilderTest {
 
@@ -14,7 +18,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void groupIntoTurns_emptyList_returnsEmptyResult() {
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(Collections.emptyList());
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(Collections.emptyList());
         assertTrue(turns.isEmpty());
     }
 
@@ -22,7 +26,7 @@ class ConversationSummaryBuilderTest {
     void groupIntoTurns_singlePromptOnly_returnsOneTurnWithEmptyAgent() {
         List<EntryData> entries = List.of(new EntryData.Prompt("Hello"));
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals(1, turns.size());
         assertEquals("Hello", turns.get(0).getUserText());
@@ -37,11 +41,11 @@ class ConversationSummaryBuilderTest {
         EntryData.Text text = new EntryData.Text();
         text.setRaw("Agent reply");
         List<EntryData> entries = List.of(
-                new EntryData.Prompt("User question"),
-                text
+            new EntryData.Prompt("User question"),
+            text
         );
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals(1, turns.size());
         assertEquals("User question", turns.get(0).getUserText());
@@ -56,13 +60,13 @@ class ConversationSummaryBuilderTest {
         text2.setRaw("Reply 2");
 
         List<EntryData> entries = List.of(
-                new EntryData.Prompt("Q1"),
-                text1,
-                new EntryData.Prompt("Q2"),
-                text2
+            new EntryData.Prompt("Q1"),
+            text1,
+            new EntryData.Prompt("Q2"),
+            text2
         );
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals(2, turns.size());
         assertEquals("Q1", turns.get(0).getUserText());
@@ -74,12 +78,12 @@ class ConversationSummaryBuilderTest {
     @Test
     void groupIntoTurns_multiplePromptsNoResponses_createsOneTurnEach() {
         List<EntryData> entries = List.of(
-                new EntryData.Prompt("A"),
-                new EntryData.Prompt("B"),
-                new EntryData.Prompt("C")
+            new EntryData.Prompt("A"),
+            new EntryData.Prompt("B"),
+            new EntryData.Prompt("C")
         );
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals(3, turns.size());
         assertEquals("A", turns.get(0).getUserText());
@@ -94,12 +98,12 @@ class ConversationSummaryBuilderTest {
         EntryData.Text text = new EntryData.Text();
         text.setRaw("orphan text");
         List<EntryData> entries = List.of(
-                text,
-                new EntryData.ToolCall("some-tool"),
-                new EntryData.Thinking()
+            text,
+            new EntryData.ToolCall("some-tool"),
+            new EntryData.Thinking()
         );
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertTrue(turns.isEmpty());
     }
@@ -107,16 +111,16 @@ class ConversationSummaryBuilderTest {
     @Test
     void groupIntoTurns_countsToolCallsAndThinkingAndSubAgents() {
         List<EntryData> entries = List.of(
-                new EntryData.Prompt("Do stuff"),
-                new EntryData.ToolCall("read_file"),
-                new EntryData.ToolCall("write_file"),
-                new EntryData.ToolCall("edit_text"),
-                new EntryData.Thinking(),
-                new EntryData.Thinking(),
-                new EntryData.SubAgent("explore", "check files")
+            new EntryData.Prompt("Do stuff"),
+            new EntryData.ToolCall("read_file"),
+            new EntryData.ToolCall("write_file"),
+            new EntryData.ToolCall("edit_text"),
+            new EntryData.Thinking(),
+            new EntryData.Thinking(),
+            new EntryData.SubAgent("explore", "check files")
         );
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals(1, turns.size());
         assertEquals(3, turns.get(0).getToolCallCount());
@@ -133,7 +137,7 @@ class ConversationSummaryBuilderTest {
         List<EntryData> entries = List.of(new EntryData.Prompt("hi"), t1, t2);
 
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals("Hello World", turns.get(0).getAgentText());
     }
@@ -145,7 +149,7 @@ class ConversationSummaryBuilderTest {
         List<EntryData> entries = List.of(new EntryData.Prompt("q"), t);
 
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals("padded text", turns.get(0).getAgentText());
     }
@@ -153,15 +157,15 @@ class ConversationSummaryBuilderTest {
     @Test
     void groupIntoTurns_countsResetBetweenTurns() {
         List<EntryData> entries = List.of(
-                new EntryData.Prompt("turn1"),
-                new EntryData.ToolCall("t1"),
-                new EntryData.Thinking(),
-                new EntryData.SubAgent("explore", "desc"),
-                new EntryData.Prompt("turn2"),
-                new EntryData.ToolCall("t2")
+            new EntryData.Prompt("turn1"),
+            new EntryData.ToolCall("t1"),
+            new EntryData.Thinking(),
+            new EntryData.SubAgent("explore", "desc"),
+            new EntryData.Prompt("turn2"),
+            new EntryData.ToolCall("t2")
         );
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals(2, turns.size());
         // turn 1
@@ -178,15 +182,15 @@ class ConversationSummaryBuilderTest {
     void groupIntoTurns_irrelevantEntryTypes_areIgnored() {
         // ContextFiles, SessionSeparator, Status, Nudge, TurnStats are skipped
         List<EntryData> entries = List.of(
-                new EntryData.Prompt("question"),
-                new EntryData.ContextFiles(List.of()),
-                new EntryData.SessionSeparator("2025-01-01T00:00:00Z"),
-                new EntryData.Status("✓", "done"),
-                new EntryData.Nudge("hurry", "n1"),
-                new EntryData.TurnStats("t1")
+            new EntryData.Prompt("question"),
+            new EntryData.ContextFiles(List.of()),
+            new EntryData.SessionSeparator("2025-01-01T00:00:00Z"),
+            new EntryData.Status("✓", "done"),
+            new EntryData.Nudge("hurry", "n1"),
+            new EntryData.TurnStats("t1")
         );
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals(1, turns.size());
         assertEquals("question", turns.get(0).getUserText());
@@ -204,13 +208,13 @@ class ConversationSummaryBuilderTest {
         reply.setRaw("actual reply");
 
         List<EntryData> entries = List.of(
-                orphan,
-                new EntryData.ToolCall("stray-tool"),
-                new EntryData.Prompt("real question"),
-                reply
+            orphan,
+            new EntryData.ToolCall("stray-tool"),
+            new EntryData.Prompt("real question"),
+            reply
         );
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
 
         assertEquals(1, turns.size());
         assertEquals("real question", turns.get(0).getUserText());
@@ -227,7 +231,7 @@ class ConversationSummaryBuilderTest {
 
     @Test
     void truncateField_exactlyAtLimit_returnsAsIs() {
-        String text = "a".repeat(500);
+        String text = "a".repeat(300);
         assertEquals(text, ConversationSummaryBuilder.INSTANCE.truncateField(text, false, "hint"));
     }
 
@@ -235,7 +239,7 @@ class ConversationSummaryBuilderTest {
     void truncateField_overLimit_truncatesWithHint() {
         String text = "a".repeat(600);
         String result = ConversationSummaryBuilder.INSTANCE.truncateField(text, false, "truncated");
-        assertEquals("a".repeat(500) + "…[truncated]", result);
+        assertEquals("a".repeat(300) + "…[truncated]", result);
     }
 
     @Test
@@ -266,74 +270,74 @@ class ConversationSummaryBuilderTest {
     @Test
     void buildMarkerLine_noMarkers_returnsNull() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 0, 0, 0);
+            "user", "agent", 0, 0, 0);
         assertNull(ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_oneToolCall_singular() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 1, 0, 0);
+            "user", "agent", 1, 0, 0);
         assertEquals("[1 tool call]", ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_multipleToolCalls_plural() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 5, 0, 0);
+            "user", "agent", 5, 0, 0);
         assertEquals("[5 tool calls]", ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_oneThinkingBlock_singular() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 0, 1, 0);
+            "user", "agent", 0, 1, 0);
         assertEquals("[1 thinking block]", ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_multipleThinkingBlocks_plural() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 0, 3, 0);
+            "user", "agent", 0, 3, 0);
         assertEquals("[3 thinking blocks]", ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_oneSubAgent_singular() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 0, 0, 1);
+            "user", "agent", 0, 0, 1);
         assertEquals("[1 sub-agent]", ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_multipleSubAgents_plural() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 0, 0, 4);
+            "user", "agent", 0, 0, 4);
         assertEquals("[4 sub-agents]", ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_toolCallsAndThinking_combinedMarker() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 5, 2, 0);
+            "user", "agent", 5, 2, 0);
         assertEquals("[5 tool calls, 2 thinking blocks]",
-                ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
+            ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_allThreeCounters_combinedMarker() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 3, 1, 2);
+            "user", "agent", 3, 1, 2);
         assertEquals("[3 tool calls, 1 thinking block, 2 sub-agents]",
-                ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
+            ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     @Test
     void buildMarkerLine_toolCallsAndSubAgents_noThinking() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 2, 0, 1);
+            "user", "agent", 2, 0, 1);
         assertEquals("[2 tool calls, 1 sub-agent]",
-                ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
+            ConversationSummaryBuilder.INSTANCE.buildMarkerLine(turn));
     }
 
     // ── formatTurnForSummary ──────────────────────────────────────────
@@ -341,7 +345,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void formatTurnForSummary_compactMinimalTurn_outputsUserLineOnly() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "Hello", "", 0, 0, 0);
+            "Hello", "", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         assertTrue(result.contains("User: Hello"));
@@ -351,7 +355,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void formatTurnForSummary_compactWithAgentText_includesAgentLine() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "Question", "Answer", 0, 0, 0);
+            "Question", "Answer", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         assertTrue(result.contains("User: Question"));
@@ -361,7 +365,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void formatTurnForSummary_compactWithMarkers_includesMarkerLine() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "Do it", "Done", 5, 2, 0);
+            "Do it", "Done", 5, 2, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         assertTrue(result.contains("User: Do it"));
@@ -373,7 +377,7 @@ class ConversationSummaryBuilderTest {
     void formatTurnForSummary_compactLongUserText_isTruncated() {
         String longUser = "x".repeat(600);
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                longUser, "", 0, 0, 0);
+            longUser, "", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         assertTrue(result.contains("…[truncated]"));
@@ -383,7 +387,7 @@ class ConversationSummaryBuilderTest {
     void formatTurnForSummary_fullModeLongUserText_notTruncated() {
         String longUser = "x".repeat(600);
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                longUser, "", 0, 0, 0);
+            longUser, "", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, true);
 
         assertTrue(result.contains(longUser));
@@ -394,7 +398,7 @@ class ConversationSummaryBuilderTest {
     void formatTurnForSummary_compactLongAgentText_isTruncated() {
         String longAgent = "y".repeat(600);
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "q", longAgent, 0, 0, 0);
+            "q", longAgent, 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         assertTrue(result.contains("…[truncated]"));
@@ -404,7 +408,7 @@ class ConversationSummaryBuilderTest {
     void formatTurnForSummary_fullModeLongAgentText_notTruncated() {
         String longAgent = "y".repeat(600);
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "q", longAgent, 0, 0, 0);
+            "q", longAgent, 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, true);
 
         assertTrue(result.contains(longAgent));
@@ -414,7 +418,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void formatTurnForSummary_noMarkers_noMarkerLine() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "q", "a", 0, 0, 0);
+            "q", "a", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         // Should only have User and Agent lines, no bracket marker
@@ -427,7 +431,7 @@ class ConversationSummaryBuilderTest {
     @Test
     void formatTurnForSummary_emptyAgentText_noAgentLine() {
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                "q", "", 2, 0, 0);
+            "q", "", 2, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         assertFalse(result.contains("Agent:"));
@@ -438,7 +442,7 @@ class ConversationSummaryBuilderTest {
     void formatTurnForSummary_turnIdAppearsInUserHint() {
         String longUser = "z".repeat(600);
         ConversationSummaryBuilder.TurnData turn = new ConversationSummaryBuilder.TurnData(
-                longUser, "", 0, 0, 0);
+            longUser, "", 0, 0, 0);
         String result = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turn, false);
 
         assertTrue(result.contains("…[truncated]"));
@@ -449,9 +453,9 @@ class ConversationSummaryBuilderTest {
     @Test
     void turnData_equality() {
         ConversationSummaryBuilder.TurnData a = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 1, 2, 3);
+            "user", "agent", 1, 2, 3);
         ConversationSummaryBuilder.TurnData b = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 1, 2, 3);
+            "user", "agent", 1, 2, 3);
         assertEquals(a, b);
         assertEquals(a.hashCode(), b.hashCode());
     }
@@ -459,9 +463,9 @@ class ConversationSummaryBuilderTest {
     @Test
     void turnData_inequality() {
         ConversationSummaryBuilder.TurnData a = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 1, 2, 3);
+            "user", "agent", 1, 2, 3);
         ConversationSummaryBuilder.TurnData b = new ConversationSummaryBuilder.TurnData(
-                "user", "agent", 99, 2, 3);
+            "user", "agent", 99, 2, 3);
         assertNotEquals(a, b);
     }
 
@@ -472,15 +476,15 @@ class ConversationSummaryBuilderTest {
         EntryData.Text text = new EntryData.Text();
         text.setRaw("I fixed the bug.");
         List<EntryData> entries = List.of(
-                new EntryData.Prompt("Fix the bug"),
-                new EntryData.Thinking(),
-                new EntryData.ToolCall("read_file"),
-                new EntryData.ToolCall("edit_text"),
-                text
+            new EntryData.Prompt("Fix the bug"),
+            new EntryData.Thinking(),
+            new EntryData.ToolCall("read_file"),
+            new EntryData.ToolCall("edit_text"),
+            text
         );
 
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
         assertEquals(1, turns.size());
 
         String formatted = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turns.get(0), false);
@@ -497,17 +501,17 @@ class ConversationSummaryBuilderTest {
         r2.setRaw("Done, all tests pass.");
 
         List<EntryData> entries = List.of(
-                new EntryData.Prompt("Refactor the service"),
-                new EntryData.Thinking(),
-                new EntryData.ToolCall("read_file"),
-                r1,
-                new EntryData.Prompt("Now run the tests"),
-                new EntryData.ToolCall("run_tests"),
-                r2
+            new EntryData.Prompt("Refactor the service"),
+            new EntryData.Thinking(),
+            new EntryData.ToolCall("read_file"),
+            r1,
+            new EntryData.Prompt("Now run the tests"),
+            new EntryData.ToolCall("run_tests"),
+            r2
         );
 
         List<ConversationSummaryBuilder.TurnData> turns =
-                ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
+            ConversationSummaryBuilder.INSTANCE.groupIntoTurns(entries);
         assertEquals(2, turns.size());
 
         String f1 = ConversationSummaryBuilder.INSTANCE.formatTurnForSummary(turns.get(0), false);

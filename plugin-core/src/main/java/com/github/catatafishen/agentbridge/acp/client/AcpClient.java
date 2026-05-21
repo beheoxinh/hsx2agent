@@ -392,6 +392,9 @@ public abstract class AcpClient extends AbstractAgentClient {
             currentSessionId = response.sessionId();
             processSessionResponse(response);
 
+            // Turn off legacy history injection on fresh session creation to save tokens
+            ActiveAgentManager.setInjectConversationHistory(project, false);
+
             onSessionCreated(currentSessionId);
             persistResumeSessionId(currentSessionId);
             return currentSessionId;

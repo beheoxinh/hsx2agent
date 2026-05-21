@@ -61,12 +61,12 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
      * - Tool calls, thoughts, sub-agents: replaced with count markers, e.g. [5 tool calls, 2 thoughts].
      * - Builds from newest → oldest within [maxChars] budget.
      */
-    fun getCompressedSummary(maxChars: Int = 8000): String {
+    fun getCompressedSummary(maxChars: Int = 4000): String {
         val turns = groupIntoTurns()
         if (turns.isEmpty()) return ""
 
         val totalTurns = turns.size
-        val recentFullTurns = 3
+        val recentFullTurns = 2
 
         val blocks = ArrayDeque<String>()
         var usedChars = 0

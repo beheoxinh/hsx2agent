@@ -98,7 +98,7 @@ internal object ConversationSummaryBuilder {
      * appending a `…[hint]` suffix when truncated.
      */
     fun truncateField(text: String, full: Boolean, hint: String): String =
-        if (full || text.length <= 500) text else text.take(500) + "…[$hint]"
+        if (full || text.length <= 300) text else text.take(300) + "…[$hint]"
 
     fun buildMarkerLine(turn: TurnData): String? {
         val markers = listOfNotNull(
