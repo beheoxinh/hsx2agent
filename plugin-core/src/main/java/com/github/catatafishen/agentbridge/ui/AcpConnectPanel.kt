@@ -31,6 +31,7 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.*
+import kotlin.math.max
 
 /**
  * Pre-connection landing panel with a step-by-step "getting started" layout:
@@ -86,9 +87,12 @@ class AcpConnectPanel(
             }
         }
 
+    private enum class BinaryState { UNKNOWN, FOUND, MISSING }
+
     private val profileStatusCheckInProgress = AtomicBoolean(false)
     private var profileStatusTimer: javax.swing.Timer? = null
-    private val binaryExistsCache = mutableMapOf<String, Boolean>()
+    private val binaryStateCache = mutableMapOf<String, BinaryState>()
+    private var binaryScanCursor = 0
     private lateinit var toggleMissingBinaryVisibilityButton: InplaceButton
 
     override fun addNotify() {
@@ -339,11 +343,26 @@ class AcpConnectPanel(
             alignmentX = LEFT_ALIGNMENT
         }
 
+        val storage = AgentBridgeStorageSettings.getInstance()
+        toggleMissingBinaryVisibilityButton = InplaceButton("Toggle missing-binary agents", AllIcons.Actions.Show) {
+            storage.state.setShowOnlyInstalledAgents(!storage.state.isShowOnlyInstalledAgents())
+            updateMissingBinaryVisibilityToggleButtonUi()
+            refreshProfileCombo()
+        }.apply {
+            accessibleContext.accessibleName = "Toggle missing-binary agents"
+            val btnSize = JBUI.scale(24)
+            preferredSize = Dimension(btnSize, btnSize)
+            maximumSize = Dimension(btnSize, btnSize)
+            minimumSize = Dimension(btnSize, btnSize)
+        }
+        updateMissingBinaryVisibilityToggleButtonUi()
+
         section.add(
             createSectionHeader(
                 step = 2,
                 title = "Connect agent",
-                description = "ACP \u2014 launch and connect an AI coding agent"
+                description = "ACP \u2014 launch and connect an AI coding agent",
+                trailingAction = null,
             )
         )
         section.add(Box.createVerticalStrut(JBUI.scale(8)))
@@ -411,31 +430,23 @@ class AcpConnectPanel(
             label.text = if (value?.isExperimental == true) "$name (experimental)" else name
         }
         profileCombo.alignmentX = LEFT_ALIGNMENT
-        profileCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
+        profileCombo.font = JBUI.Fonts.smallFont()
+        // Let combo fill remaining horizontal space
+        profileCombo.minimumSize = Dimension(JBUI.scale(80), JBUI.scale(26))
+        profileCombo.preferredSize = Dimension(JBUI.scale(220), JBUI.scale(26))
+        profileCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(26))
         profileCombo.addActionListener { updateProfileStatus() }
 
-        val panel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
-            isOpaque = false
-            alignmentX = LEFT_ALIGNMENT
-            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
-        }
-        panel.add(profileCombo, BorderLayout.CENTER)
-
-        val storage = AgentBridgeStorageSettings.getInstance()
-        toggleMissingBinaryVisibilityButton = InplaceButton("Toggle missing-binary agents", AllIcons.Actions.Show) {
-            storage.state.setShowOnlyInstalledAgents(!storage.state.isShowOnlyInstalledAgents())
-            updateMissingBinaryVisibilityToggleButtonUi()
-            refreshProfileCombo()
-        }.apply {
-            accessibleContext.accessibleName = "Toggle missing-binary agents"
-        }
-        updateMissingBinaryVisibilityToggleButtonUi()
+        val btnSize = JBUI.scale(24)
 
         val searchButton = InplaceButton("Search for installed agents", AllIcons.Actions.Download) {
             ShellEnvironment.refresh()
             SmartAgentDetector(project).detectAllInBackground(true)
         }.apply {
             accessibleContext.accessibleName = "Search for installed agents"
+            preferredSize = Dimension(btnSize, btnSize)
+            maximumSize = Dimension(btnSize, btnSize)
+            minimumSize = Dimension(btnSize, btnSize)
         }
 
         val settingsButton = InplaceButton("Configure agent", AllIcons.General.GearPlain) {
@@ -445,21 +456,33 @@ class AcpConnectPanel(
             }
         }.apply {
             accessibleContext.accessibleName = "Configure agent"
+            preferredSize = Dimension(btnSize, btnSize)
+            maximumSize = Dimension(btnSize, btnSize)
+            minimumSize = Dimension(btnSize, btnSize)
         }
 
         val eastPanel = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             isOpaque = false
-            add(Box.createHorizontalStrut(JBUI.scale(8)))
             add(profileStatusIcon)
-            add(Box.createHorizontalStrut(JBUI.scale(8)))
+            add(Box.createHorizontalStrut(JBUI.scale(2)))
             add(toggleMissingBinaryVisibilityButton)
-            add(Box.createHorizontalStrut(JBUI.scale(8)))
+            add(Box.createHorizontalStrut(JBUI.scale(2)))
             add(searchButton)
-            add(Box.createHorizontalStrut(JBUI.scale(8)))
+            add(Box.createHorizontalStrut(JBUI.scale(2)))
             add(settingsButton)
         }
-        panel.add(eastPanel, BorderLayout.EAST)
+
+        val panel = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
+
+            add(profileCombo)
+            add(Box.createHorizontalStrut(JBUI.scale(6)))
+            add(eastPanel)
+        }
 
         updateProfileStatus()
         return panel
@@ -470,56 +493,62 @@ class AcpConnectPanel(
         if (hidingMissingBinaryAgents) {
             toggleMissingBinaryVisibilityButton.icon = AllIcons.Actions.Show
             toggleMissingBinaryVisibilityButton.toolTipText =
-                "Showing only agents with binary found. Click to show missing-binary agents too."
+                "Showing only agents with binary found. Click to show all agents."
         } else {
             toggleMissingBinaryVisibilityButton.icon = AllIcons.General.Filter
             toggleMissingBinaryVisibilityButton.toolTipText =
-                "Showing all agents, including missing-binary agents. Click to hide missing-binary agents."
+                "Showing all agents. Click to hide missing-binary agents."
         }
     }
 
     private fun updateProfileStatus() {
         if (!profileStatusCheckInProgress.compareAndSet(false, true)) return
 
-        val profile = profileCombo.selectedItem as? AgentProfile ?: run {
+        val allProfiles = agentManager.availableProfiles.toList()
+        if (allProfiles.isEmpty()) {
             profileStatusCheckInProgress.set(false)
             return
         }
-        val profileId = profile.id
-        val binaryName = profile.binaryName
-        val alternates = profile.alternateNames.toTypedArray()
+
+        val selected = profileCombo.selectedItem as? AgentProfile
+        val selectedId = selected?.id
+        val target = allProfiles.firstOrNull { binaryStateCache[it.id] == BinaryState.UNKNOWN }
+            ?: allProfiles[binaryScanCursor % max(allProfiles.size, 1)]
+        binaryScanCursor = (binaryScanCursor + 1) % max(allProfiles.size, 1)
+
+        val profileId = target.id
+        val binaryName = target.binaryName
+        val alternates = target.alternateNames.toTypedArray()
 
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val resolver = if (profile.transportType == TransportType.CLAUDE_CLI) {
-                    ClaudeAgentBinaryResolver()
-                } else {
-                    AcpClientBinaryResolver(profileId, binaryName, *alternates)
-                }
+                val resolver = if (target.transportType == TransportType.CLAUDE_CLI) ClaudeAgentBinaryResolver()
+                else AcpClientBinaryResolver(profileId, binaryName, *alternates)
 
                 var resolvedPath = resolver.resolve()
-                if (resolvedPath != null) {
-                    if (!resolvedPath.contains("/") && !resolvedPath.contains("\\")) {
-                        resolvedPath = BinaryDetector.findBinaryPath(resolvedPath)
-                    }
+                if (resolvedPath != null && !resolvedPath.contains("/") && !resolvedPath.contains("\\")) {
+                    resolvedPath = BinaryDetector.findBinaryPath(resolvedPath)
                 }
 
-                val exists = resolvedPath != null && java.io.File(resolvedPath).exists()
-                binaryExistsCache[profileId] = exists
+                val newState = if (resolvedPath != null && java.io.File(resolvedPath)
+                        .exists()
+                ) BinaryState.FOUND else BinaryState.MISSING
+                val oldState = binaryStateCache[profileId] ?: BinaryState.UNKNOWN
+                val changed = oldState != newState
+                binaryStateCache[profileId] = newState
 
                 ApplicationManager.getApplication().invokeLater {
-                    if (exists) {
-                        profileStatusIcon.icon = AllIcons.General.InspectionsOK
-                        profileStatusIcon.toolTipText = "Binary found: $resolvedPath"
-                    } else {
-                        profileStatusIcon.icon = AllIcons.General.Error
-                        profileStatusIcon.toolTipText =
-                            "Binary not found. Use the auto-detect button or check Settings."
+                    if (selectedId == profileId) {
+                        if (newState == BinaryState.FOUND) {
+                            profileStatusIcon.icon = AllIcons.General.InspectionsOK
+                            profileStatusIcon.toolTipText = "Binary found: $resolvedPath"
+                        } else {
+                            profileStatusIcon.icon = AllIcons.General.Error
+                            profileStatusIcon.toolTipText =
+                                "Binary not found. Use auto-detect button or check Settings."
+                        }
                     }
-
-                    if (AgentBridgeStorageSettings.getInstance().state.isShowOnlyInstalledAgents()) {
-                        refreshProfileCombo()
-                    }
+                    if (changed) refreshProfileCombo()
                 }
             } finally {
                 profileStatusCheckInProgress.set(false)
@@ -543,27 +572,45 @@ class AcpConnectPanel(
 
     private fun refreshProfileCombo() {
         val allProfiles = agentManager.availableProfiles.toList()
-        val showOnlyInstalled = AgentBridgeStorageSettings.getInstance().state.isShowOnlyInstalledAgents()
+        allProfiles.forEach { profile ->
+            binaryStateCache.putIfAbsent(profile.id, BinaryState.UNKNOWN)
+        }
 
+        val showOnlyInstalled = AgentBridgeStorageSettings.getInstance().state.isShowOnlyInstalledAgents()
         val filteredProfiles = if (showOnlyInstalled) {
             allProfiles.filter { profile ->
-                binaryExistsCache[profile.id] == true
+                when (binaryStateCache[profile.id] ?: BinaryState.UNKNOWN) {
+                    BinaryState.FOUND -> true
+                    BinaryState.MISSING -> false
+                    BinaryState.UNKNOWN -> true
+                }
             }
         } else {
             allProfiles
         }
 
+        val previousSelectedId = (profileCombo.selectedItem as? AgentProfile)?.id
         val activeId = agentManager.activeProfileId
-        profileCombo.removeAllItems()
-        for (p in filteredProfiles) {
-            profileCombo.addItem(p)
+        val previousItems = (0 until profileCombo.itemCount).mapNotNull { profileCombo.getItemAt(it)?.id }
+        val nextItems = filteredProfiles.map { it.id }
+        if (previousItems == nextItems) {
+            val selected = filteredProfiles.firstOrNull { it.id == previousSelectedId }
+                ?: filteredProfiles.firstOrNull { it.id == activeId }
+                ?: filteredProfiles.firstOrNull()
+            if (selected != null && (profileCombo.selectedItem as? AgentProfile)?.id != selected.id) {
+                profileCombo.selectedItem = selected
+            }
+            return
         }
 
-        val active = filteredProfiles.find { it.id == activeId }
-        if (active != null) {
-            profileCombo.selectedItem = active
-        } else if (filteredProfiles.isNotEmpty()) {
-            profileCombo.selectedIndex = 0
+        profileCombo.removeAllItems()
+        filteredProfiles.forEach { profileCombo.addItem(it) }
+
+        val selected = filteredProfiles.firstOrNull { it.id == previousSelectedId }
+            ?: filteredProfiles.firstOrNull { it.id == activeId }
+            ?: filteredProfiles.firstOrNull()
+        if (selected != null) {
+            profileCombo.selectedItem = selected
         }
     }
 
@@ -671,18 +718,39 @@ class AcpConnectPanel(
 
     // ── Shared UI helpers ──
 
-    private fun createSectionHeader(step: Int, title: String, description: String): JComponent {
+    private fun createSectionHeader(
+        step: Int,
+        title: String,
+        description: String,
+        @Suppress("UNUSED_PARAMETER") trailingAction: JComponent? = null
+    ): JComponent {
         val panel = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             isOpaque = false
             alignmentX = LEFT_ALIGNMENT
         }
 
-        panel.add(JBLabel("$step. $title").apply {
+        val fullTitle = "$step. $title"
+        val titleLabel = JBLabel(fullTitle).apply {
             font = JBUI.Fonts.label().deriveFont(JBUI.Fonts.label().size2D * 1.25f).asBold()
-            alignmentX = LEFT_ALIGNMENT
             border = JBUI.Borders.empty(12, 0, 4, 0)
-        })
+            alignmentX = LEFT_ALIGNMENT
+            toolTipText = fullTitle
+        }
+
+        val titleRow = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+
+            add(titleLabel)
+            add(Box.createHorizontalGlue())
+
+            // Keep row height stable while allowing horizontal growth.
+            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+        }
+
+        panel.add(titleRow)
         panel.add(Box.createVerticalStrut(JBUI.scale(4)))
         panel.add(JBLabel(description).apply {
             foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
