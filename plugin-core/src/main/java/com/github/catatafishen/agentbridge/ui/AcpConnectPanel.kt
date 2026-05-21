@@ -89,7 +89,7 @@ class AcpConnectPanel(
     private val profileStatusCheckInProgress = AtomicBoolean(false)
     private var profileStatusTimer: javax.swing.Timer? = null
     private val binaryExistsCache = mutableMapOf<String, Boolean>()
-    private lateinit var hideMissingButton: InplaceButton
+    private lateinit var toggleMissingBinaryVisibilityButton: InplaceButton
 
     override fun addNotify() {
         super.addNotify()
@@ -422,17 +422,14 @@ class AcpConnectPanel(
         panel.add(profileCombo, BorderLayout.CENTER)
 
         val storage = AgentBridgeStorageSettings.getInstance()
-        hideMissingButton = InplaceButton(
-            "Show/hide agents without binary",
-            if (storage.state.isShowOnlyInstalledAgents()) AllIcons.Actions.Show else AllIcons.General.Filter
-        ) {
+        toggleMissingBinaryVisibilityButton = InplaceButton("Toggle missing-binary agents", AllIcons.Actions.Show) {
             storage.state.setShowOnlyInstalledAgents(!storage.state.isShowOnlyInstalledAgents())
-            hideMissingButton.icon =
-                if (storage.state.isShowOnlyInstalledAgents()) AllIcons.Actions.Show else AllIcons.General.Filter
+            updateMissingBinaryVisibilityToggleButtonUi()
             refreshProfileCombo()
         }.apply {
-            accessibleContext.accessibleName = "Show/hide agents without binary"
+            accessibleContext.accessibleName = "Toggle missing-binary agents"
         }
+        updateMissingBinaryVisibilityToggleButtonUi()
 
         val searchButton = InplaceButton("Search for installed agents", AllIcons.Actions.Download) {
             ShellEnvironment.refresh()
@@ -456,7 +453,7 @@ class AcpConnectPanel(
             add(Box.createHorizontalStrut(JBUI.scale(8)))
             add(profileStatusIcon)
             add(Box.createHorizontalStrut(JBUI.scale(8)))
-            add(hideMissingButton)
+            add(toggleMissingBinaryVisibilityButton)
             add(Box.createHorizontalStrut(JBUI.scale(8)))
             add(searchButton)
             add(Box.createHorizontalStrut(JBUI.scale(8)))
@@ -466,6 +463,19 @@ class AcpConnectPanel(
 
         updateProfileStatus()
         return panel
+    }
+
+    private fun updateMissingBinaryVisibilityToggleButtonUi() {
+        val hidingMissingBinaryAgents = AgentBridgeStorageSettings.getInstance().state.isShowOnlyInstalledAgents()
+        if (hidingMissingBinaryAgents) {
+            toggleMissingBinaryVisibilityButton.icon = AllIcons.Actions.Show
+            toggleMissingBinaryVisibilityButton.toolTipText =
+                "Showing only agents with binary found. Click to show missing-binary agents too."
+        } else {
+            toggleMissingBinaryVisibilityButton.icon = AllIcons.General.Filter
+            toggleMissingBinaryVisibilityButton.toolTipText =
+                "Showing all agents, including missing-binary agents. Click to hide missing-binary agents."
+        }
     }
 
     private fun updateProfileStatus() {
