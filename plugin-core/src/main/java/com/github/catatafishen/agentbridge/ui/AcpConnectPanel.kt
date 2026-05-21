@@ -3,11 +3,14 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.BuildInfo
 import com.github.catatafishen.agentbridge.bridge.TransportType
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
+import com.github.catatafishen.agentbridge.ui.TimerDisplayFormatter
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.services.AgentProfileManager.AgentProfileListener
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
+import com.github.catatafishen.agentbridge.session.db.ConversationDatabase
 import com.github.catatafishen.agentbridge.session.db.ConversationListener
 import com.github.catatafishen.agentbridge.session.db.ConversationService
+import com.github.catatafishen.agentbridge.session.db.ConversationStatistics
 import com.github.catatafishen.agentbridge.settings.*
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
@@ -27,6 +30,8 @@ import com.intellij.util.ui.UIUtil
 import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.text.SimpleDateFormat
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.*
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -98,11 +103,13 @@ class AcpConnectPanel(
     override fun addNotify() {
         super.addNotify()
         startProfileStatusTimer()
+        startStatsTimer()
     }
 
     override fun removeNotify() {
         super.removeNotify()
         stopProfileStatusTimer()
+        stopStatsTimer()
     }
 
     private fun startProfileStatusTimer() {
@@ -139,6 +146,15 @@ class AcpConnectPanel(
     private val toolCallLink = HyperlinkLabel("0 calls")
     private val toolCallEntries = mutableListOf<String>()
     private lateinit var statusPill: JBPanel<JBPanel<*>>
+
+    // Stats bar labels
+    private val lsAgentLabel = JBLabel("—")
+    private val lsMetaLabel = JBLabel("—")
+    private val lsAgoLabel = JBLabel("—")
+    private val todayTimeLabel = JBLabel("—")
+    private val todayMetaLabel = JBLabel("—")
+    private val todayTokensLabel = JBLabel("—")
+    private var statsRefreshTimer: javax.swing.Timer? = null
 
     // ACP controls
     private var acpSection: JComponent = JBPanel<JBPanel<*>>()
@@ -189,7 +205,9 @@ class AcpConnectPanel(
             add(titleLabel)
 
             add(createMcpSection())
-            add(Box.createVerticalGlue())
+            add(Box.createVerticalStrut(JBUI.scale(6)))
+            add(createStatsSection())
+            add(Box.createVerticalStrut(JBUI.scale(6)))
             add(createAcpSection().also { acpSection = it })
             add(Box.createVerticalGlue())
         }
@@ -278,6 +296,69 @@ class AcpConnectPanel(
         section.add(mcpAutoStartCheckbox)
 
         return section
+    }
+
+    // ── Stats section ──
+
+    private fun createStatsSection(): JComponent {
+        val dimColor = JBUI.CurrentTheme.ContextHelp.FOREGROUND
+        val smallFont = JBUI.Fonts.smallFont()
+        val cardBg = JBColor(
+            Color(0xF5, 0xF5, 0xF5),
+            Color(0x3A, 0x3A, 0x3A)
+        )
+        val cardBorder = JBUI.Borders.compound(
+            JBUI.Borders.customLine(JBColor.border(), 1),
+            JBUI.Borders.empty(5, 8)
+        )
+
+        fun makeCard(title: String): JBPanel<JBPanel<*>> = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+            isOpaque = true
+            background = cardBg
+            border = cardBorder
+            add(JBLabel(title).apply {
+                font = smallFont.deriveFont(Font.BOLD)
+                foreground = dimColor
+            }, BorderLayout.NORTH)
+        }
+
+        // ── Last Session card ──
+        val lsCard = makeCard("Last session")
+        val lsContent = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            border = JBUI.Borders.emptyLeft(2)
+            add(Box.createVerticalStrut(JBUI.scale(2)))
+            add(lsAgentLabel.apply { font = JBUI.Fonts.label() })
+            add(Box.createVerticalStrut(JBUI.scale(1)))
+            add(lsMetaLabel.apply { font = smallFont; foreground = dimColor })
+            add(lsAgoLabel.apply { font = smallFont; foreground = dimColor })
+        }
+        lsCard.add(lsContent, BorderLayout.CENTER)
+
+        // ── Today card ──
+        val todayCard = makeCard("Today")
+        val todayContent = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            border = JBUI.Borders.emptyLeft(2)
+            add(Box.createVerticalStrut(JBUI.scale(2)))
+            add(todayTimeLabel.apply { font = JBUI.Fonts.label() })
+            add(Box.createVerticalStrut(JBUI.scale(1)))
+            add(todayMetaLabel.apply { font = smallFont; foreground = dimColor })
+            add(todayTokensLabel.apply { font = smallFont; foreground = dimColor })
+        }
+        todayCard.add(todayContent, BorderLayout.CENTER)
+
+        return JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(64))
+            add(lsCard)
+            add(Box.createHorizontalStrut(JBUI.scale(8)))
+            add(todayCard)
+        }
     }
 
     private fun createStatusPill(): JComponent {
@@ -797,6 +878,95 @@ class AcpConnectPanel(
                     }
                 }
             })
+    }
+
+    // ── Stats section update ──
+
+    private fun refreshStats() {
+        if (!isShowing) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val sessions = ConversationService.getInstance(project).listSessions()
+                val lastSession = sessions.firstOrNull()
+
+                val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+                val todayRows = ConversationStatistics.queryDailyTurnStats(
+                    ConversationDatabase.getInstance(project), today, today
+                )
+                val todayTurns = todayRows.sumOf { it.turns() }
+                val todayTools = todayRows.sumOf { it.toolCalls() }
+                val todayTimeMs = todayRows.sumOf { it.durationMs() }
+                val todayInTok = todayRows.sumOf { it.inputTokens() }
+                val todayOutTok = todayRows.sumOf { it.outputTokens() }
+
+                ApplicationManager.getApplication().invokeLater {
+                    updateStatLabels(lastSession, todayTurns, todayTools, todayTimeMs, todayInTok, todayOutTok)
+                }
+            } catch (_: Exception) {
+                // Stats are advisory — never crash the refresh loop
+            }
+        }
+    }
+
+    private fun updateStatLabels(
+        lastSession: ConversationService.SessionRecord?,
+        todayTurns: Int,
+        todayTools: Int,
+        todayTimeMs: Long,
+        todayInTok: Long,
+        todayOutTok: Long
+    ) {
+        if (lastSession != null) {
+            lsAgentLabel.text = lastSession.agent
+            lsMetaLabel.text = "${lastSession.turnCount} turn${if (lastSession.turnCount != 1) "s" else ""}"
+            val ago = System.currentTimeMillis() - lastSession.updatedAt
+            lsAgoLabel.text = when {
+                ago < 60_000 -> "just now"
+                ago < 3_600_000 -> "${ago / 60_000}m ago"
+                ago < 86_400_000 -> "${ago / 3_600_000}h ago"
+                else -> "${ago / 86_400_000}d ago"
+            }
+        } else {
+            lsAgentLabel.text = "\u2014"
+            lsMetaLabel.text = "No sessions yet"
+            lsAgoLabel.text = ""
+        }
+
+        val hasToday = todayTurns > 0 || todayTimeMs > 0
+        if (hasToday) {
+            todayTimeLabel.text = TimerDisplayFormatter.formatElapsedTime(todayTimeMs / 1000)
+            todayMetaLabel.text =
+                "$todayTurns turn${if (todayTurns != 1) "s" else ""} \u00b7 $todayTools tool${if (todayTools != 1) "s" else ""}"
+            val totalTok = todayInTok + todayOutTok
+            todayTokensLabel.text = if (totalTok > 0)
+                "${TimerDisplayFormatter.formatTokenCount(todayInTok)} / ${
+                    TimerDisplayFormatter.formatTokenCount(
+                        todayOutTok
+                    )
+                } tokens"
+            else ""
+        } else {
+            todayTimeLabel.text = "\u2014"
+            todayMetaLabel.text = "No activity"
+            todayTokensLabel.text = ""
+        }
+    }
+
+    // ── Stats timer lifecycle ──
+
+    private fun startStatsTimer() {
+        if (statsRefreshTimer == null) {
+            statsRefreshTimer = javax.swing.Timer(10_000) {
+                if (isShowing) refreshStats()
+            }
+        }
+        statsRefreshTimer?.start()
+        // Also fire immediately so the bar isn't empty on first paint
+        refreshStats()
+    }
+
+    private fun stopStatsTimer() {
+        statsRefreshTimer?.stop()
     }
 
     private fun refreshMcpState() {
