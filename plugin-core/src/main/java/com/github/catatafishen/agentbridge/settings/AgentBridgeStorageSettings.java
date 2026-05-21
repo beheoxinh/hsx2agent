@@ -180,6 +180,7 @@ public final class AgentBridgeStorageSettings
         private StorageLocationMode storageLocationMode = null;
         private boolean toolStatsEnabled = true;
         private boolean agentBinaryDetectionRun = false;
+        private boolean showOnlyInstalledAgents = false;
 
         public String getCustomStorageRoot() {
             return customStorageRoot;
@@ -211,6 +212,14 @@ public final class AgentBridgeStorageSettings
 
         public void setAgentBinaryDetectionRun(boolean agentBinaryDetectionRun) {
             this.agentBinaryDetectionRun = agentBinaryDetectionRun;
+        }
+
+        public boolean isShowOnlyInstalledAgents() {
+            return showOnlyInstalledAgents;
+        }
+
+        public void setShowOnlyInstalledAgents(boolean showOnlyInstalledAgents) {
+            this.showOnlyInstalledAgents = showOnlyInstalledAgents;
         }
     }
 }

@@ -89,6 +89,9 @@ class AcpConnectPanel(
     private val profileStatusCheckInProgress = AtomicBoolean(false)
     private var profileStatusTimer: javax.swing.Timer? = null
 
+    private val binaryExistsCache = mutableMapOf<String, Boolean>()
+    private lateinit var hideMissingButton: InplaceButton
+
     override fun addNotify() {
         super.addNotify()
         startProfileStatusTimer()
