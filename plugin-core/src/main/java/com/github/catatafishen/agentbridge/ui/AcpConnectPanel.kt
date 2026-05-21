@@ -88,7 +88,6 @@ class AcpConnectPanel(
 
     private val profileStatusCheckInProgress = AtomicBoolean(false)
     private var profileStatusTimer: javax.swing.Timer? = null
-
     private val binaryExistsCache = mutableMapOf<String, Boolean>()
     private lateinit var hideMissingButton: InplaceButton
 
@@ -422,6 +421,19 @@ class AcpConnectPanel(
         }
         panel.add(profileCombo, BorderLayout.CENTER)
 
+        val storage = AgentBridgeStorageSettings.getInstance()
+        hideMissingButton = InplaceButton(
+            "Show/hide agents without binary",
+            if (storage.state.isShowOnlyInstalledAgents()) AllIcons.Actions.Show else AllIcons.General.Filter
+        ) {
+            storage.state.setShowOnlyInstalledAgents(!storage.state.isShowOnlyInstalledAgents())
+            hideMissingButton.icon =
+                if (storage.state.isShowOnlyInstalledAgents()) AllIcons.Actions.Show else AllIcons.General.Filter
+            refreshProfileCombo()
+        }.apply {
+            accessibleContext.accessibleName = "Show/hide agents without binary"
+        }
+
         val searchButton = InplaceButton("Search for installed agents", AllIcons.Actions.Download) {
             ShellEnvironment.refresh()
             SmartAgentDetector(project).detectAllInBackground(true)
@@ -443,6 +455,8 @@ class AcpConnectPanel(
             isOpaque = false
             add(Box.createHorizontalStrut(JBUI.scale(8)))
             add(profileStatusIcon)
+            add(Box.createHorizontalStrut(JBUI.scale(8)))
+            add(hideMissingButton)
             add(Box.createHorizontalStrut(JBUI.scale(8)))
             add(searchButton)
             add(Box.createHorizontalStrut(JBUI.scale(8)))
@@ -481,6 +495,7 @@ class AcpConnectPanel(
                 }
 
                 val exists = resolvedPath != null && java.io.File(resolvedPath).exists()
+                binaryExistsCache[profileId] = exists
 
                 ApplicationManager.getApplication().invokeLater {
                     if (exists) {
@@ -490,6 +505,10 @@ class AcpConnectPanel(
                         profileStatusIcon.icon = AllIcons.General.Error
                         profileStatusIcon.toolTipText =
                             "Binary not found. Use the auto-detect button or check Settings."
+                    }
+
+                    if (AgentBridgeStorageSettings.getInstance().state.isShowOnlyInstalledAgents()) {
+                        refreshProfileCombo()
                     }
                 }
             } finally {
@@ -513,15 +532,28 @@ class AcpConnectPanel(
     }
 
     private fun refreshProfileCombo() {
-        val profiles = agentManager.availableProfiles.toList()
+        val allProfiles = agentManager.availableProfiles.toList()
+        val showOnlyInstalled = AgentBridgeStorageSettings.getInstance().state.isShowOnlyInstalledAgents()
+
+        val filteredProfiles = if (showOnlyInstalled) {
+            allProfiles.filter { profile ->
+                binaryExistsCache[profile.id] == true
+            }
+        } else {
+            allProfiles
+        }
+
         val activeId = agentManager.activeProfileId
         profileCombo.removeAllItems()
-        for (p in profiles) {
+        for (p in filteredProfiles) {
             profileCombo.addItem(p)
         }
-        val active = profiles.find { it.id == activeId }
+
+        val active = filteredProfiles.find { it.id == activeId }
         if (active != null) {
             profileCombo.selectedItem = active
+        } else if (filteredProfiles.isNotEmpty()) {
+            profileCombo.selectedIndex = 0
         }
     }
 
