@@ -554,6 +554,21 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                 Model model = parseModelEntry(el);
                 if (model != null) models.add(model);
             }
+
+            CodexConfigParser.ConfigResult customConfig = CodexConfigParser.parse();
+            for (String customModelId : customConfig.getCustomModels()) {
+                boolean exists = false;
+                for (Model m : models) {
+                    if (m.id().equals(customModelId)) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    models.add(new Model(customModelId, customModelId, "Custom model configured in ~/.codex/config.toml", null));
+                }
+            }
+
             if (models.isEmpty()) {
                 throw new AgentException("model/list returned no models", null, true);
             }
