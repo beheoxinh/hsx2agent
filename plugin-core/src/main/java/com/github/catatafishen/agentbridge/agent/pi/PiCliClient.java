@@ -85,6 +85,8 @@ public final class PiCliClient extends AbstractAgentClient {
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicReference<Process> process = new AtomicReference<>();
     private final AtomicReference<Thread> readerThread = new AtomicReference<>();
+    private volatile java.io.OutputStream stdin;
+    private final Object stdinLock = new Object();
 
     private final AtomicReference<TurnState> currentTurn = new AtomicReference<>();
     private final ConcurrentLinkedDeque<String> stderrTail = new ConcurrentLinkedDeque<>();
@@ -176,6 +178,7 @@ public final class PiCliClient extends AbstractAgentClient {
 
         Process proc = pb.start();
         process.set(proc);
+        stdin = proc.getOutputStream();
         started.set(true);
         synthSessionId = null;
 
@@ -195,6 +198,7 @@ public final class PiCliClient extends AbstractAgentClient {
     public void stop() {
         if (!started.compareAndSet(true, false)) return;
         Process p = process.getAndSet(null);
+        stdin = null;
         if (p != null) {
             try {
                 p.destroy();
@@ -256,12 +260,14 @@ public final class PiCliClient extends AbstractAgentClient {
         Map<String, Object> cmd = new java.util.LinkedHashMap<>();
         cmd.put("type", "prompt");
         cmd.put("message", message);
+        LOG.info("[pi] sendPrompt: " + message.length() + " chars");
         writeCommand(cmd);
 
         boolean completed = turn.done.await(PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         currentTurn.compareAndSet(turn, null);
 
         if (!completed) {
+            LOG.warn("[pi] prompt timed out after " + PROMPT_TIMEOUT_SECONDS + "s; aborting");
             cancelSession(request.sessionId());
             throw new IOException("Pi prompt timed out after " + PROMPT_TIMEOUT_SECONDS + "s");
         }
@@ -313,11 +319,13 @@ public final class PiCliClient extends AbstractAgentClient {
                 if (line.isEmpty()) continue;
                 try {
                     JsonObject ev = JsonParser.parseString(line).getAsJsonObject();
+                    if (LOG.isDebugEnabled()) LOG.debug("[pi] <<< " + line);
                     handleEvent(ev);
                 } catch (Exception e) {
                     LOG.warn("[pi] failed to parse event: " + line, e);
                 }
             }
+            LOG.info("[pi] stdout EOF");
         } catch (IOException e) {
             if (started.get()) LOG.warn("[pi] reader thread exited unexpectedly", e);
         } finally {
@@ -333,6 +341,20 @@ public final class PiCliClient extends AbstractAgentClient {
         String type = ev.has("type") ? ev.get("type").getAsString() : "";
         TurnState turn = currentTurn.get();
         switch (type) {
+            case "response" -> {
+                String success = optionalString(ev, "success");
+                String command = optionalString(ev, "command");
+                if (Boolean.parseBoolean(success) || "true".equalsIgnoreCase(success)) {
+                    LOG.info("[pi] command response: " + command + " ok");
+                } else {
+                    String err = optionalString(ev, "error");
+                    LOG.warn("[pi] command response: " + command + " failed: " + err);
+                    if (turn != null && "prompt".equals(command)) {
+                        turn.failure.compareAndSet(null, err != null ? err : "prompt rejected");
+                        turn.done.countDown();
+                    }
+                }
+            }
             case "agent_start", "turn_start", "message_start", "message_end" -> { /* lifecycle only */ }
             case "message_update" -> {
                 if (turn == null) return;
@@ -470,13 +492,20 @@ public final class PiCliClient extends AbstractAgentClient {
     private void writeCommand(@NotNull Map<String, Object> command) throws IOException {
         Process p = process.get();
         if (p == null || !p.isAlive()) throw new IOException(MSG_NOT_STARTED);
+        java.io.OutputStream out = stdin;
+        if (out == null) throw new IOException(MSG_NOT_STARTED);
         JsonObject json = mapToJson(command);
-        synchronized (this) {
-            BufferedWriter w = new BufferedWriter(new OutputStreamWriter(p.getOutputStream(), StandardCharsets.UTF_8));
-            w.write(json.toString());
-            w.write("\n");
-            w.flush();
+        byte[] bytes = (json + "\n").getBytes(StandardCharsets.UTF_8);
+        synchronized (stdinLock) {
+            try {
+                out.write(bytes);
+                out.flush();
+            } catch (IOException ioe) {
+                LOG.warn("[pi] writeCommand failed (" + command.get("type") + "): " + ioe.getMessage());
+                throw ioe;
+            }
         }
+        if (LOG.isDebugEnabled()) LOG.debug("[pi] >>> " + json);
     }
 
     @NotNull
