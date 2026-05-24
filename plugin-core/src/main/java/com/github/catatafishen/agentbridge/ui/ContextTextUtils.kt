@@ -9,7 +9,7 @@ package com.github.catatafishen.agentbridge.ui
 object ContextTextUtils {
 
     /** Unicode Object Replacement Character — placeholder for inline context chips. */
-    private const val ORC = '\uFFFC'
+    private const val ORC = '￼'
 
     /**
      * Replace each ORC in [rawText] with a markdown link to the corresponding context item,
@@ -99,6 +99,11 @@ object ContextTextUtils {
             var finalPath = decodedPath
             if (com.intellij.openapi.util.SystemInfo.isWindows && finalPath.startsWith("/")) {
                 finalPath = finalPath.drop(1)
+            }
+
+            // Normalize UNIX path: if it doesn't start with "/" and is not Windows path, prepend "/"
+            if (!finalPath.startsWith("/") && !finalPath.contains(":/")) {
+                finalPath = "/$finalPath"
             }
 
             val virtualFile = com.intellij.openapi.vfs.LocalFileSystem.getInstance()

@@ -1125,26 +1125,28 @@ class ChatToolWindowContent(
     private fun createStatusInputChat(): JComponent {
         val chatInputSettings = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance()
 
-        val smartPasteCheckbox = com.intellij.ui.components.JBCheckBox("Smart Paste", chatInputSettings.isSmartPasteEnabled).apply {
-            font = font.deriveFont(10f)
-            isOpaque = false
-            border = JBUI.Borders.empty()
-            addActionListener {
-                chatInputSettings.isSmartPasteEnabled = isSelected
+        val smartPasteCheckbox =
+            com.intellij.ui.components.JBCheckBox("Smart Paste", chatInputSettings.isSmartPasteEnabled).apply {
+                font = font.deriveFont(10f)
+                isOpaque = false
+                border = JBUI.Borders.empty()
+                addActionListener {
+                    chatInputSettings.isSmartPasteEnabled = isSelected
+                }
             }
-        }
 
-        val softWrapsCheckbox = com.intellij.ui.components.JBCheckBox("Soft Wraps", chatInputSettings.isSoftWrapsEnabled).apply {
-            font = font.deriveFont(10f)
-            isOpaque = false
-            border = JBUI.Borders.empty()
-            addActionListener {
-                chatInputSettings.isSoftWrapsEnabled = isSelected
-                promptTextArea.editor?.settings?.isUseSoftWraps = isSelected
-                promptTextArea.editor?.component?.revalidate()
-                promptTextArea.editor?.component?.repaint()
+        val softWrapsCheckbox =
+            com.intellij.ui.components.JBCheckBox("Soft Wraps", chatInputSettings.isSoftWrapsEnabled).apply {
+                font = font.deriveFont(10f)
+                isOpaque = false
+                border = JBUI.Borders.empty()
+                addActionListener {
+                    chatInputSettings.isSoftWrapsEnabled = isSelected
+                    promptTextArea.editor?.settings?.isUseSoftWraps = isSelected
+                    promptTextArea.editor?.component?.revalidate()
+                    promptTextArea.editor?.component?.repaint()
+                }
             }
-        }
 
         val gitLabel = JBLabel().apply {
             font = font.deriveFont(10f)
@@ -2889,7 +2891,17 @@ class ChatToolWindowContent(
                         val offset = editor.caretModel.offset
                         doc.insertString(offset, parsedText)
                         editor.caretModel.moveToOffset(offset + parsedText.length)
-                        contextManager.restoreInlineChips(editor, parsedItems)
+
+                        // Paint inlays precisely for the newly inserted ORCs at localized offsets
+                        var currentRelativeOffset = 0
+                        for (i in parsedItems.indices) {
+                            val orcRelativeIndex = parsedText.indexOf('￼', currentRelativeOffset)
+                            if (orcRelativeIndex >= 0) {
+                                val absoluteOffset = offset + orcRelativeIndex
+                                editor.inlayModel.addInlineElement(absoluteOffset, true, ContextChipRenderer(parsedItems[i]))
+                                currentRelativeOffset = orcRelativeIndex + 1
+                            }
+                        }
                     }
                 }
                 return true
