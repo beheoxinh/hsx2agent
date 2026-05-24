@@ -141,19 +141,24 @@ object ContextTextUtils {
                 finalPath = "/$finalPath"
             }
 
-            val virtualFile = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
-                .findFileByPath(finalPath)
+            val virtualFile = com.intellij.openapi.application.runReadAction {
+                com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+                    .findFileByPath(finalPath)
+            }
 
             if (virtualFile != null) {
-                val fileType = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
-                    .getFileTypeByFileName(virtualFile.name)
+                val (fileTypeName, lineCount) = com.intellij.openapi.application.runReadAction {
+                    val fileType = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
+                        .getFileTypeByFileName(virtualFile.name)
 
-                val lineCount = try {
-                    val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
-                        .getDocument(virtualFile)
-                    doc?.lineCount ?: 0
-                } catch (_: Exception) {
-                    0
+                    val count = try {
+                        val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
+                            .getDocument(virtualFile)
+                        doc?.lineCount ?: 0
+                    } catch (_: Exception) {
+                        0
+                    }
+                    fileType.name to count
                 }
 
                 items.add(
@@ -162,7 +167,7 @@ object ContextTextUtils {
                         name = name,
                         startLine = 1,
                         endLine = lineCount,
-                        fileTypeName = fileType.name,
+                        fileTypeName = fileTypeName,
                         isSelection = false
                     )
                 )
