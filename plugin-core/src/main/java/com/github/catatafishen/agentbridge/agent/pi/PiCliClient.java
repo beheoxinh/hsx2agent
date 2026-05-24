@@ -329,12 +329,40 @@ public final class PiCliClient extends AbstractAgentClient {
         } catch (IOException e) {
             if (started.get()) LOG.warn("[pi] reader thread exited unexpectedly", e);
         } finally {
+            // Wait briefly for the process to exit so we can capture the exit code and any
+            // final stderr lines (e.g. "401 CreditsError" from the provider). Without this,
+            // the turn would just fail with a generic "exited mid-turn" message.
+            int exitCode = -1;
+            try {
+                if (proc.waitFor(2, TimeUnit.SECONDS)) exitCode = proc.exitValue();
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+            String tail = lastStderrLine();
+            String reason = exitCode == 0
+                ? "Pi subprocess exited mid-turn"
+                : "Pi subprocess exited (code " + exitCode + ")"
+                + (tail != null ? ": " + tail : "");
+
+            // Mark the client as not connected so the next prompt triggers a fresh start
+            // instead of writing into a dead pipe.
+            started.set(false);
+            stdin = null;
+
             TurnState t = currentTurn.getAndSet(null);
             if (t != null) {
-                t.failure.compareAndSet(null, "Pi subprocess exited mid-turn");
+                t.failure.compareAndSet(null, reason);
                 t.done.countDown();
             }
+            if (exitCode != 0 && exitCode != -1) LOG.warn("[pi] " + reason);
         }
+    }
+
+    @Nullable
+    private String lastStderrLine() {
+        String last = null;
+        for (String s : stderrTail) last = s;
+        return last;
     }
 
     private void handleEvent(@NotNull JsonObject ev) {
