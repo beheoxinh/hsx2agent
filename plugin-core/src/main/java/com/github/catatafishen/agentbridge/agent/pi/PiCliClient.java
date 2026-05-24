@@ -304,10 +304,20 @@ public final class PiCliClient extends AbstractAgentClient {
 
     @Override
     public List<Model> getAvailableModels() {
-        // Pi exposes models via `--list-models` and {"type":"get_available_models"}; we keep an
-        // empty list here so the UI shows the user-configured default until the model picker is
-        // wired through the RPC command in a follow-up.
-        return Collections.emptyList();
+        List<PiCustomProvidersService.Entry> providers =
+            PiCustomProvidersService.getInstance().getProviders();
+        if (providers.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Model> models = new ArrayList<>();
+        for (PiCustomProvidersService.Entry p : providers) {
+            if (p.validate() != null) continue;
+            String fqn = p.id + "/" + p.modelId;
+            String label = (p.displayName != null && !p.displayName.isBlank() ? p.displayName : p.id)
+                + " (" + (p.modelName != null && !p.modelName.isBlank() ? p.modelName : p.modelId) + ")";
+            models.add(new Model(fqn, label, null, null));
+        }
+        return models;
     }
 
     @Override
@@ -481,48 +491,16 @@ public final class PiCliClient extends AbstractAgentClient {
                     }
                 }
             }
-            case "agent_start", "turn_start", "message_start" -> { /* lifecycle only */ }
+            case "agent_start", "turn_start" -> { /* lifecycle only */ }
+            case "message_start" -> {
+                if (turn != null) turn.messageStarted = true;
+            }
             case "message_end" -> {
-                // Some providers (and Pi's own non-streaming path) emit the full assistant
-                // content in message_end.message.content without firing message_update deltas.
-                // Fold it back into the turn so the chat panel sees text instead of an
-                // "empty turn" failure.
-                if (turn == null) return;
-                JsonObject msg = optionalObject(ev, "message");
-                if (msg == null) return;
-                String role = optionalString(msg, "role");
-                if (!"assistant".equals(role)) return;
-                String stopReason = optionalString(msg, "stopReason");
-                if (stopReason != null) turn.stopReason = mapStopReason(stopReason);
-                // Provider errors land on the assistant message itself: stopReason="error" +
-                // errorMessage. Capture it so the chat shows the real cause.
-                String errorMessage = optionalString(msg, "errorMessage");
-                if (errorMessage != null && !errorMessage.isBlank()) {
-                    turn.failure.compareAndSet(null, "Provider error: " + truncate(errorMessage, 280));
-                }
-                if (msg.has("content") && msg.get("content").isJsonArray()) {
-                    JsonArray content = msg.getAsJsonArray("content");
-                    for (JsonElement el : content) {
-                        if (!el.isJsonObject()) continue;
-                        JsonObject block = el.getAsJsonObject();
-                        String btype = optionalString(block, "type");
-                        if ("text".equals(btype)) {
-                            emitText(turn, optionalString(block, "text"));
-                        } else if ("thinking".equals(btype)) {
-                            emitThinking(turn, optionalString(block, "thinking"));
-                        }
-                    }
-                }
-                JsonObject usage = optionalObject(msg, "usage");
-                if (usage != null) accumulateUsage(turn, usage);
-                // Help debugging when Pi reports nothing useful: log a small summary of
-                // the message instead of letting the empty-turn path run blind.
-                if (!turn.hasContent && turn.failure.get() == null) {
-                    LOG.warn("[pi] message_end with no text/thinking content — stopReason=" + stopReason
-                        + ", contentBlocks=" + (msg.has("content") && msg.get("content").isJsonArray()
-                        ? msg.getAsJsonArray("content").size() : 0)
-                        + ", model=" + optionalString(msg, "model")
-                        + ", provider=" + optionalString(msg, "provider"));
+                if (turn != null && turn.messageStarted && !turn.hasContent) {
+                    // Message started and ended without any chunks. This usually means a provider error.
+                    String hint = readLatestSessionFailure();
+                    turn.failure.compareAndSet(null, "Pi message ended without content" + (hint != null ? ": " + hint : ""));
+                    turn.done.countDown();
                 }
             }
             case "message_update" -> {
@@ -775,6 +753,7 @@ public final class PiCliClient extends AbstractAgentClient {
         int outputTokens;
         Double costUsd;
         volatile boolean hasContent;
+        volatile boolean messageStarted;
 
         TurnState(Consumer<SessionUpdate> onUpdate) {
             this.onUpdate = onUpdate;
