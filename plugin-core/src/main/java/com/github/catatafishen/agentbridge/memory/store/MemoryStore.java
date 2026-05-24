@@ -31,6 +31,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -93,6 +94,15 @@ public final class MemoryStore implements Disposable {
      * Initialize the Lucene index. Must be called before any operations.
      */
     public void initialize() throws IOException {
+        // Clean up stale lock file from a previous ungraceful shutdown.
+        // Lucene throws LockObtainFailedException when it finds a write.lock whose
+        // content matches the current JVM (same PID after JVM restart).
+        Path lockFile = indexPath.resolve("write.lock");
+        try {
+            Files.deleteIfExists(lockFile);
+        } catch (IOException ignored) {
+        }
+
         directory = FSDirectory.open(indexPath);
         IndexWriterConfig config = new IndexWriterConfig();
         config.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
