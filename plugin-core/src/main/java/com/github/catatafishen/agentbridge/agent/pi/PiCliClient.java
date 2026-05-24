@@ -272,7 +272,18 @@ public final class PiCliClient extends AbstractAgentClient {
         Map<String, Object> cmd = new java.util.LinkedHashMap<>();
         cmd.put("type", "prompt");
         cmd.put("message", message);
-        LOG.info("[pi] sendPrompt: " + message.length() + " chars (thread=" + Thread.currentThread().getName() + ", interrupted=" + Thread.interrupted() + ")");
+        // Include provider/model so Pi knows which registered provider to route to.
+        String modelId = request.modelId() != null ? request.modelId() : currentModelId;
+        if (modelId != null && !modelId.isBlank()) {
+            int slash = modelId.indexOf('/');
+            if (slash > 0) {
+                cmd.put("provider", modelId.substring(0, slash));
+                cmd.put("model", modelId.substring(slash + 1));
+            } else {
+                cmd.put("model", modelId);
+            }
+        }
+        LOG.info("[pi] sendPrompt: " + message.length() + " chars (thread=" + Thread.currentThread().getName() + ", interrupted=" + Thread.interrupted() + "), model=" + modelId);
         writeCommand(cmd);
 
         AtomicBoolean completedRef = new AtomicBoolean(false);
