@@ -1405,11 +1405,23 @@ class ChatToolWindowContent(
 
     private fun restorePromptText(rawText: String, contextItems: List<ContextItemData>) {
         ApplicationManager.getApplication().invokeLater {
-            val restoredText = ContextTextUtils.restoreOrcsFromTextRefs(rawText, contextItems)
+            var itemsToRestore = contextItems
+            var restoredText = rawText
+
+            if (itemsToRestore.isEmpty()) {
+                val (parsedText, parsedItems) = ContextTextUtils.parseMarkdownFileLinks(rawText)
+                if (parsedItems.isNotEmpty()) {
+                    restoredText = parsedText
+                    itemsToRestore = parsedItems
+                }
+            } else {
+                restoredText = ContextTextUtils.restoreOrcsFromTextRefs(rawText, itemsToRestore)
+            }
+
             promptTextArea.text = restoredText
             val editor = promptTextArea.editor as? EditorEx
-            if (editor != null && contextItems.isNotEmpty()) {
-                contextManager.restoreInlineChips(editor, contextItems)
+            if (editor != null && itemsToRestore.isNotEmpty()) {
+                contextManager.restoreInlineChips(editor, itemsToRestore)
             }
         }
     }

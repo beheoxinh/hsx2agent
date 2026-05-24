@@ -46,7 +46,7 @@ class ContextTextUtilsTest {
         void singleOrcReplacedWithItemName() {
             String text = "Check " + ORC + " for details";
             List<ContextItemData> items = List.of(item("AuthService.kt"));
-            assertEquals("Check `AuthService.kt` for details",
+            assertEquals("Check [AuthService.kt](file:/path/AuthService.kt) for details",
                 ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
         }
 
@@ -55,7 +55,7 @@ class ContextTextUtilsTest {
         void multipleOrcsReplacedInOrder() {
             String text = "" + ORC + " and " + ORC + " are related";
             List<ContextItemData> items = Arrays.asList(item("Foo.kt"), item("Bar.kt"));
-            assertEquals("`Foo.kt` and `Bar.kt` are related",
+            assertEquals("[Foo.kt](file:/path/Foo.kt) and [Bar.kt](file:/path/Bar.kt) are related",
                 ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
         }
 
@@ -66,7 +66,7 @@ class ContextTextUtilsTest {
             List<ContextItemData> items = List.of(item("Only.kt"));
             // First ORC replaced; remaining two stay as ORC chars
             String result = ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items);
-            assertEquals("`Only.kt` " + ORC + " " + ORC, result);
+            assertEquals("[Only.kt](file:/path/Only.kt) " + ORC + " " + ORC, result);
         }
 
         @Test
@@ -74,7 +74,7 @@ class ContextTextUtilsTest {
         void fewerOrcsThanItemsIgnoresExtraItems() {
             String text = "See " + ORC;
             List<ContextItemData> items = Arrays.asList(item("A.kt"), item("B.kt"), item("C.kt"));
-            assertEquals("See `A.kt`",
+            assertEquals("See [A.kt](file:/path/A.kt)",
                 ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
         }
 
@@ -105,7 +105,7 @@ class ContextTextUtilsTest {
         void resultIsTrimmed() {
             String text = "  " + ORC + "  ";
             List<ContextItemData> items = List.of(item("File.kt"));
-            assertEquals("`File.kt`",
+            assertEquals("[File.kt](file:/path/File.kt)",
                 ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
         }
 
@@ -122,7 +122,7 @@ class ContextTextUtilsTest {
         void itemNameWithSpecialChars() {
             String text = "See " + ORC;
             List<ContextItemData> items = List.of(item("Service.kt:116-170"));
-            assertEquals("See `Service.kt:116-170`",
+            assertEquals("See [Service.kt:116-170](file:/path/Service.kt:116-170)",
                 ContextTextUtils.INSTANCE.replaceOrcsWithTextRefs(text, items));
         }
     }
