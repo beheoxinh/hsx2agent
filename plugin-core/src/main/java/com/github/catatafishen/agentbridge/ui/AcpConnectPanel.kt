@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.BuildInfo
 import com.github.catatafishen.agentbridge.bridge.TransportType
+import com.github.catatafishen.agentbridge.memory.MemoryService
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.services.AgentProfileManager.AgentProfileListener
@@ -12,22 +13,29 @@ import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.session.db.ConversationStatistics
 import com.github.catatafishen.agentbridge.settings.*
 import com.intellij.icons.AllIcons
+import com.intellij.ide.scratch.ScratchFileService
+import com.intellij.ide.scratch.ScratchRootType
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.InplaceButton
 import com.intellij.ui.JBColor
 import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.components.*
 import com.intellij.util.concurrency.AppExecutorUtil
+import com.intellij.util.io.delete
 import com.intellij.util.ui.AsyncProcessIcon
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.*
 import java.awt.datatransfer.StringSelection
+import java.nio.file.*
 import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -51,6 +59,7 @@ class AcpConnectPanel(
         private const val START_SERVER = "Start server"
         private const val STOP_SERVER = "Stop server"
         private val SESSION_DATE_FORMAT = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+        private val LOG = Logger.getInstance(AcpConnectPanel::class.java)
     }
 
     /** Item model for the session resume dropdown. */
@@ -205,7 +214,7 @@ class AcpConnectPanel(
 
             add(createMcpSection())
             add(Box.createVerticalStrut(JBUI.scale(6)))
-            add(createStatsSection())
+            add(createCleanerSection())
             add(Box.createVerticalStrut(JBUI.scale(6)))
             add(createAcpSection().also { acpSection = it })
             add(Box.createVerticalGlue())
@@ -360,6 +369,177 @@ class AcpConnectPanel(
         }
     }
 
+    // ── Data History Cleaner section ──
+
+    private fun createCleanerSection(): JComponent {
+        val section = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+        }
+
+        section.add(
+            createSectionHeader(
+                step = 2,
+                title = "Data History Cleaner",
+                description = "Clear project-level data accumulated by the plugin"
+            )
+        )
+        section.add(Box.createVerticalStrut(JBUI.scale(12)))
+
+        section.add(createStatsSection())
+        section.add(Box.createVerticalStrut(JBUI.scale(12)))
+
+        val btnBg = JBColor(Color(0xFA, 0xFA, 0xFA), Color(0x44, 0x44, 0x44))
+
+        fun cleanBtn(text: String, tooltip: String, icon: Icon, action: () -> Unit): JButton =
+            JButton(text, icon).apply {
+                this.toolTipText = tooltip
+                alignmentX = LEFT_ALIGNMENT
+                maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(28))
+                background = btnBg
+                font = JBUI.Fonts.smallFont()
+                addActionListener { action() }
+            }
+
+        section.add(
+            cleanBtn(
+                "Clear Scratch Files", "Delete all scratch files created by the plugin in this IDE",
+                AllIcons.Actions.GC
+            ) {
+                confirmAndRun(
+                    "Clear Scratch Files",
+                    "Delete all scratch files in the IDE? This cannot be undone."
+                ) { clearScratchFiles() }
+            })
+        section.add(Box.createVerticalStrut(JBUI.scale(4)))
+        section.add(
+            cleanBtn(
+                "Clear Session History", "Delete all saved sessions in this project",
+                AllIcons.Actions.GC
+            ) {
+                confirmAndRun(
+                    "Clear Session History",
+                    "Delete all saved sessions in this project? The session list will be refreshed."
+                ) { clearSessionHistory() }
+            })
+        section.add(Box.createVerticalStrut(JBUI.scale(4)))
+        section.add(
+            cleanBtn(
+                "Clear Tool Statistics History", "Delete all recorded tool call statistics",
+                AllIcons.Actions.GC
+            ) {
+                confirmAndRun(
+                    "Clear Tool Statistics History",
+                    "Delete all tool call statistics records? Session history will be preserved."
+                ) { clearToolStatistics() }
+            })
+        section.add(Box.createVerticalStrut(JBUI.scale(4)))
+        section.add(
+            cleanBtn(
+                "Clear Semantic Memory", "Delete all semantic memory stored for this project",
+                AllIcons.Actions.GC
+            ) {
+                confirmAndRun(
+                    "Clear Semantic Memory",
+                    "Delete all semantic memory for this project? This includes all memory drawers and knowledge graph data."
+                ) { clearSemanticMemory() }
+            })
+        section.add(Box.createVerticalStrut(JBUI.scale(4)))
+        section.add(
+            cleanBtn(
+                "Clear Chat History", "Delete all conversation history in this project",
+                AllIcons.Actions.GC
+            ) {
+                confirmAndRun(
+                    "Clear Chat History",
+                    "Delete all conversation history in this project? This includes all text messages and entries."
+                ) { clearChatHistory() }
+            })
+
+        return section
+    }
+
+    private fun confirmAndRun(title: String, message: String, action: () -> Unit) {
+        val result = Messages.showYesNoDialog(
+            project, message, title,
+            Messages.getYesButton(), Messages.getNoButton(), Messages.getQuestionIcon()
+        )
+        if (result == Messages.YES) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                try {
+                    action()
+                    ApplicationManager.getApplication().invokeLater {
+                        Messages.showInfoMessage(project, "$title completed successfully.", title)
+                    }
+                } catch (e: Exception) {
+                    LOG.warn("$title failed", e)
+                    ApplicationManager.getApplication().invokeLater {
+                        Messages.showErrorDialog(project, "$title failed: ${e.message}", title)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun clearScratchFiles() {
+        ApplicationManager.getApplication().runWriteAction {
+            val scratchService = ScratchFileService.getInstance()
+            val scratchRoot = ScratchRootType.getInstance()
+            val rootFile = scratchService.getVirtualFile(scratchRoot)
+            if (rootFile == null) return@runWriteAction
+            for (child in rootFile.children) {
+                child.delete(this)
+            }
+        }
+    }
+
+    private fun clearSessionHistory() {
+        ConversationService.getInstance(project).deleteAllHistory()
+        ApplicationManager.getApplication().invokeLater { refreshSessionCombo() }
+    }
+
+    private fun clearToolStatistics() {
+        val db = ConversationDatabase.getInstance(project)
+        db.withConnection { conn ->
+            conn.createStatement().executeUpdate("DELETE FROM tool_call_events")
+            conn.createStatement().executeUpdate(
+                """
+                DELETE FROM events WHERE event_type = 'tool_call'
+            """
+            )
+            null
+        }
+    }
+
+    private fun clearSemanticMemory() {
+        val memoryService = MemoryService.getInstance(project)
+        try {
+            memoryService.dispose()
+        } catch (_: Exception) {
+        }
+        val memoryDir = AgentBridgeStorageSettings.getInstance().getProjectMemoryDir(project)
+        if (Files.exists(memoryDir)) {
+            Files.walk(memoryDir).sorted(Comparator.reverseOrder()).forEach { it.delete() }
+        }
+    }
+
+    private fun clearChatHistory() {
+        val db = ConversationDatabase.getInstance(project)
+        db.withConnection { conn ->
+            val stmt = conn.createStatement()
+            stmt.executeUpdate("DELETE FROM text_events")
+            stmt.executeUpdate("DELETE FROM thinking_events")
+            stmt.executeUpdate("DELETE FROM nudge_events")
+            stmt.executeUpdate(
+                """
+                DELETE FROM events WHERE event_type IN ('text', 'thinking', 'nudge')
+            """
+            )
+            null
+        }
+    }
+
     private fun createStatusPill(): JComponent {
         val pill = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = true
@@ -439,7 +619,7 @@ class AcpConnectPanel(
 
         section.add(
             createSectionHeader(
-                step = 2,
+                step = 3,
                 title = "Connect agent",
                 description = "ACP \u2014 launch and connect an AI coding agent",
                 trailingAction = null,
