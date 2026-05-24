@@ -38,21 +38,56 @@ object ContextTextUtils {
     fun restoreOrcsFromTextRefs(rawText: String, items: List<ContextItemData>): String {
         if (items.isEmpty()) return rawText
         var text = rawText
-        for (item in items) {
-            val fileUrl = java.io.File(item.path).toURI().toString()
-            val target = "[${item.name}]($fileUrl)"
-            val idx = text.indexOf(target)
-            if (idx >= 0) {
-                text = text.substring(0, idx) + ORC + text.substring(idx + target.length)
+
+        // 1. Regex match for markdown file links
+        val regex = Regex("\\[([^\\]]+)\\]\\(file:/*([^\\)]+)\\)")
+        val matches = regex.findAll(text).toList()
+
+        val sb = StringBuilder()
+        var lastIdx = 0
+        for (match in matches) {
+            sb.append(text.substring(lastIdx, match.range.first))
+            val name = match.groupValues[1]
+            val decodedPath = try {
+                java.net.URLDecoder.decode(match.groupValues[2], "UTF-8")
+            } catch (_: Exception) {
+                match.groupValues[2]
+            }
+
+            var finalPath = decodedPath
+            if (com.intellij.openapi.util.SystemInfo.isWindows && finalPath.startsWith("/")) {
+                finalPath = finalPath.drop(1)
+            }
+            if (!finalPath.startsWith("/") && !finalPath.contains(":/")) {
+                finalPath = "/$finalPath"
+            }
+
+            // Match item from items list
+            val matchedItem = items.find { item ->
+                val normItemPath = item.path.replace("\\", "/").trimEnd('/')
+                val normFoundPath = finalPath.replace("\\", "/").trimEnd('/')
+                normItemPath.equals(normFoundPath, ignoreCase = true) || item.name == name
+            }
+
+            if (matchedItem != null) {
+                sb.append(ORC)
             } else {
-                // Fallback for older entries using backticks or file URL variations
-                val legacyTarget = "`${item.name}`"
-                val legacyIdx = text.indexOf(legacyTarget)
-                if (legacyIdx >= 0) {
-                    text = text.substring(0, legacyIdx) + ORC + text.substring(legacyIdx + legacyTarget.length)
-                }
+                sb.append(match.value)
+            }
+            lastIdx = match.range.last + 1
+        }
+        sb.append(text.substring(lastIdx))
+        text = sb.toString()
+
+        // 2. Fallback for older entries using backticks
+        for (item in items) {
+            val legacyTarget = "`${item.name}`"
+            val legacyIdx = text.indexOf(legacyTarget)
+            if (legacyIdx >= 0) {
+                text = text.substring(0, legacyIdx) + ORC + text.substring(legacyIdx + legacyTarget.length)
             }
         }
+
         return text
     }
 
