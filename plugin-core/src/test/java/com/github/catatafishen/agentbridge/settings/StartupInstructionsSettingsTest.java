@@ -52,10 +52,13 @@ class StartupInstructionsSettingsTest {
     }
 
     @Test
-    @DisplayName("getInstructions returns custom instructions when set")
-    void getInstructionsReturnsCustom() {
+    @DisplayName("getInstructions returns default template with custom appended when set")
+    void getInstructionsReturnsDefaultPlusCustom() {
         settings.setCustomInstructions("Custom prompt.");
-        assertEquals("Custom prompt.", settings.getInstructions());
+        String result = settings.getInstructions();
+        assertTrue(result.startsWith(settings.getDefaultTemplate()));
+        assertTrue(result.endsWith("Custom prompt."));
+        assertTrue(result.contains("\n\nCustom prompt."));
     }
 
     @Test
@@ -92,7 +95,9 @@ class StartupInstructionsSettingsTest {
         state.setCustomInstructions("Loaded custom");
         settings.loadState(state);
         assertTrue(settings.isUsingCustomInstructions());
-        assertEquals("Loaded custom", settings.getInstructions());
+        String result = settings.getInstructions();
+        assertTrue(result.startsWith(settings.getDefaultTemplate()));
+        assertTrue(result.endsWith("Loaded custom"));
     }
 
     @Test

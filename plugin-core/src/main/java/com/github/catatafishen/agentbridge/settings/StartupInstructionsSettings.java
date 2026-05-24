@@ -51,14 +51,16 @@ public final class StartupInstructionsSettings implements PersistentStateCompone
     }
 
     /**
-     * Gets the effective startup instructions - either custom or default template.
+     * Gets the effective startup instructions — default template plus optional custom add-on.
      */
     @NotNull
     public String getInstructions() {
-        if (state.getCustomInstructions() != null && !state.getCustomInstructions().trim().isEmpty()) {
-            return state.getCustomInstructions();
+        String base = getDefaultTemplate();
+        String custom = state.getCustomInstructions();
+        if (custom != null && !custom.trim().isEmpty()) {
+            return base + "\n\n" + custom;
         }
-        return getDefaultTemplate();
+        return base;
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.agent.claude;
 
+import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -52,7 +53,7 @@ public final class InstructionsManager {
      * This is a fallback for agents that ignore the ACP {@code instructions} field
      * and don't process in-conversation messages (session/message). For agents like
      * Junie that support session/message, prefer injecting instructions via
-     * {@link AgentConfig#getSessionInstructions()} in {@code AcpClient.createSession()}.
+     * {@link com.github.catatafishen.agentbridge.bridge.ProfileBasedAgentConfig#getSessionInstructions()} in {@code AcpClient.createSession()}.
      *
      * <p>Thread-safe: uses a class-level lock so concurrent calls don't race.</p>
      */
@@ -106,6 +107,10 @@ public final class InstructionsManager {
         } catch (IOException e) {
             LOG.error("Failed to read /default-startup-instructions.md from classpath", e);
             sb.append("You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.");
+        }
+        String custom = StartupInstructionsSettings.getInstance().getCustomInstructions();
+        if (custom != null && !custom.isBlank()) {
+            sb.append("\n\n").append(custom);
         }
         if (!additionalInstructions.isBlank()) {
             sb.append("\n\n").append(additionalInstructions);

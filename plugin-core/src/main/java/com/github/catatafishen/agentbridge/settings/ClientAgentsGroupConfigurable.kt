@@ -138,29 +138,29 @@ class ClientAgentsGroupConfigurable(private val project: Project) :
                         if (instr.isUsingCustomInstructions) {
                             instructionsArea.text = instr.customInstructions
                         } else {
-                            instructionsArea.text = instr.defaultTemplate
+                            instructionsArea.text = ""
                         }
-                        updateInstructionsState(instr, customCheck.component.isSelected)
+                        updateInstructionsState(customCheck.component.isSelected)
                     }
             }.resizableRow().layout(RowLayout.PARENT_GRID)
             row {
                 button("Reset to Default") {
-                    instructionsArea.text = instr.defaultTemplate
+                    instructionsArea.text = ""
                     customCheck.component.isSelected = false
-                    updateInstructionsState(instr, false)
+                    updateInstructionsState(false)
                 }
             }
             // Re-apply enabled state whenever the checkbox toggles
             customCheck.applyToComponent {
-                addActionListener { updateInstructionsState(instr, isSelected) }
+                addActionListener { updateInstructionsState(isSelected) }
             }
         }
     }
 
-    private fun updateInstructionsState(instr: StartupInstructionsSettings, useCustom: Boolean) {
+    private fun updateInstructionsState(useCustom: Boolean) {
         instructionsArea.isEnabled = useCustom
         if (!useCustom) {
-            instructionsArea.text = instr.defaultTemplate
+            instructionsArea.text = ""
             instructionsArea.isEditable = false
             instructionsArea.background = UIManager.getColor("TextField.disabledBackground")
         } else {

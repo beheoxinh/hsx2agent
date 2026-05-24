@@ -21,6 +21,7 @@ import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.session.db.ToolCallStatsEnrichment;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
+import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -194,11 +195,16 @@ public final class McpProtocolHandler {
     }
 
     private @NotNull String buildInstructions() {
-        String memoryContext = buildMemoryContext();
-        if (memoryContext.isEmpty()) {
-            return STARTUP_INSTRUCTIONS;
+        StringBuilder sb = new StringBuilder(STARTUP_INSTRUCTIONS);
+        String custom = StartupInstructionsSettings.getInstance().getCustomInstructions();
+        if (custom != null && !custom.isBlank()) {
+            sb.append("\n\n").append(custom);
         }
-        return STARTUP_INSTRUCTIONS + "\n\n" + memoryContext;
+        String memoryContext = buildMemoryContext();
+        if (!memoryContext.isEmpty()) {
+            sb.append("\n\n").append(memoryContext);
+        }
+        return sb.toString();
     }
 
     private @NotNull String buildMemoryContext() {
