@@ -402,60 +402,38 @@ class AcpConnectPanel(
                 addActionListener { action() }
             }
 
-        section.add(
-            cleanBtn(
-                "Clear Scratch Files", "Delete all scratch files created by the plugin in this IDE",
-                AllIcons.Actions.GC
-            ) {
-                confirmAndRun(
-                    "Clear Scratch Files",
-                    "Delete all scratch files in the IDE? This cannot be undone."
-                ) { clearScratchFiles() }
-            })
+        val b1 = cleanBtn("Clear Scratch Files",
+            "Delete all scratch files created by the plugin in this IDE",
+            AllIcons.Actions.GC) { confirmAndRun("Clear Scratch Files",
+            "Delete all scratch files in the IDE? This cannot be undone.") { clearScratchFiles() } }
+        val b2 = cleanBtn("Clear Session History",
+            "Delete all saved sessions in this project",
+            AllIcons.Actions.GC) { confirmAndRun("Clear Session History",
+            "Delete all saved sessions in this project? The session list will be refreshed.") { clearSessionHistory() } }
+        val b3 = cleanBtn("Clear Tool Statistics History",
+            "Delete all recorded tool call statistics",
+            AllIcons.Actions.GC) { confirmAndRun("Clear Tool Statistics History",
+            "Delete all tool call statistics records? Session history will be preserved.") { clearToolStatistics() } }
+        val b4 = cleanBtn("Clear Semantic Memory",
+            "Delete all semantic memory stored for this project",
+            AllIcons.Actions.GC) { confirmAndRun("Clear Semantic Memory",
+            "Delete all semantic memory for this project? This includes all memory drawers and knowledge graph data.") { clearSemanticMemory() } }
+        val b5 = cleanBtn("Clear Chat History",
+            "Delete all conversation history in this project",
+            AllIcons.Actions.GC) { confirmAndRun("Clear Chat History",
+            "Delete all conversation history in this project? This includes all text messages and entries.") { clearChatHistory() } }
+
+        fun row(width: Float, vararg btns: JButton): JComponent =
+            JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)).apply {
+                isOpaque = false
+                alignmentX = LEFT_ALIGNMENT
+                maximumSize = Dimension((JBUI.scale(480) * width).toInt(), JBUI.scale(28))
+                for (b in btns) add(b)
+            }
+
+        section.add(row(0.4f, b1, b2, b3))
         section.add(Box.createVerticalStrut(JBUI.scale(4)))
-        section.add(
-            cleanBtn(
-                "Clear Session History", "Delete all saved sessions in this project",
-                AllIcons.Actions.GC
-            ) {
-                confirmAndRun(
-                    "Clear Session History",
-                    "Delete all saved sessions in this project? The session list will be refreshed."
-                ) { clearSessionHistory() }
-            })
-        section.add(Box.createVerticalStrut(JBUI.scale(4)))
-        section.add(
-            cleanBtn(
-                "Clear Tool Statistics History", "Delete all recorded tool call statistics",
-                AllIcons.Actions.GC
-            ) {
-                confirmAndRun(
-                    "Clear Tool Statistics History",
-                    "Delete all tool call statistics records? Session history will be preserved."
-                ) { clearToolStatistics() }
-            })
-        section.add(Box.createVerticalStrut(JBUI.scale(4)))
-        section.add(
-            cleanBtn(
-                "Clear Semantic Memory", "Delete all semantic memory stored for this project",
-                AllIcons.Actions.GC
-            ) {
-                confirmAndRun(
-                    "Clear Semantic Memory",
-                    "Delete all semantic memory for this project? This includes all memory drawers and knowledge graph data."
-                ) { clearSemanticMemory() }
-            })
-        section.add(Box.createVerticalStrut(JBUI.scale(4)))
-        section.add(
-            cleanBtn(
-                "Clear Chat History", "Delete all conversation history in this project",
-                AllIcons.Actions.GC
-            ) {
-                confirmAndRun(
-                    "Clear Chat History",
-                    "Delete all conversation history in this project? This includes all text messages and entries."
-                ) { clearChatHistory() }
-            })
+        section.add(row(0.4f, b4, b5))
 
         return section
     }
