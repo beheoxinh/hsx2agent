@@ -282,23 +282,14 @@ public final class PiCliClient extends AbstractAgentClient {
         Map<String, Object> cmd = new java.util.LinkedHashMap<>();
         cmd.put("type", "prompt");
         cmd.put("message", message);
-        // Include provider/model so Pi knows which registered provider to route to.
         String modelId = request.modelId() != null ? request.modelId() : currentModelId;
         if (modelId != null && !modelId.isBlank()) {
             cmd.put("model", modelId);
         }
-        LOG.info("[pi] sendPrompt: " + message.length() + " chars (thread=" + Thread.currentThread().getName() + ", interrupted=" + Thread.interrupted() + "), model=" + modelId);
+        LOG.info("[pi] sendPrompt: " + message.length() + " chars, model=" + modelId);
         writeCommand(cmd);
 
-        AtomicBoolean completedRef = new AtomicBoolean(false);
-        com.intellij.openapi.progress.ProgressManager.getInstance().executeNonCancelableSection(() -> {
-            try {
-                completedRef.set(turn.done.await(PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS));
-            } catch (InterruptedException e) {
-                LOG.warn("[pi] prompt await interrupted inside non-cancelable section", e);
-            }
-        });
-        boolean completed = completedRef.get();
+        boolean completed = turn.done.await(PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         currentTurn.compareAndSet(turn, null);
 
         if (!completed) {
@@ -478,9 +469,6 @@ public final class PiCliClient extends AbstractAgentClient {
     private void handleEvent(@NotNull JsonObject ev) {
         String type = ev.has("type") ? ev.get("type").getAsString() : "";
         TurnState turn = currentTurn.get();
-        // Log every event type at INFO so we can diagnose silent turn failures.
-        // Tool execution events repeat per-toolcall — log only their start/end and the
-        // streaming text deltas at debug to avoid log spam.
         if (!"message_update".equals(type) && !"tool_execution_update".equals(type)) {
             LOG.info("[pi] event: " + type);
         }
@@ -499,24 +487,8 @@ public final class PiCliClient extends AbstractAgentClient {
                     }
                 }
             }
-            case "agent_start", "turn_start" -> { /* lifecycle only */ }
-            case "message_start" -> {
-                if (turn != null) turn.messageStarted = true;
-            }
-            case "message_end" -> {
-                if (turn != null && turn.messageStarted && !turn.hasContent) {
-                    // Message started and ended without any chunks. This usually means a provider error.
-                    String hint = readLatestSessionFailure();
-                    String tail = lastStderrLine();
-                    String reason = "Pi message ended without content";
-                    if (hint != null) reason += ": " + hint;
-                    else if (tail != null && !tail.startsWith("[agentbridge-providers]")) reason += ": " + tail;
-                    else
-                        reason += " — provider returned empty response. Check: (1) 'Send Authorization: Bearer' enabled in provider settings, (2) model ID matches what proxy expects, (3) API type matches proxy endpoint";
-
-                    turn.failure.compareAndSet(null, reason);
-                    turn.done.countDown();
-                }
+            case "agent_start", "turn_start", "message_start", "message_end", "auto_retry_start", "auto_retry_end" -> {
+                // lifecycle events — no action needed
             }
             case "message_update" -> {
                 if (turn == null) return;
@@ -571,16 +543,20 @@ public final class PiCliClient extends AbstractAgentClient {
             }
             case "agent_end" -> {
                 if (turn == null) return;
+                // Pi sends willRetry=true when it will auto-retry (e.g. empty provider response).
+                // Do NOT countdown the latch in that case — wait for the retry's agent_end.
+                boolean willRetry = ev.has("willRetry") && ev.get("willRetry").getAsBoolean();
+                if (willRetry) {
+                    LOG.info("[pi] agent_end with willRetry=true — waiting for retry");
+                    return;
+                }
                 if (turn.stopReason == null) turn.stopReason = "end_turn";
                 if (!turn.hasContent) {
-                    // Pi emits agent_end without any assistant message_update when the provider
-                    // silently fails (e.g. local proxy returns 200 but no content, or
-                    // mis-configured model). Surface a useful reason from the JSONL session log.
                     String hint = readLatestSessionFailure();
                     String tail = lastStderrLine();
                     String reason = "Pi finished the turn without producing any assistant content";
                     if (hint != null) reason += ": " + hint;
-                    else if (tail != null) reason += ": " + tail;
+                    else if (tail != null && !tail.startsWith("[agentbridge-providers]")) reason += ": " + tail;
                     else reason += " (no error reported by Pi — check provider credits/model selection)";
                     turn.failure.compareAndSet(null, reason);
                 }
