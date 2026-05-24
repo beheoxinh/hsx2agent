@@ -379,16 +379,17 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setDisplayName("Pi");
         p.setBuiltIn(true);
         p.setExperimental(true);
-        p.setTransportType(TransportType.ACP);
+        p.setTransportType(TransportType.PI_RPC);
         p.setBinaryName(PI_PROFILE_ID);
         p.setInstallHint("Install with: npm install -g --ignore-scripts @earendil-works/pi-coding-agent");
         p.setInstallUrl("https://pi.dev/docs/latest/quickstart");
         p.setDescription("""
-            Pi coding-agent CLI — runs as a local subprocess in --mode rpc or --mode json. \
+            Pi coding-agent CLI — runs as a local subprocess in --mode rpc. \
             Authenticate via 'pi' interactively (/login) or by setting provider API keys \
             (ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENCODE_API_KEY, …) before launching. \
-            MCP is injected through generated TypeScript extensions loaded with --extension; \
-            no native MCP support is provided by Pi itself.""");
+            MCP tools are exposed to Pi through a generated TypeScript extension that is \
+            loaded with --extension and proxies tool calls back to AgentBridge's MCP HTTP \
+            server. Pi itself ships without native MCP support.""");
         p.setAcpArgs(List.of("--mode", "rpc"));
         p.setMcpMethod(McpInjectionMethod.NONE);
         p.setSupportsMcpConfigFlag(false);

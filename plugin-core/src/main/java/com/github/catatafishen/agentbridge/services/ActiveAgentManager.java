@@ -319,6 +319,12 @@ public final class ActiveAgentManager implements Disposable {
                     AgentConfig config = resolveStartConfig();
                     acpClient = new CodexAppServerClient(profile, config, ToolRegistry.getInstance(project), project, mcpPort);
                 }
+                case PI_RPC -> {
+                    int mcpPort = resolveMcpPort();
+                    AgentConfig config = resolveStartConfig();
+                    acpClient = new com.github.catatafishen.agentbridge.agent.pi.PiCliClient(
+                        profile, config, ToolRegistry.getInstance(project), project, mcpPort);
+                }
                 case ACP -> acpClient = createAcpClient(agentId);
             }
 

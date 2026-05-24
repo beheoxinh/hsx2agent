@@ -841,8 +841,10 @@ class AcpConnectPanel(
 
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val resolver = if (target.transportType == TransportType.CLAUDE_CLI) ClaudeAgentBinaryResolver()
-                else AcpClientBinaryResolver(profileId, binaryName, *alternates)
+                val resolver = when (target.transportType) {
+                    TransportType.CLAUDE_CLI -> ClaudeAgentBinaryResolver()
+                    else -> AcpClientBinaryResolver(profileId, binaryName, *alternates)
+                }
 
                 var resolvedPath = resolver.resolve()
                 if (resolvedPath != null && !resolvedPath.contains("/") && !resolvedPath.contains("\\")) {
