@@ -10,6 +10,8 @@ import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
 import com.github.catatafishen.agentbridge.settings.ChatInputSettings
+import com.github.catatafishen.agentbridge.settings.ChatWebServerSettings
+import com.github.catatafishen.agentbridge.settings.GitPolicy
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.settings.SidePanelPosition
 import com.intellij.icons.AllIcons
@@ -113,6 +115,7 @@ class ChatToolWindowContent(
     private var restartSessionGroup: RestartSessionGroup? = null
     private lateinit var promptTextArea: EditorTextField
     private lateinit var shortcutHintPanel: PromptShortcutHintPanel
+    private val statusInputChat by lazy { createStatusInputChat() }
     private val queuedTexts = ArrayDeque<String>()
 
     /** Tracks whether the current pause was triggered by auto-pause-on-input-focus logic. */
@@ -1111,6 +1114,50 @@ class ChatToolWindowContent(
         },
     )
 
+    private fun createStatusInputChat(): JComponent {
+        val gitLabel = JBLabel().apply {
+            font = font.deriveFont(10f)
+            foreground = JBColor(0x666666, 0x999999)
+        }
+        val webLabel = JBLabel().apply {
+            font = font.deriveFont(10f)
+            foreground = JBColor(0x666666, 0x999999)
+        }
+        val rightPanel = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.RIGHT, 8, 0)).apply {
+            isOpaque = false
+            add(gitLabel)
+            add(webLabel)
+        }
+        val bar = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(0, 6, 2, 6)
+            add(rightPanel, BorderLayout.EAST)
+        }
+
+        fun update() {
+            val settings = McpServerSettings.getInstance(project)
+            val policy = GitPolicy.fromName(settings.gitPolicy)
+            gitLabel.text = "Git: ${policy.displayName}"
+
+            val ws = ChatWebServer.getInstance(project)
+            val wsSettings = ChatWebServerSettings.getInstance(project)
+            webLabel.text = if (ws.isRunning) "Web: Running (${ws.port})"
+            else if (wsSettings.isEnabled) "Web: Stopped"
+            else "Web: Disabled"
+        }
+
+        update()
+
+        project.messageBus.connect(project).subscribe(
+            McpHttpServer.STATUS_TOPIC,
+            McpHttpServer.StatusListener {
+                ApplicationManager.getApplication().invokeLater { update() }
+            }
+        )
+
+        return bar
+    }
+
     private fun createInputRow(): JBPanel<JBPanel<*>> {
         val row = JBPanel<JBPanel<*>>(BorderLayout())
         row.isOpaque = false
@@ -1198,6 +1245,7 @@ class ChatToolWindowContent(
             }
         })
 
+        row.add(statusInputChat, BorderLayout.NORTH)
         row.add(promptTextArea, BorderLayout.CENTER)
 
         val footerGroup = DefaultActionGroup()
