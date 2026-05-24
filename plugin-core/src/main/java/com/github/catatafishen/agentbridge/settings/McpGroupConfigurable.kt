@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.settings
 import com.github.catatafishen.agentbridge.services.McpServerControl
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
@@ -13,10 +14,8 @@ import com.intellij.ui.dsl.builder.bindIntValue
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.util.concurrency.AppExecutorUtil
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
-import java.util.concurrent.TimeUnit
 import javax.swing.JButton
 import javax.swing.Timer
 
@@ -75,6 +74,31 @@ class McpGroupConfigurable(private val project: Project) :
         }
         separator()
         row {
+            text("<html><b>Git Tool Policy</b></html>")
+        }
+        row("Policy:") {
+            comboBox(GitPolicy.entries.toList())
+                .applyToComponent {
+                    renderer = SimpleListCellRenderer.create<GitPolicy>("") { it.displayName }
+                }
+                .bindItem(
+                    { GitPolicy.fromName(settings.gitPolicy) },
+                    { policy ->
+                        val p = policy ?: GitPolicy.STANDARD
+                        settings.gitPolicy = p.name
+                        settings.applyGitPolicy()
+                    }
+                )
+        }
+        row {
+            comment(
+                "<b>Features:</b> All git tools enabled<br>" +
+                    "<b>Standard:</b> Block remote git operations (push, fetch, pull)<br>" +
+                    "<b>Safety:</b> Only read-only git tools (status, diff, log, blame, show, file history)"
+            )
+        }
+        separator()
+        row {
             button("Restart MCP Server") { e ->
                 val btn = e.source as JButton
                 btn.icon = AllIcons.Actions.Restart
@@ -119,41 +143,33 @@ class McpGroupConfigurable(private val project: Project) :
             try {
                 val server = McpServerControl.getInstance(project)
                 if (server == null) {
-                    val msg =
-                        "MCP HTTP Server service not found. Is the IDE MCP Server plugin installed?"
-                    LOG.warn(msg); showRestartError(button, msg); return@executeOnPooledThread
+                    val msg = "MCP HTTP Server service not found."
+                    LOG.warn(msg)
+                    resetButton(button, msg)
+                    return@executeOnPooledThread
                 }
                 server.stop()
-                AppExecutorUtil.getAppScheduledExecutorService().schedule({
-                    try {
-                        server.start()
-                        LOG.info("MCP server restarted via settings")
-                    } catch (ex: Exception) {
-                        LOG.error("Failed to start MCP server after restart", ex)
-                        showRestartError(button, "Failed to start: ${ex.message}")
-                        return@schedule
-                    }
-                    ApplicationManager.getApplication().invokeLater { resetRestartButton(button) }
-                }, 500, TimeUnit.MILLISECONDS)
+                Thread.sleep(500)
+                server.start()
+                LOG.info("MCP server restarted via settings")
+                resetButton(button)
             } catch (ex: Exception) {
                 LOG.error("Failed to restart MCP server", ex)
-                showRestartError(button, "Failed to restart: ${ex.message}")
+                resetButton(button, "Failed to restart: ${ex.message}")
             }
         }
     }
 
-    private fun showRestartError(button: JButton, message: String) {
-        ApplicationManager.getApplication().invokeLater {
-            resetRestartButton(button)
-            Messages.showErrorDialog(button, message, "MCP Server Restart Failed")
-        }
-    }
-
-    private fun resetRestartButton(button: JButton) {
+    private fun resetButton(button: JButton, errorMessage: String? = null) {
         button.text = "Restart MCP Server"
         button.isEnabled = true
-        button.toolTipText =
-            "Stop and restart the MCP server to pick up tool registration changes"
+        button.toolTipText = "Stop and restart the MCP server to pick up tool registration changes"
+        if (errorMessage != null) {
+            ApplicationManager.getApplication().invokeLater(
+                { Messages.showErrorDialog(button, errorMessage, "MCP Server Restart Failed") },
+                ModalityState.any()
+            )
+        }
     }
 
     companion object {
