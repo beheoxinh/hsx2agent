@@ -107,7 +107,9 @@ public final class PiProviderExtensionGenerator {
             String apiKeyEnv = p.effectiveApiKeyEnv();
             o.addProperty("apiKeyEnv", apiKeyEnv);
             o.addProperty("authHeader", p.authHeader);
-            LOG.info("[pi-providers] model: " + p.id + " uses env: " + apiKeyEnv);
+            o.addProperty("appendSuffix", p.appendSuffix);
+            LOG.info("[pi-providers] model: " + p.id + " uses env: " + apiKeyEnv
+                + ", appendSuffix=" + p.appendSuffix);
             JsonArray models = new JsonArray();
             JsonObject m = new JsonObject();
             m.addProperty("id", p.modelId);

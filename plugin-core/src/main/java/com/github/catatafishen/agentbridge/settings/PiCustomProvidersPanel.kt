@@ -11,8 +11,33 @@ import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import javax.swing.JComponent
+import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.table.AbstractTableModel
+
+/**
+ * Pi appends a fixed endpoint suffix to the configured base URL depending on the
+ * selected API type. Used by the editor dialog to preview the final request URL.
+ */
+private val API_ENDPOINT_SUFFIXES: Map<String, String> = mapOf(
+    "openai-completions" to "/chat/completions",
+    "openai-responses" to "/responses",
+    "openai-codex-responses" to "/responses",
+    "azure-openai-responses" to "/responses",
+    "anthropic-messages" to "/messages",
+    "google-generative-ai" to "/models/{model}:streamGenerateContent",
+    "google-vertex" to "/models/{model}:streamGenerateContent",
+    "mistral-conversations" to "/conversations",
+    "bedrock-converse-stream" to "/model/{model}/converse-stream",
+)
+
+private fun buildFullUrl(baseUrl: String, api: String, appendSuffix: Boolean): String {
+    val trimmed = baseUrl.trimEnd('/')
+    if (trimmed.isEmpty()) return "(set Base URL first)"
+    if (!appendSuffix) return trimmed
+    val suffix = API_ENDPOINT_SUFFIXES[api] ?: return "$trimmed (no suffix known for '$api')"
+    return trimmed + suffix
+}
 
 /**
  * Editor panel for custom Pi providers (Settings → Tools → AgentBridge → Agents → Pi).
@@ -131,10 +156,18 @@ private class PiProviderEditorDialog(
     private var supportsImageField = entry.supportsImage
     private var supportsReasoningField = entry.supportsReasoning
     private var authHeaderField = entry.authHeader
+    private var appendSuffixField = entry.appendSuffix
+
+    private val urlPreviewLabel = JLabel()
+
+    private fun refreshUrlPreview() {
+        urlPreviewLabel.text = "Effective request URL: ${buildFullUrl(baseUrlField, apiField, appendSuffixField)}"
+    }
 
     init {
         title = if (entry.id.isBlank()) "Add Pi Provider" else "Edit Pi Provider"
         init()
+        refreshUrlPreview()
     }
 
     override fun createCenterPanel(): JComponent = panel {
@@ -162,7 +195,10 @@ private class PiProviderEditorDialog(
                 .align(AlignX.FILL)
                 .applyToComponent {
                     text = baseUrlField
-                    document.addDocumentListener(textListener { baseUrlField = text })
+                    document.addDocumentListener(textListener {
+                        baseUrlField = text
+                        refreshUrlPreview()
+                    })
                     emptyText.text = "http://localhost:20128/v1"
                 }
                 .comment("OpenAI-compatible endpoint. Must start with http:// or https://.")
@@ -177,9 +213,26 @@ private class PiProviderEditorDialog(
             )
                 .applyToComponent {
                     selectedItem = apiField
-                    addActionListener { apiField = (selectedItem as? String).orEmpty() }
+                    addActionListener {
+                        apiField = (selectedItem as? String).orEmpty()
+                        refreshUrlPreview()
+                    }
                 }
                 .comment("Streaming protocol used by Pi. Most local proxies (LM Studio, Ollama, 9Router) use openai-completions.")
+        }
+        row("Endpoint:") {
+            checkBox("Append default suffix (e.g. /chat/completions, /messages)")
+                .applyToComponent {
+                    isSelected = appendSuffixField
+                    addActionListener {
+                        appendSuffixField = isSelected
+                        refreshUrlPreview()
+                    }
+                }
+                .comment("Uncheck if your proxy expects the bare Base URL with no endpoint suffix.")
+        }
+        row("Request URL:") {
+            cell(urlPreviewLabel).comment("Final URL Pi will POST to. Click to refresh after changing fields above.")
         }
         row("API key env var:") {
             textField()
@@ -275,6 +328,7 @@ private class PiProviderEditorDialog(
         entry.supportsImage = supportsImageField
         entry.supportsReasoning = supportsReasoningField
         entry.authHeader = authHeaderField
+        entry.appendSuffix = appendSuffixField
         super.doOKAction()
     }
 

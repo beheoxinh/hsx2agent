@@ -13,6 +13,7 @@ interface ProviderSpec {
   api: string;
   apiKeyEnv: string;
   authHeader: boolean;
+  appendSuffix: boolean;
   models: Array<{
     id: string;
     name: string;
@@ -24,6 +25,37 @@ interface ProviderSpec {
 }
 
 const PROVIDERS: ProviderSpec[] = ${AGENTBRIDGE_PI_PROVIDERS_JSON};
+
+// Endpoint suffixes Pi appends to baseUrl per `api` type. Used to redirect requests
+// back to the bare baseUrl when the provider opts out of suffix appending.
+const API_SUFFIXES: Record<string, string> = {
+  "openai-completions": "/chat/completions",
+  "openai-responses": "/responses",
+  "openai-codex-responses": "/responses",
+  "azure-openai-responses": "/responses",
+  "anthropic-messages": "/messages",
+  "mistral-conversations": "/conversations",
+};
+
+function installBareBaseUrlRedirect(provider: ProviderSpec): void {
+  const suffix = API_SUFFIXES[provider.api];
+  if (!suffix) return;
+  const expected = provider.baseUrl.replace(/\/+$/, "") + suffix;
+  const target = provider.baseUrl.replace(/\/+$/, "");
+  const originalFetch = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    let url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === expected || url.startsWith(expected + "?")) {
+      const rewritten = url.replace(expected, target);
+      // eslint-disable-next-line no-console
+      console.error(`[agentbridge-providers] rewrote ${url} -> ${rewritten}`);
+      if (typeof input === "string") return originalFetch(rewritten, init);
+      if (input instanceof URL) return originalFetch(new URL(rewritten), init);
+      return originalFetch(new Request(rewritten, input), init);
+    }
+    return originalFetch(input, init);
+  };
+}
 
 export default function (pi: ExtensionAPI): void {
   // eslint-disable-next-line no-console
@@ -46,6 +78,9 @@ export default function (pi: ExtensionAPI): void {
           maxTokens: m.maxTokens,
         })),
       });
+      if (!p.appendSuffix) {
+        installBareBaseUrlRedirect(p);
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`[agentbridge-providers] failed to register ${p.id}: ${(err as Error).message}`);

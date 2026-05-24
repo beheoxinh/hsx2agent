@@ -48,6 +48,7 @@ public final class PiCustomProvidersService implements PersistentStateComponent<
         public boolean supportsImage; // NOSONAR java:S1104
         public boolean supportsReasoning; // NOSONAR java:S1104
         public boolean authHeader = true; // NOSONAR java:S1104
+        public boolean appendSuffix = true; // NOSONAR java:S1104
 
         public Entry() {
             // for XmlSerializer
@@ -68,6 +69,7 @@ public final class PiCustomProvidersService implements PersistentStateComponent<
             c.supportsImage = supportsImage;
             c.supportsReasoning = supportsReasoning;
             c.authHeader = authHeader;
+            c.appendSuffix = appendSuffix;
             return c;
         }
 
