@@ -474,7 +474,34 @@ public final class PiCliClient extends AbstractAgentClient {
                     }
                 }
             }
-            case "agent_start", "turn_start", "message_start", "message_end" -> { /* lifecycle only */ }
+            case "agent_start", "turn_start", "message_start" -> { /* lifecycle only */ }
+            case "message_end" -> {
+                // Some providers (and Pi's own non-streaming path) emit the full assistant
+                // content in message_end.message.content without firing message_update deltas.
+                // Fold it back into the turn so the chat panel sees text instead of an
+                // "empty turn" failure.
+                if (turn == null) return;
+                JsonObject msg = optionalObject(ev, "message");
+                if (msg == null) return;
+                String role = optionalString(msg, "role");
+                if (!"assistant".equals(role)) return;
+                if (!msg.has("content") || !msg.get("content").isJsonArray()) return;
+                JsonArray content = msg.getAsJsonArray("content");
+                for (JsonElement el : content) {
+                    if (!el.isJsonObject()) continue;
+                    JsonObject block = el.getAsJsonObject();
+                    String btype = optionalString(block, "type");
+                    if ("text".equals(btype)) {
+                        emitText(turn, optionalString(block, "text"));
+                    } else if ("thinking".equals(btype)) {
+                        emitThinking(turn, optionalString(block, "thinking"));
+                    }
+                }
+                String stopReason = optionalString(msg, "stopReason");
+                if (stopReason != null) turn.stopReason = mapStopReason(stopReason);
+                JsonObject usage = optionalObject(msg, "usage");
+                if (usage != null) accumulateUsage(turn, usage);
+            }
             case "message_update" -> {
                 if (turn == null) return;
                 JsonObject delta = optionalObject(ev, "assistantMessageEvent");
