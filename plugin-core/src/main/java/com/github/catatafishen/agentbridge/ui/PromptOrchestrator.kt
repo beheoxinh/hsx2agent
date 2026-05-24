@@ -871,6 +871,8 @@ class PromptOrchestrator(
         )
 
         if (c.shouldRestorePrompt) {
+            log.info("Restoring prompt text due to error without content")
+            callbacks.restorePromptText(pendingRawText, pendingContextItems)
             consolePanel().removePromptEntry(pendingPromptEntryId)
         }
 
@@ -878,7 +880,8 @@ class PromptOrchestrator(
         consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
         callbacks.appendNewEntries()
 
-        if (c.shouldRestorePrompt) {
+        // shouldRestorePrompt case handled above to ensure correct ordering with removePromptEntry
+        if (false) {
             callbacks.restorePromptText(pendingRawText, pendingContextItems)
         }
 

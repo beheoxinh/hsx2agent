@@ -499,7 +499,13 @@ public final class PiCliClient extends AbstractAgentClient {
                 if (turn != null && turn.messageStarted && !turn.hasContent) {
                     // Message started and ended without any chunks. This usually means a provider error.
                     String hint = readLatestSessionFailure();
-                    turn.failure.compareAndSet(null, "Pi message ended without content" + (hint != null ? ": " + hint : ""));
+                    String tail = lastStderrLine();
+                    String reason = "Pi message ended without content";
+                    if (hint != null) reason += ": " + hint;
+                    else if (tail != null) reason += ": " + tail;
+                    else reason += " (provider returned empty response — check model/API key)";
+
+                    turn.failure.compareAndSet(null, reason);
                     turn.done.countDown();
                 }
             }
