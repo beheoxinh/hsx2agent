@@ -78,7 +78,7 @@ public final class McpProtocolHandler {
     private static final int MAX_RESULT_CHARS = 80_000;
     private static final int RESOURCE_PAGE_SIZE = 200;
     private static final int RESOURCE_NOT_FOUND_ERROR = -32002;
-    private static final int INITIAL_TIMEOUT_SECONDS = 30;
+    private static final int INITIAL_TIMEOUT_SECONDS = 60;
 
     private static final String SERVER_NAME = "agentbridge";
     private static final String SERVER_VERSION = BuildInfo.getVersion();
