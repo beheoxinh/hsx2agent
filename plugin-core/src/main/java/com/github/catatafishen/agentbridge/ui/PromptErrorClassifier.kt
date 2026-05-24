@@ -71,7 +71,7 @@ object PromptErrorClassifier {
         }
             && isClientHealthy
 
-        val shouldRestorePrompt = !turnHadContent && !isCancelled
+        val shouldRestorePrompt = !turnHadContent
 
         return Classification(
             isCancelled = isCancelled,

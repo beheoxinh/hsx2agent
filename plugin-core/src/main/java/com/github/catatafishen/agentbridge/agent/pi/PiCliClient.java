@@ -23,10 +23,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -274,10 +272,18 @@ public final class PiCliClient extends AbstractAgentClient {
         Map<String, Object> cmd = new java.util.LinkedHashMap<>();
         cmd.put("type", "prompt");
         cmd.put("message", message);
-        LOG.info("[pi] sendPrompt: " + message.length() + " chars");
+        LOG.info("[pi] sendPrompt: " + message.length() + " chars (thread=" + Thread.currentThread().getName() + ", interrupted=" + Thread.interrupted() + ")");
         writeCommand(cmd);
 
-        boolean completed = turn.done.await(PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        AtomicBoolean completedRef = new AtomicBoolean(false);
+        com.intellij.openapi.progress.ProgressManager.getInstance().executeNonCancelableSection(() -> {
+            try {
+                completedRef.set(turn.done.await(PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+            } catch (InterruptedException e) {
+                LOG.warn("[pi] prompt await interrupted inside non-cancelable section", e);
+            }
+        });
+        boolean completed = completedRef.get();
         currentTurn.compareAndSet(turn, null);
 
         if (!completed) {
@@ -514,7 +520,7 @@ public final class PiCliClient extends AbstractAgentClient {
                 if (!turn.hasContent && turn.failure.get() == null) {
                     LOG.warn("[pi] message_end with no text/thinking content — stopReason=" + stopReason
                         + ", contentBlocks=" + (msg.has("content") && msg.get("content").isJsonArray()
-                            ? msg.getAsJsonArray("content").size() : 0)
+                        ? msg.getAsJsonArray("content").size() : 0)
                         + ", model=" + optionalString(msg, "model")
                         + ", provider=" + optionalString(msg, "provider"));
                 }
