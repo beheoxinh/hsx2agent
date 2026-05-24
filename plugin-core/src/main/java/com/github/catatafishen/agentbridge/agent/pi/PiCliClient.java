@@ -28,6 +28,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -377,9 +378,87 @@ public final class PiCliClient extends AbstractAgentClient {
         return last;
     }
 
+    /**
+     * Reads the most recently written line from Pi's session JSONL log and returns a
+     * short failure hint when present. Pi writes error details into the assistant
+     * message's {@code errorMessage} field on provider failures, but emits no
+     * dedicated RPC event for them; reading the JSONL is the only way to surface
+     * "401 No payment method", "model not found", etc. when {@code agent_end} arrives
+     * with no content.
+     */
+    @Nullable
+    private String readLatestSessionFailure() {
+        try {
+            Path sessionsRoot = resolveSessionDirectory();
+            if (sessionsRoot == null || !Files.isDirectory(sessionsRoot)) return null;
+            String cwd = project.getBasePath();
+            if (cwd == null) return null;
+            // Pi encodes the cwd as "--<slashes-replaced-by-dashes>--".
+            String encoded = "--" + cwd.replace("/", "-").replace("\\", "-") + "--";
+            Path bucket = sessionsRoot.resolve(encoded);
+            if (!Files.isDirectory(bucket)) return null;
+
+            Path latest = null;
+            long latestModified = Long.MIN_VALUE;
+            try (var stream = Files.list(bucket)) {
+                for (Path p : stream.toList()) {
+                    if (!p.getFileName().toString().endsWith(".jsonl")) continue;
+                    long m = Files.getLastModifiedTime(p).toMillis();
+                    if (m > latestModified) {
+                        latestModified = m;
+                        latest = p;
+                    }
+                }
+            }
+            if (latest == null) return null;
+
+            // Scan the last ~50 lines for an entry that carries an errorMessage.
+            List<String> lines = Files.readAllLines(latest, StandardCharsets.UTF_8);
+            int from = Math.max(0, lines.size() - 50);
+            for (int i = lines.size() - 1; i >= from; i--) {
+                String line = lines.get(i).trim();
+                if (line.isEmpty()) continue;
+                try {
+                    JsonObject o = JsonParser.parseString(line).getAsJsonObject();
+                    String err = optionalString(o, "errorMessage");
+                    if (err != null && !err.isBlank()) return truncate(err, 280);
+                } catch (Exception ignored) {
+                    // not JSON, skip
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            LOG.debug("[pi] readLatestSessionFailure failed", e);
+            return null;
+        }
+    }
+
+    @NotNull
+    private static String truncate(@NotNull String s, int max) {
+        if (s.length() <= max) return s;
+        return s.substring(0, max) + "…";
+    }
+
+    @Nullable
+    private static Path resolveSessionDirectory() {
+        String override = System.getenv("PI_CODING_AGENT_SESSION_DIR");
+        if (override != null && !override.isBlank()) return Path.of(override);
+        String configRoot = System.getenv("PI_CODING_AGENT_DIR");
+        if (configRoot != null && !configRoot.isBlank()) return Path.of(configRoot, "sessions");
+        String home = System.getProperty("user.home");
+        if (home == null) return null;
+        return Path.of(home, ".pi", "agent", "sessions");
+    }
+
     private void handleEvent(@NotNull JsonObject ev) {
         String type = ev.has("type") ? ev.get("type").getAsString() : "";
         TurnState turn = currentTurn.get();
+        // Log every event type at INFO so we can diagnose silent turn failures.
+        // Tool execution events repeat per-toolcall — log only their start/end and the
+        // streaming text deltas at debug to avoid log spam.
+        if (!"message_update".equals(type) && !"tool_execution_update".equals(type)) {
+            LOG.info("[pi] event: " + type);
+        }
         switch (type) {
             case "response" -> {
                 String success = optionalString(ev, "success");
@@ -450,23 +529,42 @@ public final class PiCliClient extends AbstractAgentClient {
             case "agent_end" -> {
                 if (turn == null) return;
                 if (turn.stopReason == null) turn.stopReason = "end_turn";
+                if (!turn.hasContent) {
+                    // Pi emits agent_end without any assistant message_update when the provider
+                    // silently fails (e.g. local proxy returns 200 but no content, or
+                    // mis-configured model). Surface a useful reason from the JSONL session log.
+                    String hint = readLatestSessionFailure();
+                    String tail = lastStderrLine();
+                    String reason = "Pi finished the turn without producing any assistant content";
+                    if (hint != null) reason += ": " + hint;
+                    else if (tail != null) reason += ": " + tail;
+                    else reason += " (no error reported by Pi — check provider credits/model selection)";
+                    turn.failure.compareAndSet(null, reason);
+                }
                 turn.done.countDown();
             }
-            case "auto_retry_start", "compaction_start", "compaction_end", "queue_update" -> {
-                /* visible in UI later; ignored for now */
+            case "extension_error" -> {
+                String extPath = optionalString(ev, "extensionPath");
+                String evName = optionalString(ev, "event");
+                String err = optionalString(ev, "error");
+                LOG.warn("[pi] extension_error in " + evName + " @ " + extPath + ": " + err);
+                if (turn != null) {
+                    turn.failure.compareAndSet(null, "Extension error: " + err);
+                }
             }
-            case "extension_error" -> LOG.warn("[pi] extension error: " + ev);
             default -> { /* unknown event — log only at debug */ }
         }
     }
 
     private void emitText(@NotNull TurnState turn, @Nullable String text) {
         if (text == null || text.isEmpty()) return;
+        turn.hasContent = true;
         turn.emit(new SessionUpdate.AgentMessageChunk(List.of(new ContentBlock.Text(text))));
     }
 
     private void emitThinking(@NotNull TurnState turn, @Nullable String text) {
         if (text == null || text.isEmpty()) return;
+        turn.hasContent = true;
         turn.emit(new SessionUpdate.AgentThoughtChunk(List.of(new ContentBlock.Thinking(text))));
     }
 
@@ -626,6 +724,7 @@ public final class PiCliClient extends AbstractAgentClient {
         int inputTokens;
         int outputTokens;
         Double costUsd;
+        volatile boolean hasContent;
 
         TurnState(Consumer<SessionUpdate> onUpdate) {
             this.onUpdate = onUpdate;
