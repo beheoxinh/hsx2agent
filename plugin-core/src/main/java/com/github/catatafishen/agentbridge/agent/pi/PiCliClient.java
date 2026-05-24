@@ -275,13 +275,7 @@ public final class PiCliClient extends AbstractAgentClient {
         // Include provider/model so Pi knows which registered provider to route to.
         String modelId = request.modelId() != null ? request.modelId() : currentModelId;
         if (modelId != null && !modelId.isBlank()) {
-            int slash = modelId.indexOf('/');
-            if (slash > 0) {
-                cmd.put("provider", modelId.substring(0, slash));
-                cmd.put("model", modelId.substring(slash + 1));
-            } else {
-                cmd.put("model", modelId);
-            }
+            cmd.put("model", modelId);
         }
         LOG.info("[pi] sendPrompt: " + message.length() + " chars (thread=" + Thread.currentThread().getName() + ", interrupted=" + Thread.interrupted() + "), model=" + modelId);
         writeCommand(cmd);
@@ -323,10 +317,9 @@ public final class PiCliClient extends AbstractAgentClient {
         List<Model> models = new ArrayList<>();
         for (PiCustomProvidersService.Entry p : providers) {
             if (p.validate() != null) continue;
-            String fqn = p.id + "/" + p.modelId;
             String label = (p.displayName != null && !p.displayName.isBlank() ? p.displayName : p.id)
                 + " (" + (p.modelName != null && !p.modelName.isBlank() ? p.modelName : p.modelId) + ")";
-            models.add(new Model(fqn, label, null, null));
+            models.add(new Model(p.modelId, label, null, null));
         }
         return models;
     }
@@ -336,15 +329,9 @@ public final class PiCliClient extends AbstractAgentClient {
         this.currentModelId = modelId;
         if (!isConnected()) return;
         try {
-            int slash = modelId == null ? -1 : modelId.indexOf('/');
             Map<String, Object> cmd = new java.util.LinkedHashMap<>();
             cmd.put("type", "set_model");
-            if (slash > 0) {
-                cmd.put("provider", modelId.substring(0, slash));
-                cmd.put("modelId", modelId.substring(slash + 1));
-            } else {
-                cmd.put("modelId", modelId);
-            }
+            cmd.put("modelId", modelId);
             writeCommand(cmd);
         } catch (IOException e) {
             LOG.warn("[pi] set_model failed", e);
