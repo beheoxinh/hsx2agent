@@ -167,6 +167,16 @@ public final class PiCliClient extends AbstractAgentClient {
             cmd.add(providersPath.toString());
         }
         String modelId = currentModelId;
+        if ((modelId == null || modelId.isBlank()) && !customProviders.isEmpty()) {
+            // Auto-select the first valid custom provider model so Pi starts with a usable default
+            for (PiCustomProvidersService.Entry p : customProviders) {
+                if (p.validate() == null) {
+                    modelId = p.id + "/" + p.modelId;
+                    currentModelId = modelId;
+                    break;
+                }
+            }
+        }
         if (profile.isSupportsModelFlag() && modelId != null && !modelId.isBlank()) {
             cmd.add("--model");
             cmd.add(modelId);
@@ -317,9 +327,11 @@ public final class PiCliClient extends AbstractAgentClient {
         List<Model> models = new ArrayList<>();
         for (PiCustomProvidersService.Entry p : providers) {
             if (p.validate() != null) continue;
+            // Pi CLI expects "provider/model" format for --model flag and set_model command
+            String fqn = p.id + "/" + p.modelId;
             String label = (p.displayName != null && !p.displayName.isBlank() ? p.displayName : p.id)
                 + " (" + (p.modelName != null && !p.modelName.isBlank() ? p.modelName : p.modelId) + ")";
-            models.add(new Model(p.modelId, label, null, null));
+            models.add(new Model(fqn, label, null, null));
         }
         return models;
     }
