@@ -40,6 +40,11 @@ public class NewSessionResponseDeserializer implements JsonDeserializer<NewSessi
         String sessionId = getString(obj, "sessionId");
 
         ModelsResult modelsResult = parseModelsContainer(obj.get("models"));
+        if (modelsResult == null) {
+            // Some agents (e.g. OpenClaw) return a top-level "model" (singular) as an object
+            // instead of a "models" (plural) container/array.
+            modelsResult = parseTopLevelModel(obj.get("model"));
+        }
         ModesResult modesResult = parseModesContainer(obj.get("modes"));
 
         List<NewSessionResponse.AvailableCommand> commands = null;
@@ -105,6 +110,18 @@ public class NewSessionResponseDeserializer implements JsonDeserializer<NewSessi
             }
         }
         return new ModelsResult(null, models.isEmpty() ? null : models);
+    }
+
+    /**
+     * Parses a top-level {@code "model"} field (singular) that is a single model object.
+     * Some agents (e.g. OpenClaw) return this instead of the standard {@code "models"} container.
+     */
+    @Nullable
+    private static ModelsResult parseTopLevelModel(@Nullable JsonElement element) {
+        if (element == null || element.isJsonNull() || !element.isJsonObject()) return null;
+        Model model = parseModelObject(null, element.getAsJsonObject());
+        if (model == null || model.id() == null) return null;
+        return new ModelsResult(null, List.of(model));
     }
 
     private static List<Model> parseModelArray(com.google.gson.JsonArray array) {

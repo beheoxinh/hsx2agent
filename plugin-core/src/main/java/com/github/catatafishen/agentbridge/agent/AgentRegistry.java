@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.acp.client.CopilotClient;
 import com.github.catatafishen.agentbridge.acp.client.HermesClient;
 import com.github.catatafishen.agentbridge.acp.client.JunieClient;
 import com.github.catatafishen.agentbridge.acp.client.KiroClient;
+import com.github.catatafishen.agentbridge.acp.client.OpenClawClient;
 import com.github.catatafishen.agentbridge.acp.client.OpenCodeClient;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.Nullable;
@@ -23,10 +24,11 @@ public final class AgentRegistry {
      * Describes an available agent without creating an instance.
      */
     public record AgentDescriptor(
-            String id,
-            String displayName,
-            Function<Project, AbstractAgentClient> factory
-    ) {}
+        String id,
+        String displayName,
+        Function<Project, AbstractAgentClient> factory
+    ) {
+    }
 
     private static final Map<String, AgentDescriptor> AGENTS = new LinkedHashMap<>();
 
@@ -35,11 +37,13 @@ public final class AgentRegistry {
         register("junie", "Junie", JunieClient::new);
         register("kiro", "Kiro", KiroClient::new);
         register("opencode", "OpenCode", OpenCodeClient::new);
+        register("openclaw", "OpenClaw", OpenClawClient::new);
         register("hermes", "Hermes Agent", HermesClient::new);
         // Claude clients are registered once they support a single-arg Project constructor.
     }
 
-    private AgentRegistry() {}
+    private AgentRegistry() {
+    }
 
     private static void register(String id, String displayName,
                                  Function<Project, AbstractAgentClient> factory) {

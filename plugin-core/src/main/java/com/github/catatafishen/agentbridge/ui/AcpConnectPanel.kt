@@ -3,7 +3,6 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.BuildInfo
 import com.github.catatafishen.agentbridge.bridge.TransportType
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
-import com.github.catatafishen.agentbridge.ui.TimerDisplayFormatter
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.services.AgentProfileManager.AgentProfileListener
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
@@ -646,6 +645,7 @@ class AcpConnectPanel(
             AgentProfileManager.KIRO_PROFILE_ID -> KiroClientConfigurable::class.java
             AgentProfileManager.CODEX_PROFILE_ID -> CodexClientConfigurable::class.java
             AgentProfileManager.HERMES_PROFILE_ID -> HermesClientConfigurable::class.java
+            AgentProfileManager.OPENCLAW_PROFILE_ID -> OpenClawClientConfigurable::class.java
             else -> ClientAgentsGroupConfigurable::class.java
         }
         ShowSettingsUtil.getInstance().showSettingsDialog(project, configurableClass)

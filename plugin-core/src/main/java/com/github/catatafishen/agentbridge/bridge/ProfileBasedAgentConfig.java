@@ -77,6 +77,9 @@ public class ProfileBasedAgentConfig implements AgentConfig {
         if (OpenCodeAgentConfig.PROFILE_ID.equals(profile.getId())) {
             return new OpenCodeAgentConfig(profile, registry, project);
         }
+        if (OpenClawAgentConfig.PROFILE_ID.equals(profile.getId())) {
+            return new OpenClawAgentConfig(profile, registry, project);
+        }
         return new ProfileBasedAgentConfig(profile, registry, project);
     }
 

@@ -14,6 +14,7 @@ object AgentIconProvider {
     private val kiroIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("kiro.svg"), 16, 16)
     private val codexIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("codex.svg"), 16, 16)
     private val hermesIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("hermes.svg"), 16, 16)
+    private val openclawIcon: Icon = com.intellij.util.IconUtil.toSize(loadIcon("openclaw.svg"), 16, 16)
 
     fun getIcon(name: String?): Icon? {
         if (name == null) return null
@@ -24,6 +25,7 @@ object AgentIconProvider {
         return when (name) {
             "GitHub Copilot" -> copilotIcon
             "OpenCode" -> opencodeIcon
+            "OpenClaw" -> openclawIcon
             "Junie" -> junieIcon
             "Kiro" -> kiroIcon
             "Hermes Agent" -> hermesIcon
@@ -38,6 +40,7 @@ object AgentIconProvider {
             ClaudeCliClient.PROFILE_ID -> claudeIcon
             AgentProfileManager.COPILOT_PROFILE_ID -> copilotIcon
             AgentProfileManager.OPENCODE_PROFILE_ID -> opencodeIcon
+            AgentProfileManager.OPENCLAW_PROFILE_ID -> openclawIcon
             AgentProfileManager.JUNIE_PROFILE_ID -> junieIcon
             AgentProfileManager.KIRO_PROFILE_ID -> kiroIcon
             AgentProfileManager.HERMES_PROFILE_ID -> hermesIcon

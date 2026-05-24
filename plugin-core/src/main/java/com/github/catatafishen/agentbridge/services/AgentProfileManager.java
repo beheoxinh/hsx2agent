@@ -47,6 +47,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     public static final String KIRO_PROFILE_ID = "kiro";
     public static final String CODEX_PROFILE_ID = CodexAppServerClient.PROFILE_ID;
     public static final String HERMES_PROFILE_ID = HermesClient.AGENT_ID;
+    public static final String OPENCLAW_PROFILE_ID = "openclaw";
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
     private PersistedState persistedState = new PersistedState();
@@ -236,7 +237,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     private void ensureDefaults() {
         for (String id : List.of(COPILOT_PROFILE_ID, OPENCODE_PROFILE_ID,
             CLAUDE_CLI_PROFILE_ID, JUNIE_PROFILE_ID, KIRO_PROFILE_ID, CODEX_PROFILE_ID,
-            HERMES_PROFILE_ID)) {
+            HERMES_PROFILE_ID, OPENCLAW_PROFILE_ID)) {
             if (!profiles.containsKey(id)) {
                 AgentProfile profile = createDefaultProfile(id);
                 if (profile != null) profiles.put(id, profile);
@@ -254,6 +255,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             case KIRO_PROFILE_ID -> buildKiroProfile();
             case CODEX_PROFILE_ID -> CodexAppServerClient.createDefaultProfile();
             case HERMES_PROFILE_ID -> buildHermesProfile();
+            case OPENCLAW_PROFILE_ID -> buildOpenClawProfile();
             default -> null;
         };
     }
@@ -330,6 +332,29 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setBinaryName("hermes");
         p.setInstallHint("See install instructions at https://github.com/NousResearch/hermes-agent#installation");
         p.setInstallUrl("https://github.com/NousResearch/hermes-agent");
+        return p;
+    }
+
+    private static AgentProfile buildOpenClawProfile() {
+        AgentProfile p = new AgentProfile();
+        p.setId(OPENCLAW_PROFILE_ID);
+        p.setDisplayName("OpenClaw");
+        p.setBuiltIn(true);
+        p.setTransportType(TransportType.ACP);
+        p.setBinaryName("openclaw");
+        p.setAlternateNames(List.of());
+        p.setInstallHint("Install with: npm i -g openclaw");
+        p.setInstallUrl("https://github.com/openclaw/openclaw#readme");
+        p.setAcpArgs(List.of("acp"));
+        p.setMcpMethod(McpInjectionMethod.NONE);
+        p.setSupportsMcpConfigFlag(false);
+        p.setSupportsModelFlag(false);
+        p.setSendResourceReferences(false);
+        p.setSupportsSessionMessage(true);
+        p.setMcpServerName("agentbridge");
+        p.setExcludeAgentBuiltInTools(false);
+        p.setUsePluginPermissions(false);
+        p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
         return p;
     }
 }
