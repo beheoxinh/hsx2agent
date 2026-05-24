@@ -145,6 +145,10 @@ public final class PiCliClient extends AbstractAgentClient {
         String mcpUrl = mcpPort > 0 ? "http://127.0.0.1:" + mcpPort + "/mcp" : null;
         Path bridgePath = new PiMcpBridgeGenerator(project).generate(mcpUrl, BuildInfo.getVersion());
 
+        List<PiCustomProvidersService.Entry> customProviders =
+            PiCustomProvidersService.getInstance().getProviders();
+        Path providersPath = new PiProviderExtensionGenerator(project).generate(customProviders);
+
         List<String> cmd = new ArrayList<>();
         cmd.add(binary);
         cmd.add("--mode");
@@ -157,6 +161,10 @@ public final class PiCliClient extends AbstractAgentClient {
             // Without the bridge, only built-in Pi tools are available — disable them so
             // the agent does not silently bypass IDE permissions / hooks.
             cmd.add("--no-builtin-tools");
+        }
+        if (providersPath != null) {
+            cmd.add("--extension");
+            cmd.add(providersPath.toString());
         }
         String modelId = currentModelId;
         if (profile.isSupportsModelFlag() && modelId != null && !modelId.isBlank()) {
@@ -173,6 +181,10 @@ public final class PiCliClient extends AbstractAgentClient {
             env.putIfAbsent(e.getKey(), e.getValue());
         }
         if (mcpUrl != null) env.put("AGENTBRIDGE_MCP_URL", mcpUrl);
+        // Export each custom-provider API key as the env var its registered config reads.
+        for (Map.Entry<String, String> e : PiProviderExtensionGenerator.buildEnv(customProviders).entrySet()) {
+            env.put(e.getKey(), e.getValue());
+        }
         env.put("CI", "true"); // ensure non-interactive behaviour from the subprocess
         env.putIfAbsent("PI_OFFLINE", "0");
 
@@ -342,7 +354,7 @@ public final class PiCliClient extends AbstractAgentClient {
             String reason = exitCode == 0
                 ? "Pi subprocess exited mid-turn"
                 : "Pi subprocess exited (code " + exitCode + ")"
-                + (tail != null ? ": " + tail : "");
+                  + (tail != null ? ": " + tail : "");
 
             // Mark the client as not connected so the next prompt triggers a fresh start
             // instead of writing into a dead pipe.
