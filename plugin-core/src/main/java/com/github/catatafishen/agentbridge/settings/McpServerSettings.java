@@ -204,6 +204,93 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     }
 
     /**
+     * Tools that modify remote state — blocked in STANDARD and SAFE modes.
+     */
+    public static final Set<String> REMOTE_GIT_TOOLS = Set.of(
+        "git_push",
+        "git_fetch",
+        "git_pull"
+    );
+
+    /**
+     * Tools that mutate local git state — blocked in SAFE mode.
+     */
+    public static final Set<String> LOCAL_GIT_TOOLS = Set.of(
+        "git_remote",
+        "git_config",
+        "git_commit",
+        "git_stage",
+        "git_unstage",
+        "git_untrack",
+        "git_branch",
+        "git_stash",
+        "git_revert",
+        "git_tag",
+        "git_reset",
+        "git_rebase",
+        "git_merge",
+        "git_cherry_pick",
+        "git_init"
+    );
+
+    /**
+     * Read-only git tools — always allowed in any policy.
+     */
+    public static final Set<String> READONLY_GIT_TOOLS = Set.of(
+        "git_status",
+        "git_diff",
+        "git_log",
+        "git_blame",
+        "git_show",
+        "get_file_history"
+    );
+
+    /**
+     * All git tools combined (for restoring in LOOSE mode).
+     */
+    public static final Set<String> ALL_GIT_TOOLS;
+
+    static {
+        var all = new java.util.LinkedHashSet<String>();
+        all.addAll(REMOTE_GIT_TOOLS);
+        all.addAll(LOCAL_GIT_TOOLS);
+        all.addAll(READONLY_GIT_TOOLS);
+        ALL_GIT_TOOLS = java.util.Collections.unmodifiableSet(all);
+    }
+
+    /**
+     * Returns the current git policy name (LOOSE, STANDARD, or SAFE).
+     */
+    public @org.jetbrains.annotations.NotNull String getGitPolicy() {
+        return myState.gitPolicy;
+    }
+
+    public void setGitPolicy(@org.jetbrains.annotations.NotNull String policy) {
+        myState.gitPolicy = policy;
+    }
+
+    /**
+     * Applies the current git policy by enabling/disabling the appropriate
+     * git tools in {@link #disabledToolIds}.
+     */
+    public void applyGitPolicy() {
+        switch (myState.gitPolicy) {
+            case "SAFE":
+                myState.disabledToolIds.removeAll(ALL_GIT_TOOLS);
+                myState.disabledToolIds.addAll(REMOTE_GIT_TOOLS);
+                myState.disabledToolIds.addAll(LOCAL_GIT_TOOLS);
+                break;
+            case "STANDARD":
+                myState.disabledToolIds.removeAll(ALL_GIT_TOOLS);
+                myState.disabledToolIds.addAll(REMOTE_GIT_TOOLS);
+                break;
+            default:
+                myState.disabledToolIds.removeAll(ALL_GIT_TOOLS);
+                break;
+        }
+    }
+
+    /**
      * Applies {@link McpToolFilter#DEFAULT_DISABLED} on first run, and applies
      * incremental defaults when new default-disabled tools are added in later
      * versions. Existing user enable/disable choices are preserved — only tools
@@ -273,6 +360,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private boolean autoCommit = false;
         private boolean suggestGitInit = true;
         private boolean showEditorHighlights = true;
+        private String gitPolicy = "LOOSE";
         private String kindReadColorKey = null;
         private String kindEditColorKey = null;
         private String kindExecuteColorKey = null;

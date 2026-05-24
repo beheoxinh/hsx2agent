@@ -35,7 +35,11 @@ class AutoApproveToggleAction(private val project: Project) : ToggleAction(
 
     override fun setSelected(e: AnActionEvent, state: Boolean) {
         McpServerSettings.getInstance(project).isAutoApproveAgentEdits = state
-        if (state) AgentEditSession.getInstance(project).onAutoApproveTurnedOn()
+        if (state) {
+            AgentEditSession.getInstance(project).onAutoApproveTurnedOn()
+        } else {
+            McpServerSettings.getInstance(project).isAutoCommit = false
+        }
         project.messageBus.syncPublisher(ReviewSessionTopic.TOPIC).reviewStateChanged()
     }
 
@@ -83,7 +87,8 @@ class AutoCommitToggleAction(private val project: Project) : ToggleAction(
     "Auto-Commit",
     "Automatically trigger a commit turn when all changes are approved and turn ends",
     AllIcons.Actions.Commit
-) {
+), CustomComponentAction {
+
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun isSelected(e: AnActionEvent): Boolean {
@@ -92,6 +97,54 @@ class AutoCommitToggleAction(private val project: Project) : ToggleAction(
 
     override fun setSelected(e: AnActionEvent, state: Boolean) {
         McpServerSettings.getInstance(project).isAutoCommit = state
+    }
+
+    override fun update(e: AnActionEvent) {
+        val settings = McpServerSettings.getInstance(project)
+        val autoApproveOn = settings.isAutoApproveAgentEdits
+        e.presentation.isEnabled = autoApproveOn
+        if (!autoApproveOn) {
+            e.presentation.description = "Requires Auto-Approve to be enabled first"
+        } else {
+            e.presentation.description =
+                "Automatically trigger a commit turn when all changes are approved and turn ends"
+        }
+    }
+
+    override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
+        return object : ActionButton(this, presentation, place, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE) {
+            override fun paintButtonLook(g: Graphics) {
+                if (!presentation.isEnabled) {
+                    val g2 = g.create() as Graphics2D
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                    g2.color = Color(200, 50, 50, 80)
+                    val arc = JBUI.scale(4)
+                    g2.fillRoundRect(2, 2, width - 4, height - 4, arc, arc)
+                    g2.dispose()
+                    val icon = presentation.icon
+                    if (icon != null) {
+                        val x = (width - icon.iconWidth) / 2
+                        val y = (height - icon.iconHeight) / 2
+                        icon.paintIcon(this, g, x, y)
+                    }
+                } else if (isSelected) {
+                    val g2 = g.create() as Graphics2D
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                    g2.color = APPROVED_BG
+                    val arc = JBUI.scale(4)
+                    g2.fillRoundRect(2, 2, width - 4, height - 4, arc, arc)
+                    g2.dispose()
+                    val icon = presentation.icon
+                    if (icon != null) {
+                        val x = (width - icon.iconWidth) / 2
+                        val y = (height - icon.iconHeight) / 2
+                        icon.paintIcon(this, g, x, y)
+                    }
+                } else {
+                    super.paintButtonLook(g)
+                }
+            }
+        }
     }
 }
 

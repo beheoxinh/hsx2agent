@@ -75,6 +75,31 @@ class McpGroupConfigurable(private val project: Project) :
         }
         separator()
         row {
+            text("<html><b>Git Tool Policy</b></html>")
+        }
+        row("Policy:") {
+            comboBox(GitPolicy.entries.toList())
+                .applyToComponent {
+                    renderer = SimpleListCellRenderer.create<GitPolicy>("") { it.displayName }
+                }
+                .bindItem(
+                    { GitPolicy.fromName(settings.gitPolicy) },
+                    { policy ->
+                        val p = policy ?: GitPolicy.LOOSE
+                        settings.gitPolicy = p.name
+                        settings.applyGitPolicy()
+                    }
+                )
+        }
+        row {
+            comment(
+                "<b>Lỏng lẻo:</b> All git tools enabled<br>" +
+                    "<b>Standard:</b> Block remote git operations (push, fetch, pull)<br>" +
+                    "<b>Safe:</b> Only read-only git tools (status, diff, log, blame, show, file history)"
+            )
+        }
+        separator()
+        row {
             button("Restart MCP Server") { e ->
                 val btn = e.source as JButton
                 btn.icon = AllIcons.Actions.Restart

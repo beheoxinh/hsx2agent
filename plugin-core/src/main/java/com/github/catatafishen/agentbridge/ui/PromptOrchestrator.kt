@@ -683,7 +683,7 @@ class PromptOrchestrator(
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
             activeSubAgentStack.addLast(toolCallId)
-            agentManager.client.setSubAgentActive(true)
+            agentManager.getClientIfRunning()?.setSubAgentActive(true)
             AgentNudgeService.getInstance(project).setNudgesHeld(true)
             agentManager.settings.setActiveAgentLabel(agentType)
             consolePanel().setCurrentAgent(
@@ -819,7 +819,7 @@ class PromptOrchestrator(
             }
             activeSubAgentStack.remove(toolCallId)
             if (activeSubAgentStack.isEmpty()) {
-                agentManager.client.setSubAgentActive(false)
+                agentManager.getClientIfRunning()?.setSubAgentActive(false)
                 AgentNudgeService.getInstance(project).setNudgesHeld(false)
                 agentManager.settings.setActiveAgentLabel(null)
                 consolePanel().setCurrentAgent(
