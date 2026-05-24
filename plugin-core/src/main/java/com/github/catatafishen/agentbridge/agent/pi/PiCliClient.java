@@ -171,7 +171,7 @@ public final class PiCliClient extends AbstractAgentClient {
             // Auto-select the first valid custom provider model so Pi starts with a usable default
             for (PiCustomProvidersService.Entry p : customProviders) {
                 if (p.validate() == null) {
-                    modelId = p.id + "/" + p.modelId;
+                    modelId = p.modelId;
                     currentModelId = modelId;
                     break;
                 }
@@ -213,7 +213,7 @@ public final class PiCliClient extends AbstractAgentClient {
         stdoutThread.start();
         readerThread.set(stdoutThread);
 
-        LOG.info("[pi] started: " + String.join(" ", cmd) + " (cwd=" + cwd + ")");
+        LOG.info("[pi] started: " + String.join(" ", cmd) + " (cwd=" + cwd + ", env: LLM_PROXY_ROUTER=" + (env.containsKey("LLM_PROXY_ROUTER") ? "***" : "NOT_SET") + ")");
     }
 
     @Override
@@ -327,11 +327,9 @@ public final class PiCliClient extends AbstractAgentClient {
         List<Model> models = new ArrayList<>();
         for (PiCustomProvidersService.Entry p : providers) {
             if (p.validate() != null) continue;
-            // Pi CLI expects "provider/model" format for --model flag and set_model command
-            String fqn = p.id + "/" + p.modelId;
             String label = (p.displayName != null && !p.displayName.isBlank() ? p.displayName : p.id)
                 + " (" + (p.modelName != null && !p.modelName.isBlank() ? p.modelName : p.modelId) + ")";
-            models.add(new Model(fqn, label, null, null));
+            models.add(new Model(p.modelId, label, null, null));
         }
         return models;
     }
