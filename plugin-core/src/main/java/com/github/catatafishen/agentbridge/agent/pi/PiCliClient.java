@@ -154,7 +154,8 @@ public final class PiCliClient extends AbstractAgentClient {
         cmd.add(binary);
         cmd.add("--mode");
         cmd.add("rpc");
-        cmd.add("--no-session"); // each plugin run gets a fresh in-process session
+        // Persist the session JSONL so the plugin can recover failure details from it
+        // when Pi finishes a turn without emitting a usable message (provider 401, etc.).
         if (bridgePath != null) {
             cmd.add("--extension");
             cmd.add(bridgePath.toString());
@@ -485,22 +486,38 @@ public final class PiCliClient extends AbstractAgentClient {
                 if (msg == null) return;
                 String role = optionalString(msg, "role");
                 if (!"assistant".equals(role)) return;
-                if (!msg.has("content") || !msg.get("content").isJsonArray()) return;
-                JsonArray content = msg.getAsJsonArray("content");
-                for (JsonElement el : content) {
-                    if (!el.isJsonObject()) continue;
-                    JsonObject block = el.getAsJsonObject();
-                    String btype = optionalString(block, "type");
-                    if ("text".equals(btype)) {
-                        emitText(turn, optionalString(block, "text"));
-                    } else if ("thinking".equals(btype)) {
-                        emitThinking(turn, optionalString(block, "thinking"));
-                    }
-                }
                 String stopReason = optionalString(msg, "stopReason");
                 if (stopReason != null) turn.stopReason = mapStopReason(stopReason);
+                // Provider errors land on the assistant message itself: stopReason="error" +
+                // errorMessage. Capture it so the chat shows the real cause.
+                String errorMessage = optionalString(msg, "errorMessage");
+                if (errorMessage != null && !errorMessage.isBlank()) {
+                    turn.failure.compareAndSet(null, "Provider error: " + truncate(errorMessage, 280));
+                }
+                if (msg.has("content") && msg.get("content").isJsonArray()) {
+                    JsonArray content = msg.getAsJsonArray("content");
+                    for (JsonElement el : content) {
+                        if (!el.isJsonObject()) continue;
+                        JsonObject block = el.getAsJsonObject();
+                        String btype = optionalString(block, "type");
+                        if ("text".equals(btype)) {
+                            emitText(turn, optionalString(block, "text"));
+                        } else if ("thinking".equals(btype)) {
+                            emitThinking(turn, optionalString(block, "thinking"));
+                        }
+                    }
+                }
                 JsonObject usage = optionalObject(msg, "usage");
                 if (usage != null) accumulateUsage(turn, usage);
+                // Help debugging when Pi reports nothing useful: log a small summary of
+                // the message instead of letting the empty-turn path run blind.
+                if (!turn.hasContent && turn.failure.get() == null) {
+                    LOG.warn("[pi] message_end with no text/thinking content — stopReason=" + stopReason
+                        + ", contentBlocks=" + (msg.has("content") && msg.get("content").isJsonArray()
+                            ? msg.getAsJsonArray("content").size() : 0)
+                        + ", model=" + optionalString(msg, "model")
+                        + ", provider=" + optionalString(msg, "provider"));
+                }
             }
             case "message_update" -> {
                 if (turn == null) return;
