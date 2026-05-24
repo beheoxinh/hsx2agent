@@ -166,7 +166,8 @@ public final class MemoryService implements Disposable {
 
                 LOG.info("MemoryService initialized for project: " + project.getName());
             } catch (IOException e) {
-                LOG.error("Failed to initialize MemoryService", e);
+                LOG.warn("Failed to initialize MemoryService", e);
+                store = null;
             }
         }
     }
