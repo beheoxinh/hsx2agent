@@ -2877,10 +2877,28 @@ class ChatToolWindowContent(
         // sensible "insert as plain text" fallback in the prompt editor.
         if (handleImageOrFilePaste(event)) return true
 
+        val clipText = contextManager.getClipboardText()
+        if (clipText != null) {
+            val (parsedText, parsedItems) = ContextTextUtils.parseMarkdownFileLinks(clipText)
+            if (parsedItems.isNotEmpty()) {
+                event.consume()
+                ApplicationManager.getApplication().invokeLater {
+                    if (editor.isDisposed) return@invokeLater
+                    com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+                        val doc = editor.document
+                        val offset = editor.caretModel.offset
+                        doc.insertString(offset, parsedText)
+                        editor.caretModel.moveToOffset(offset + parsedText.length)
+                        contextManager.restoreInlineChips(editor, parsedItems)
+                    }
+                }
+                return true
+            }
+        }
+
         val chatInputSettings = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance()
         if (!chatInputSettings.isSmartPasteEnabled) return false
 
-        val clipText = contextManager.getClipboardText()
         val minLines = chatInputSettings.smartPasteMinLines
         val minChars = chatInputSettings.smartPasteMinChars
         if (clipText == null || (clipText.lines().size <= minLines && clipText.length <= minChars)) return false
