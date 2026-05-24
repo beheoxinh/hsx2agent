@@ -26,6 +26,8 @@ interface ProviderSpec {
 const PROVIDERS: ProviderSpec[] = ${AGENTBRIDGE_PI_PROVIDERS_JSON};
 
 export default function (pi: ExtensionAPI): void {
+  // eslint-disable-next-line no-console
+  console.error(`[agentbridge-providers] loaded ${PROVIDERS.length} provider(s): ${PROVIDERS.map((p) => p.id).join(", ")}`);
   for (const p of PROVIDERS) {
     try {
       pi.registerProvider(p.id, {
