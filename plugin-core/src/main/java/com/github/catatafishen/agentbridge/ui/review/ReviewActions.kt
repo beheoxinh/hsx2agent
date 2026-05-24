@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui.review
 import com.github.catatafishen.agentbridge.psi.review.AgentEditHighlighter
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.psi.review.ReviewSessionTopic
+import com.github.catatafishen.agentbridge.settings.GitPolicy
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.*
@@ -102,12 +103,13 @@ class AutoCommitToggleAction(private val project: Project) : ToggleAction(
     override fun update(e: AnActionEvent) {
         val settings = McpServerSettings.getInstance(project)
         val autoApproveOn = settings.isAutoApproveAgentEdits
-        e.presentation.isEnabled = autoApproveOn
-        if (!autoApproveOn) {
-            e.presentation.description = "Requires Auto-Approve to be enabled first"
-        } else {
-            e.presentation.description =
-                "Automatically trigger a commit turn when all changes are approved and turn ends"
+        val gitPolicy = settings.gitPolicy
+        val safeMode = gitPolicy == GitPolicy.SAFE.name
+        e.presentation.isEnabled = autoApproveOn && !safeMode
+        e.presentation.description = when {
+            !autoApproveOn -> "Requires Auto-Approve to be enabled first"
+            safeMode -> "Not available in Safe mode — git write tools are restricted"
+            else -> "Automatically trigger a commit turn when all changes are approved and turn ends"
         }
     }
 

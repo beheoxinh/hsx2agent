@@ -279,6 +279,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
                 myState.disabledToolIds.removeAll(ALL_GIT_TOOLS);
                 myState.disabledToolIds.addAll(REMOTE_GIT_TOOLS);
                 myState.disabledToolIds.addAll(LOCAL_GIT_TOOLS);
+                myState.autoCommit = false;
                 break;
             case "STANDARD":
                 myState.disabledToolIds.removeAll(ALL_GIT_TOOLS);
