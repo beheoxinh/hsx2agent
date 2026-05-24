@@ -48,6 +48,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     public static final String CODEX_PROFILE_ID = CodexAppServerClient.PROFILE_ID;
     public static final String HERMES_PROFILE_ID = HermesClient.AGENT_ID;
     public static final String OPENCLAW_PROFILE_ID = "openclaw";
+    public static final String PI_PROFILE_ID = "pi";
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
     private PersistedState persistedState = new PersistedState();
@@ -237,7 +238,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     private void ensureDefaults() {
         for (String id : List.of(COPILOT_PROFILE_ID, OPENCODE_PROFILE_ID,
             CLAUDE_CLI_PROFILE_ID, JUNIE_PROFILE_ID, KIRO_PROFILE_ID, CODEX_PROFILE_ID,
-            HERMES_PROFILE_ID, OPENCLAW_PROFILE_ID)) {
+            HERMES_PROFILE_ID, OPENCLAW_PROFILE_ID, PI_PROFILE_ID)) {
             if (!profiles.containsKey(id)) {
                 AgentProfile profile = createDefaultProfile(id);
                 if (profile != null) profiles.put(id, profile);
@@ -256,6 +257,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             case CODEX_PROFILE_ID -> CodexAppServerClient.createDefaultProfile();
             case HERMES_PROFILE_ID -> buildHermesProfile();
             case OPENCLAW_PROFILE_ID -> buildOpenClawProfile();
+            case PI_PROFILE_ID -> buildPiProfile();
             default -> null;
         };
     }
@@ -352,6 +354,47 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setSendResourceReferences(false);
         p.setSupportsSessionMessage(true);
         p.setMcpServerName("agentbridge");
+        p.setExcludeAgentBuiltInTools(false);
+        p.setUsePluginPermissions(false);
+        p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
+        return p;
+    }
+
+    /**
+     * Builds the default Pi profile.
+     *
+     * <p>Pi is a Node-based coding-agent CLI ({@code @earendil-works/pi-coding-agent}) that
+     * does <em>not</em> speak ACP and intentionally ships without built-in MCP support.
+     * Tool extension happens via TypeScript extension files loaded with {@code --extension},
+     * so the MCP injection method is set to {@link McpInjectionMethod#NONE} for now — Phase 2
+     * of the integration will introduce an extension-based bridge.</p>
+     *
+     * <p>This profile makes Pi appear in the agent dropdown and Settings hierarchy, with
+     * full binary detection, custom-path override, and bubble-color customisation. The
+     * subprocess transport client is added in a follow-up commit.</p>
+     */
+    private static AgentProfile buildPiProfile() {
+        AgentProfile p = new AgentProfile();
+        p.setId(PI_PROFILE_ID);
+        p.setDisplayName("Pi");
+        p.setBuiltIn(true);
+        p.setExperimental(true);
+        p.setTransportType(TransportType.ACP);
+        p.setBinaryName(PI_PROFILE_ID);
+        p.setInstallHint("Install with: npm install -g --ignore-scripts @earendil-works/pi-coding-agent");
+        p.setInstallUrl("https://pi.dev/docs/latest/quickstart");
+        p.setDescription("""
+            Pi coding-agent CLI — runs as a local subprocess in --mode rpc or --mode json. \
+            Authenticate via 'pi' interactively (/login) or by setting provider API keys \
+            (ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENCODE_API_KEY, …) before launching. \
+            MCP is injected through generated TypeScript extensions loaded with --extension; \
+            no native MCP support is provided by Pi itself.""");
+        p.setAcpArgs(List.of("--mode", "rpc"));
+        p.setMcpMethod(McpInjectionMethod.NONE);
+        p.setSupportsMcpConfigFlag(false);
+        p.setSupportsModelFlag(true);
+        p.setSendResourceReferences(false);
+        p.setSupportsSessionMessage(false);
         p.setExcludeAgentBuiltInTools(false);
         p.setUsePluginPermissions(false);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);

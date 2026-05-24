@@ -400,26 +400,56 @@ class AcpConnectPanel(
                 addActionListener { action() }
             }
 
-        val b1 = cleanBtn("Clear Scratch Files",
+        val b1 = cleanBtn(
+            "Clear Scratch Files",
             "Delete all scratch files created by the plugin in this IDE",
-            AllIcons.Actions.GC) { confirmAndRun("Clear Scratch Files",
-            "Delete all scratch files in the IDE? This cannot be undone.") { clearScratchFiles() } }
-        val b2 = cleanBtn("Clear Session History",
+            AllIcons.Actions.GC
+        ) {
+            confirmAndRun(
+                "Clear Scratch Files",
+                "Delete all scratch files in the IDE? This cannot be undone."
+            ) { clearScratchFiles() }
+        }
+        val b2 = cleanBtn(
+            "Clear Session History",
             "Delete all saved sessions in this project",
-            AllIcons.Actions.GC) { confirmAndRun("Clear Session History",
-            "Delete all saved sessions in this project? The session list will be refreshed.") { clearSessionHistory() } }
-        val b3 = cleanBtn("Clear Tool Statistics History",
+            AllIcons.Actions.GC
+        ) {
+            confirmAndRun(
+                "Clear Session History",
+                "Delete all saved sessions in this project? The session list will be refreshed."
+            ) { clearSessionHistory() }
+        }
+        val b3 = cleanBtn(
+            "Clear Tool Statistics History",
             "Delete all recorded tool call statistics",
-            AllIcons.Actions.GC) { confirmAndRun("Clear Tool Statistics History",
-            "Delete all tool call statistics records? Session history will be preserved.") { clearToolStatistics() } }
-        val b4 = cleanBtn("Clear Semantic Memory",
+            AllIcons.Actions.GC
+        ) {
+            confirmAndRun(
+                "Clear Tool Statistics History",
+                "Delete all tool call statistics records? Session history will be preserved."
+            ) { clearToolStatistics() }
+        }
+        val b4 = cleanBtn(
+            "Clear Semantic Memory",
             "Delete all semantic memory stored for this project",
-            AllIcons.Actions.GC) { confirmAndRun("Clear Semantic Memory",
-            "Delete all semantic memory for this project? This includes all memory drawers and knowledge graph data.") { clearSemanticMemory() } }
-        val b5 = cleanBtn("Clear Chat History",
+            AllIcons.Actions.GC
+        ) {
+            confirmAndRun(
+                "Clear Semantic Memory",
+                "Delete all semantic memory for this project? This includes all memory drawers and knowledge graph data."
+            ) { clearSemanticMemory() }
+        }
+        val b5 = cleanBtn(
+            "Clear Chat History",
             "Delete all conversation history in this project",
-            AllIcons.Actions.GC) { confirmAndRun("Clear Chat History",
-            "Delete all conversation history in this project? This includes all text messages and entries.") { clearChatHistory() } }
+            AllIcons.Actions.GC
+        ) {
+            confirmAndRun(
+                "Clear Chat History",
+                "Delete all conversation history in this project? This includes all text messages and entries."
+            ) { clearChatHistory() }
+        }
 
         fun col(vararg btns: JButton): JComponent =
             JBPanel<JBPanel<*>>().apply {
@@ -452,9 +482,11 @@ class AcpConnectPanel(
             foreground = JBColor(Color(0xFF, 0xFF, 0xFF), Color(0xEE, 0xEE, 0xEE))
             font = JBUI.Fonts.smallFont().asBold()
             addActionListener {
-                confirmAndRun("Clear All Data",
+                confirmAndRun(
+                    "Clear All Data",
                     "Delete all contents of .agentbridge and .agent-work?\n" +
-                    "This will reset the project to first-use state.\nThis action cannot be undone.") { clearAllData() }
+                        "This will reset the project to first-use state.\nThis action cannot be undone."
+                ) { clearAllData() }
             }
         }
         section.add(clearAllBtn)
@@ -555,7 +587,10 @@ class AcpConnectPanel(
             for (dir in listOf(agentbridgeDir, agentWorkDir)) {
                 if (java.nio.file.Files.exists(dir)) {
                     java.nio.file.Files.walk(dir).sorted(Comparator.reverseOrder()).forEach { path ->
-                        try { java.nio.file.Files.deleteIfExists(path) } catch (_: java.io.IOException) { }
+                        try {
+                            java.nio.file.Files.deleteIfExists(path)
+                        } catch (_: java.io.IOException) {
+                        }
                     }
                 }
             }
@@ -850,6 +885,7 @@ class AcpConnectPanel(
             AgentProfileManager.CODEX_PROFILE_ID -> CodexClientConfigurable::class.java
             AgentProfileManager.HERMES_PROFILE_ID -> HermesClientConfigurable::class.java
             AgentProfileManager.OPENCLAW_PROFILE_ID -> OpenClawClientConfigurable::class.java
+            AgentProfileManager.PI_PROFILE_ID -> PiClientConfigurable::class.java
             else -> ClientAgentsGroupConfigurable::class.java
         }
         ShowSettingsUtil.getInstance().showSettingsDialog(project, configurableClass)

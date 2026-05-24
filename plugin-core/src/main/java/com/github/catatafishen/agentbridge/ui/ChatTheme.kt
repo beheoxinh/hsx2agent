@@ -177,7 +177,7 @@ object ChatTheme {
         sb.append("--tool-read:${rgb(kindRead)};--tool-edit:${rgb(kindEdit)};--tool-execute:${rgb(kindExecute)};")
         // Per-agent bubble color overrides — injected only when the user has chosen a custom color.
         // The CSS uses var(--client-X-bubble-bg, fallback) so these only take effect when present.
-        for (clientType in listOf("copilot", "claude", "opencode", "junie", "kiro", "codex")) {
+        for (clientType in listOf("copilot", "claude", "opencode", "junie", "kiro", "codex", "pi")) {
             val colorKey = AcpClient.loadAgentBubbleColorKey(clientType)
             val themeColor = ThemeColor.fromKey(colorKey)
             if (themeColor != null) {
@@ -197,6 +197,7 @@ object ChatTheme {
         "junie" -> 2             // purple
         "kiro" -> 3              // pink
         "opencode" -> 4          // blue
+        "pi" -> 5                // green
         else -> profileId.hashCode().and(Int.MAX_VALUE) % SA_COLOR_COUNT
     }
 
@@ -213,6 +214,7 @@ object ChatTheme {
             "junie" -> "junie"
             "kiro" -> "kiro"
             "codex" -> "codex"
+            "pi" -> "pi"
             else -> "agentbridge"
         }
         val suffix = if (isDark) "_dark" else ""

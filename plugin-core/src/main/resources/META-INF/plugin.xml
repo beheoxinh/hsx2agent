@@ -257,6 +257,12 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCod
       id="com.github.catatafishen.agentbridge.clientAgents.openclaw"
       displayName="OpenClaw"/>
 
+    <projectConfigurable
+      parentId="com.github.catatafishen.agentbridge.clientAgents"
+      instance="com.github.catatafishen.agentbridge.settings.PiClientConfigurable"
+      id="com.github.catatafishen.agentbridge.clientAgents.pi"
+      displayName="Pi"/>
+
     <!-- ── Storage (file locations + sub-tabs: Project Files, Scratch File Types, Tool Stats, Memory, Chat History) ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.settings"

@@ -140,6 +140,12 @@ object PromptErrorClassifier {
                 "encounters an unhandled internal exception. Your session has been reset."
         }
 
+        if (agentName.equals("Pi", ignoreCase = true) || agentName.contains("Pi ", ignoreCase = true)) {
+            return "Pi returned an empty response — the subprocess may have crashed before completing the turn, " +
+                "or the configured provider rejected the request. Check ~/.pi/agent for the latest session log. " +
+                "Your session has been reset and your last message restored."
+        }
+
         return "Session not resumed — $agentName returned an empty response. " +
             "Your session has been reset. Your last message has been restored to the input box."
     }

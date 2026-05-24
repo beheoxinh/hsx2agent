@@ -546,6 +546,7 @@ public final class AgentProfile {
         if (name.contains("junie")) return "junie";
         if (name.contains("kiro")) return "kiro";
         if (name.contains("codex")) return "codex";
+        if (name.equals("pi") || name.endsWith("/pi") || name.endsWith("\\pi")) return "pi";
         return "";
     }
 
