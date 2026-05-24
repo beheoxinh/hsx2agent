@@ -520,7 +520,12 @@ class AcpConnectPanel(
         }
         val memoryDir = AgentBridgeStorageSettings.getInstance().getProjectMemoryDir(project)
         if (Files.exists(memoryDir)) {
-            Files.walk(memoryDir).sorted(Comparator.reverseOrder()).forEach { it.delete() }
+            Files.walk(memoryDir).sorted(Comparator.reverseOrder()).forEach { path ->
+                try {
+                    Files.deleteIfExists(path)
+                } catch (_: java.io.IOException) {
+                }
+            }
         }
     }
 
