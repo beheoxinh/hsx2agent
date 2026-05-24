@@ -100,6 +100,11 @@ public final class PiCustomProvidersService implements PersistentStateComponent<
         public String effectiveApiKeyEnv() {
             if (apiKeyEnv != null && !apiKeyEnv.isBlank()) return apiKeyEnv;
             String safe = id.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]+", "_");
+            // Node.js/Pi environment variable lookup can be flaky if the key starts with a digit.
+            // Prepend a safe prefix if the derived key starts with a number.
+            if (!safe.isEmpty() && Character.isDigit(safe.charAt(0))) {
+                return "PROXY_" + safe + "_API_KEY";
+            }
             return safe + "_API_KEY";
         }
     }

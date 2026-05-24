@@ -104,8 +104,10 @@ public final class PiProviderExtensionGenerator {
             o.addProperty("name", p.displayName != null && !p.displayName.isBlank() ? p.displayName : p.id);
             o.addProperty("baseUrl", p.baseUrl);
             o.addProperty("api", p.api == null || p.api.isBlank() ? "openai-completions" : p.api);
-            o.addProperty("apiKeyEnv", p.effectiveApiKeyEnv());
+            String apiKeyEnv = p.effectiveApiKeyEnv();
+            o.addProperty("apiKeyEnv", apiKeyEnv);
             o.addProperty("authHeader", p.authHeader);
+            LOG.info("[pi-providers] model: " + p.id + " uses env: " + apiKeyEnv);
             JsonArray models = new JsonArray();
             JsonObject m = new JsonObject();
             m.addProperty("id", p.modelId);
