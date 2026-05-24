@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.settings
 
-import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+import com.github.catatafishen.agentbridge.services.McpServerControl
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
@@ -75,31 +75,6 @@ class McpGroupConfigurable(private val project: Project) :
         }
         separator()
         row {
-            text("<html><b>Git Tool Policy</b></html>")
-        }
-        row("Policy:") {
-            comboBox(GitPolicy.entries.toList())
-                .applyToComponent {
-                    renderer = SimpleListCellRenderer.create<GitPolicy>("") { it.displayName }
-                }
-                .bindItem(
-                    { GitPolicy.fromName(settings.gitPolicy) },
-                    { policy ->
-                        val p = policy ?: GitPolicy.LOOSE
-                        settings.gitPolicy = p.name
-                        settings.applyGitPolicy()
-                    }
-                )
-        }
-        row {
-            comment(
-                "<b>Features:</b> All git tools enabled<br>" +
-                    "<b>Standard:</b> Block remote git operations (push, fetch, pull)<br>" +
-                    "<b>Safety:</b> Only read-only git tools (status, diff, log, blame, show, file history)"
-            )
-        }
-        separator()
-        row {
             button("Restart MCP Server") { e ->
                 val btn = e.source as JButton
                 btn.icon = AllIcons.Actions.Restart
@@ -142,19 +117,16 @@ class McpGroupConfigurable(private val project: Project) :
         button.text = "Restarting..."
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val serverClass = Class.forName(
-                    "com.github.catatafishen.idemcpserver.McpHttpServer"
-                )
-                val server = PlatformApiCompat.getServiceByRawClass(project, serverClass)
+                val server = McpServerControl.getInstance(project)
                 if (server == null) {
                     val msg =
                         "MCP HTTP Server service not found. Is the IDE MCP Server plugin installed?"
                     LOG.warn(msg); showRestartError(button, msg); return@executeOnPooledThread
                 }
-                serverClass.getMethod("stop").invoke(server)
+                server.stop()
                 AppExecutorUtil.getAppScheduledExecutorService().schedule({
                     try {
-                        serverClass.getMethod("start").invoke(server)
+                        server.start()
                         LOG.info("MCP server restarted via settings")
                     } catch (ex: Exception) {
                         LOG.error("Failed to start MCP server after restart", ex)
@@ -163,10 +135,6 @@ class McpGroupConfigurable(private val project: Project) :
                     }
                     ApplicationManager.getApplication().invokeLater { resetRestartButton(button) }
                 }, 500, TimeUnit.MILLISECONDS)
-            } catch (_: ClassNotFoundException) {
-                val msg = "MCP HTTP Server plugin is not installed. " +
-                    "Install the 'IDE MCP Server' plugin to use the HTTP server."
-                LOG.info(msg); showRestartError(button, msg)
             } catch (ex: Exception) {
                 LOG.error("Failed to restart MCP server", ex)
                 showRestartError(button, "Failed to restart: ${ex.message}")
