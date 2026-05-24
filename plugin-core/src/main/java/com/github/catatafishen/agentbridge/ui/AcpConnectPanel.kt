@@ -22,20 +22,18 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
-import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.InplaceButton
 import com.intellij.ui.JBColor
 import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.components.*
 import com.intellij.util.concurrency.AppExecutorUtil
-import com.intellij.util.io.delete
 import com.intellij.util.ui.AsyncProcessIcon
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.*
 import java.awt.datatransfer.StringSelection
-import java.nio.file.*
+import java.nio.file.Files
 import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -423,17 +421,43 @@ class AcpConnectPanel(
             AllIcons.Actions.GC) { confirmAndRun("Clear Chat History",
             "Delete all conversation history in this project? This includes all text messages and entries.") { clearChatHistory() } }
 
-        fun row(width: Float, vararg btns: JButton): JComponent =
-            JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)).apply {
+        fun col(vararg btns: JButton): JComponent =
+            JBPanel<JBPanel<*>>().apply {
+                layout = BoxLayout(this, BoxLayout.Y_AXIS)
                 isOpaque = false
-                alignmentX = LEFT_ALIGNMENT
-                maximumSize = Dimension((JBUI.scale(480) * width).toInt(), JBUI.scale(28))
-                for (b in btns) add(b)
+                alignmentY = TOP_ALIGNMENT
+                for (b in btns) {
+                    add(b)
+                    add(Box.createVerticalStrut(JBUI.scale(4)))
+                }
             }
 
-        section.add(row(0.4f, b1, b2, b3))
-        section.add(Box.createVerticalStrut(JBUI.scale(4)))
-        section.add(row(0.4f, b4, b5))
+        fun twoColumns(left: JComponent, right: JComponent): JComponent =
+            JBPanel<JBPanel<*>>(GridLayout(1, 2, JBUI.scale(8), 0)).apply {
+                isOpaque = false
+                alignmentX = LEFT_ALIGNMENT
+                maximumSize = Dimension(JBUI.scale(480), JBUI.scale(64))
+                add(left)
+                add(right)
+            }
+
+        section.add(twoColumns(col(b1, b2, b3), col(b4, b5)))
+        section.add(Box.createVerticalStrut(JBUI.scale(6)))
+
+        val clearAllBtn = JButton("Clear All Data", AllIcons.Actions.GC).apply {
+            toolTipText = "Delete all project data in .agentbridge and .agent-work — resets to first-use state"
+            alignmentX = LEFT_ALIGNMENT
+            maximumSize = Dimension(JBUI.scale(480), JBUI.scale(28))
+            background = JBColor(Color(0xCC, 0x33, 0x33), Color(0x8B, 0x22, 0x22))
+            foreground = JBColor(Color(0xFF, 0xFF, 0xFF), Color(0xEE, 0xEE, 0xEE))
+            font = JBUI.Fonts.smallFont().asBold()
+            addActionListener {
+                confirmAndRun("Clear All Data",
+                    "Delete all contents of .agentbridge and .agent-work?\n" +
+                    "This will reset the project to first-use state.\nThis action cannot be undone.") { clearAllData() }
+            }
+        }
+        section.add(clearAllBtn)
 
         return section
     }
@@ -520,6 +544,23 @@ class AcpConnectPanel(
             """
             )
             null
+        }
+    }
+
+    private fun clearAllData() {
+        try {
+            val base = project.basePath ?: return
+            val agentbridgeDir = java.nio.file.Paths.get(base, ".agentbridge")
+            val agentWorkDir = java.nio.file.Paths.get(base, ".agent-work")
+            for (dir in listOf(agentbridgeDir, agentWorkDir)) {
+                if (java.nio.file.Files.exists(dir)) {
+                    java.nio.file.Files.walk(dir).sorted(Comparator.reverseOrder()).forEach { path ->
+                        try { java.nio.file.Files.deleteIfExists(path) } catch (_: java.io.IOException) { }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            LOG.warn("Clear All Data failed", e)
         }
     }
 

@@ -74,7 +74,7 @@ class McpGroupConfigurable(private val project: Project) :
         }
         separator()
         row {
-            text("<html><b>Git Tool Policy</b></html>")
+            text("<b>Git Tool Policy</b>")
         }
         row("Policy:") {
             comboBox(GitPolicy.entries.toList())
