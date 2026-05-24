@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.agent.pi.PiCustomProvidersService
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.ToolbarDecorator
@@ -44,6 +45,7 @@ class PiCustomProvidersPanel : JPanel(BorderLayout()) {
 
     fun apply() {
         PiCustomProvidersService.getInstance().setProviders(rows)
+        ApplicationManager.getApplication().saveSettings()
     }
 
     fun reset() {
