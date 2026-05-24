@@ -30,6 +30,38 @@ object ContextTextUtils {
     }
 
     /**
+     * Replace each text reference like `` `name` `` in [rawText] back with an ORC character
+     * corresponding to the context item at that index.
+     */
+    fun restoreOrcsFromTextRefs(rawText: String, items: List<ContextItemData>): String {
+        if (items.isEmpty()) return rawText
+        var text = rawText
+        for (item in items) {
+            val target = "`${item.name}`"
+            val idx = text.indexOf(target)
+            if (idx >= 0) {
+                text = text.substring(0, idx) + ORC + text.substring(idx + target.length)
+            }
+        }
+        return text
+    }
+
+    /**
+     * Convert backtick-wrapped text references like `` `name` `` in [text]
+     * into markdown links like `[name](file://path)`.
+     */
+    fun convertTextRefsToMarkdownLinks(text: String, contextFiles: List<ContextFileRef>): String {
+        var result = text
+        for (ref in contextFiles) {
+            val target = "`${ref.name}`"
+            val fileUrl = java.io.File(ref.path).toURI().toString()
+            val markdownLink = "[${ref.name}]($fileUrl)"
+            result = result.replace(target, markdownLink)
+        }
+        return result
+    }
+
+    /**
      * Compare two text snippets after normalizing tabs to spaces and
      * stripping trailing whitespace per line, so minor indentation
      * mismatches (partial first-line selection, mixed tabs/spaces) still match.

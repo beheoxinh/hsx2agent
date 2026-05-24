@@ -75,11 +75,16 @@ internal class HistoryContextWindow private constructor(
         body.add(bottomBar, BorderLayout.SOUTH)
         contentPane.add(body, BorderLayout.CENTER)
 
-        preferredSize = Dimension(JBUI.scale(700), JBUI.scale(750))
+        preferredSize = Dimension(JBUI.scale(1050), JBUI.scale(975))
         defaultCloseOperation = DISPOSE_ON_CLOSE
         isResizable = true
 
         chatPanel.setDomMessageLimit(100_000)
+
+        chatPanel.onResendMessage = { turnId, text ->
+            com.github.catatafishen.agentbridge.ui.ChatToolWindowContent.getInstance(project)
+                ?.restoreMessage(turnId, text)
+        }
 
         loadEarlierLabel.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) = loadEarlier()

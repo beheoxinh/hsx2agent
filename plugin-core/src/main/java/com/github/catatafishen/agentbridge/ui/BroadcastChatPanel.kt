@@ -67,7 +67,7 @@ class BroadcastChatPanel(
             nativePanel.onStatusMessage = value
         }
 
-    override var onResendMessage: ((String) -> Unit)?
+    override var onResendMessage: ((String, String) -> Unit)?
         get() = jcefPanel.onResendMessage
         set(value) {
             jcefPanel.onResendMessage = value

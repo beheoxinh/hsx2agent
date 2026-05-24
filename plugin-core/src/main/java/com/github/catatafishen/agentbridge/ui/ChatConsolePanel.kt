@@ -42,7 +42,7 @@ class ChatConsolePanel(
     override val component: JComponent get() = this
     override var onQuickReply: ((String) -> Unit)? = null
     override var onStatusMessage: ((type: String, message: String) -> Unit)? = null
-    override var onResendMessage: ((String) -> Unit)? = null
+    override var onResendMessage: ((String, String) -> Unit)? = null
     override var onContinueTurn: ((String) -> Unit)? = null
     var onCancelNudge: ((String) -> Unit)? = null
     var onCancelQueuedMessage: ((id: String, text: String) -> Unit)? = null
@@ -308,10 +308,40 @@ class ChatConsolePanel(
             extendAskUserBridgeJs = extendAskUserQuery.inject("reqId")
 
             val copyToClipboardQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
-            copyToClipboardQuery.addHandler { text ->
+            copyToClipboardQuery.addHandler { json ->
+                var finalClipboardText = json
+                try {
+                    val obj = com.google.gson.JsonParser.parseString(json).asJsonObject
+                    val turnId = obj.get("turnId").asString
+                    val text = obj.get("text").asString
+
+                    var convertedText = text
+                    if (turnId.isNotEmpty()) {
+                        val entries =
+                            com.github.catatafishen.agentbridge.session.db.ConversationService.getInstance(project)
+                                .loadTurnEntries(turnId)
+                        val promptEntry = entries.filterIsInstance<EntryData.Prompt>().firstOrNull()
+                        if (promptEntry != null && !promptEntry.contextFiles.isNullOrEmpty()) {
+                            convertedText = ContextTextUtils.convertTextRefsToMarkdownLinks(
+                                promptEntry.text,
+                                promptEntry.contextFiles
+                            )
+                        }
+                    }
+                    finalClipboardText = convertedText
+                } catch (e: Exception) {
+                    try {
+                        val obj = com.google.gson.JsonParser.parseString(json).asJsonObject
+                        if (obj.has("text")) {
+                            finalClipboardText = obj.get("text").asString
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+
                 ApplicationManager.getApplication().invokeLater {
                     com.intellij.openapi.ide.CopyPasteManager.getInstance()
-                        .setContents(java.awt.datatransfer.StringSelection(text))
+                        .setContents(java.awt.datatransfer.StringSelection(finalClipboardText))
                 }
                 null
             }
@@ -319,7 +349,17 @@ class ChatConsolePanel(
             copyToClipboardBridgeJs = copyToClipboardQuery.inject("text")
 
             val resendMessageQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
-            resendMessageQuery.addHandler { text -> onResendMessage?.invoke(text); null }
+            resendMessageQuery.addHandler { json ->
+                try {
+                    val obj = com.google.gson.JsonParser.parseString(json).asJsonObject
+                    val turnId = obj.get("turnId").asString
+                    val text = obj.get("text").asString
+                    onResendMessage?.invoke(turnId, text)
+                } catch (e: Exception) {
+                    onResendMessage?.invoke("", json)
+                }
+                null
+            }
             Disposer.register(this, resendMessageQuery)
             resendMessageBridgeJs = resendMessageQuery.inject("text")
 

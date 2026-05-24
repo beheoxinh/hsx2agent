@@ -97,12 +97,12 @@ export function addMessageActions(container: HTMLElement, isUser: boolean, turnI
     const continueIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
 
     actions.appendChild(createActionBtn('Copy to clipboard', copyIcon, () => {
-        (globalThis as any)._bridge?.copyToClipboard?.(text);
+        (globalThis as any)._bridge?.copyToClipboard?.(JSON.stringify({turnId, text}));
     }));
 
     if (isUser) {
         actions.appendChild(createActionBtn('Restore to input', restoreIcon, () => {
-            (globalThis as any)._bridge?.resendMessage?.(text);
+            (globalThis as any)._bridge?.resendMessage?.(JSON.stringify({turnId, text}));
         }));
     } else {
         actions.appendChild(createActionBtn('Continue response', continueIcon, () => {

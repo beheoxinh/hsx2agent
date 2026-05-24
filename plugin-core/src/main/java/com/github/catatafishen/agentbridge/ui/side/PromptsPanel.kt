@@ -369,6 +369,12 @@ internal class PromptsPanel(
             }
         }
 
+        // Set initial preferred size to be wider and taller
+        val screenSize = Toolkit.getDefaultToolkit().screenSize
+        val initialWidth = (screenSize.width * 0.3).toInt() // Giả định chiều rộng ban đầu
+        val initialHeight = (screenSize.height * 0.4).toInt() // Giả định chiều cao ban đầu
+        preferredSize = Dimension((initialWidth * 1.5).toInt(), (initialHeight * 1.3).toInt())
+
         chatConsole.addEntriesChangeListener(entriesListener)
         addHierarchyListener(hierarchyListener)
         PromptDbService.getInstance(project).registerNavigateCallback(::applySearchParams)

@@ -32,7 +32,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
 
     override var onQuickReply: ((String) -> Unit)? = null
     override var onStatusMessage: ((type: String, message: String) -> Unit)? = null
-    override var onResendMessage: ((String) -> Unit)? = null
+    override var onResendMessage: ((String, String) -> Unit)? = null
     override var onContinueTurn: ((String) -> Unit)? = null
     var onLoadMoreRequested: (() -> Unit)? = null
 
@@ -935,7 +935,7 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                     .setContents(java.awt.datatransfer.StringSelection(text))
             })
             add(createActionIcon(com.intellij.icons.AllIcons.Actions.Rollback, "Restore to input") {
-                onResendMessage?.invoke(text)
+                onResendMessage?.invoke("", text)
             })
         }
 

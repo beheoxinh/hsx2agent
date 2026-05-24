@@ -271,7 +271,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
     /**
      * Applies the current git policy by enabling/disabling the appropriate
-     * git tools in {@link #disabledToolIds}.
+     * git tools in {@link State#disabledToolIds}.
      */
     public void applyGitPolicy() {
         switch (myState.gitPolicy) {

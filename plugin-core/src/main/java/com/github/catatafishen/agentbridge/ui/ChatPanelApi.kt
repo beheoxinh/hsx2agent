@@ -25,7 +25,7 @@ interface ChatPanelApi : Disposable {
     var onQuickReply: ((String) -> Unit)?
 
     /** Callback invoked when the user clicks 'Resend' (restore to input). */
-    var onResendMessage: ((String) -> Unit)?
+    var onResendMessage: ((String, String) -> Unit)?
 
     /** Callback invoked when the user clicks 'Continue' for a turn. */
     var onContinueTurn: ((String) -> Unit)?

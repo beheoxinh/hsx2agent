@@ -59,6 +59,14 @@ class ChatToolWindowContent(
         fun getInstance(project: Project): ChatToolWindowContent? = instances[project]
     }
 
+    fun restoreMessage(turnId: String, text: String) {
+        ApplicationManager.getApplication().invokeLater {
+            if (::consolePanel.isInitialized) {
+                consolePanel.onResendMessage?.invoke(turnId, text)
+            }
+        }
+    }
+
     private val cardLayout = CardLayout()
     private val mainPanel = JBPanel<JBPanel<*>>(cardLayout)
 
@@ -1115,6 +1123,29 @@ class ChatToolWindowContent(
     )
 
     private fun createStatusInputChat(): JComponent {
+        val chatInputSettings = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance()
+
+        val smartPasteCheckbox = com.intellij.ui.components.JBCheckBox("Smart Paste", chatInputSettings.isSmartPasteEnabled).apply {
+            font = font.deriveFont(10f)
+            isOpaque = false
+            border = JBUI.Borders.empty()
+            addActionListener {
+                chatInputSettings.isSmartPasteEnabled = isSelected
+            }
+        }
+
+        val softWrapsCheckbox = com.intellij.ui.components.JBCheckBox("Soft Wraps", chatInputSettings.isSoftWrapsEnabled).apply {
+            font = font.deriveFont(10f)
+            isOpaque = false
+            border = JBUI.Borders.empty()
+            addActionListener {
+                chatInputSettings.isSoftWrapsEnabled = isSelected
+                promptTextArea.editor?.settings?.isUseSoftWraps = isSelected
+                promptTextArea.editor?.component?.revalidate()
+                promptTextArea.editor?.component?.repaint()
+            }
+        }
+
         val gitLabel = JBLabel().apply {
             font = font.deriveFont(10f)
             foreground = JBColor(0x666666, 0x999999)
@@ -1125,6 +1156,8 @@ class ChatToolWindowContent(
         }
         val rightPanel = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.RIGHT, 8, 0)).apply {
             isOpaque = false
+            add(smartPasteCheckbox)
+            add(softWrapsCheckbox)
             add(gitLabel)
             add(webLabel)
         }
@@ -1144,6 +1177,9 @@ class ChatToolWindowContent(
             webLabel.text = if (ws.isRunning) "Web: Running (${ws.port})"
             else if (wsSettings.isEnabled) "Web: Stopped"
             else "Web: Disabled"
+
+            smartPasteCheckbox.isSelected = chatInputSettings.isSmartPasteEnabled
+            softWrapsCheckbox.isSelected = chatInputSettings.isSoftWrapsEnabled
         }
 
         update()
@@ -1367,7 +1403,8 @@ class ChatToolWindowContent(
 
     private fun restorePromptText(rawText: String, contextItems: List<ContextItemData>) {
         ApplicationManager.getApplication().invokeLater {
-            promptTextArea.text = rawText
+            val restoredText = ContextTextUtils.restoreOrcsFromTextRefs(rawText, contextItems)
+            promptTextArea.text = restoredText
             val editor = promptTextArea.editor as? EditorEx
             if (editor != null && contextItems.isNotEmpty()) {
                 contextManager.restoreInlineChips(editor, contextItems)
@@ -2505,9 +2542,27 @@ class ChatToolWindowContent(
                 }
             }
         }
-        consolePanel.onResendMessage = { text ->
+        consolePanel.onResendMessage = { turnId, text ->
             ApplicationManager.getApplication().invokeLater {
-                restorePromptText(text, emptyList())
+                val entries = conversationStore.loadTurnEntries(turnId)
+                val promptEntry = entries.filterIsInstance<EntryData.Prompt>().firstOrNull()
+                if (promptEntry != null) {
+                    val contextItems = promptEntry.contextFiles?.map { ref ->
+                        val fileType = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
+                            .getFileTypeByFileName(ref.name)
+                        ContextItemData(
+                            path = ref.path,
+                            name = ref.name,
+                            startLine = ref.line,
+                            endLine = 0,
+                            fileTypeName = fileType.name,
+                            isSelection = ref.line > 0
+                        )
+                    } ?: emptyList()
+                    restorePromptText(promptEntry.text, contextItems)
+                } else {
+                    restorePromptText(text, emptyList())
+                }
             }
         }
         consolePanel.onContinueTurn = { _ ->
