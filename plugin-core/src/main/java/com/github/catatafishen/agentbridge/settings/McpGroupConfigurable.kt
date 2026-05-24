@@ -93,9 +93,9 @@ class McpGroupConfigurable(private val project: Project) :
         }
         row {
             comment(
-                "<b>Lỏng lẻo:</b> All git tools enabled<br>" +
+                "<b>Features:</b> All git tools enabled<br>" +
                     "<b>Standard:</b> Block remote git operations (push, fetch, pull)<br>" +
-                    "<b>Safe:</b> Only read-only git tools (status, diff, log, blame, show, file history)"
+                    "<b>Safety:</b> Only read-only git tools (status, diff, log, blame, show, file history)"
             )
         }
         separator()

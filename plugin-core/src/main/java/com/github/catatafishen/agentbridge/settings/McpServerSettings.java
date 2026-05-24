@@ -361,7 +361,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private boolean autoCommit = false;
         private boolean suggestGitInit = true;
         private boolean showEditorHighlights = true;
-        private String gitPolicy = "LOOSE";
+        private String gitPolicy = "STANDARD";
         private String kindReadColorKey = null;
         private String kindEditColorKey = null;
         private String kindExecuteColorKey = null;

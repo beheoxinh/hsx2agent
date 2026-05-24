@@ -108,7 +108,7 @@ class AutoCommitToggleAction(private val project: Project) : ToggleAction(
         e.presentation.isEnabled = autoApproveOn && !safeMode
         e.presentation.description = when {
             !autoApproveOn -> "Requires Auto-Approve to be enabled first"
-            safeMode -> "Not available in Safe mode — git write tools are restricted"
+            safeMode -> "Not available in Safety mode — git write tools are restricted"
             else -> "Automatically trigger a commit turn when all changes are approved and turn ends"
         }
     }
