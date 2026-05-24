@@ -502,8 +502,9 @@ public final class PiCliClient extends AbstractAgentClient {
                     String tail = lastStderrLine();
                     String reason = "Pi message ended without content";
                     if (hint != null) reason += ": " + hint;
-                    else if (tail != null) reason += ": " + tail;
-                    else reason += " (provider returned empty response — check model/API key)";
+                    else if (tail != null && !tail.startsWith("[agentbridge-providers]")) reason += ": " + tail;
+                    else
+                        reason += " — provider returned empty response. Check: (1) 'Send Authorization: Bearer' enabled in provider settings, (2) model ID matches what proxy expects, (3) API type matches proxy endpoint";
 
                     turn.failure.compareAndSet(null, reason);
                     turn.done.countDown();

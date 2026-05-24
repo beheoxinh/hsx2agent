@@ -47,7 +47,7 @@ public final class PiCustomProvidersService implements PersistentStateComponent<
         public int maxTokens = 4096; // NOSONAR java:S1104
         public boolean supportsImage; // NOSONAR java:S1104
         public boolean supportsReasoning; // NOSONAR java:S1104
-        public boolean authHeader; // NOSONAR java:S1104
+        public boolean authHeader = true; // NOSONAR java:S1104
 
         public Entry() {
             // for XmlSerializer
