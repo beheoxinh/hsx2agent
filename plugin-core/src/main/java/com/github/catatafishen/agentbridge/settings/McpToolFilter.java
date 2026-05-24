@@ -39,7 +39,12 @@ public final class McpToolFilter {
         "set_theme",
         "list_themes",
         "run_sonarqube_analysis",
-        "get_sonar_rule_description"
+        "get_sonar_rule_description",
+        "breakpoint_list",
+        "breakpoint_add",
+        "breakpoint_add_exception",
+        "breakpoint_update",
+        "breakpoint_remove"
     );
 
     /**
@@ -47,7 +52,7 @@ public final class McpToolFilter {
      * Existing installations with an older version get only the NEW entries applied,
      * preserving any user-made enable/disable choices for previously-known tools.
      */
-    public static final int CURRENT_DEFAULTS_VERSION = 2;
+    public static final int CURRENT_DEFAULTS_VERSION = 3;
 
     /**
      * Incremental defaults per version. Each entry maps a version number to the
@@ -55,11 +60,13 @@ public final class McpToolFilter {
      * <ul>
      *   <li>Version 1: cosmetic/niche tools (original defaults)</li>
      *   <li>Version 2: SonarQube tools (expensive, opt-in)</li>
+     *   <li>Version 3: breakpoint tools (niche, debugging)</li>
      * </ul>
      */
     static final java.util.Map<Integer, Set<String>> DEFAULTS_BY_VERSION = java.util.Map.of(
         1, Set.of("get_notifications", "set_theme", "list_themes"),
-        2, Set.of("run_sonarqube_analysis", "get_sonar_rule_description")
+        2, Set.of("run_sonarqube_analysis", "get_sonar_rule_description"),
+        3, Set.of("breakpoint_list", "breakpoint_add", "breakpoint_add_exception", "breakpoint_update", "breakpoint_remove")
     );
 
     private McpToolFilter() {
