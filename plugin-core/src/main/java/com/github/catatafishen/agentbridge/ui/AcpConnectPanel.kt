@@ -379,7 +379,7 @@ class AcpConnectPanel(
         section.add(
             createSectionHeader(
                 step = 2,
-                title = "Data History Cleaner",
+                title = "Data History",
                 description = "Clear project-level data accumulated by the plugin"
             )
         )
@@ -466,30 +466,27 @@ class AcpConnectPanel(
             JBPanel<JBPanel<*>>(GridLayout(1, 2, JBUI.scale(8), 0)).apply {
                 isOpaque = false
                 alignmentX = LEFT_ALIGNMENT
-                maximumSize = Dimension(JBUI.scale(480), JBUI.scale(64))
+                maximumSize = Dimension(JBUI.scale(480), JBUI.scale(96))
                 add(left)
                 add(right)
             }
 
-        section.add(twoColumns(col(b1, b2, b3), col(b4, b5)))
-        section.add(Box.createVerticalStrut(JBUI.scale(6)))
-
-        val clearAllBtn = JButton("Clear All Data", AllIcons.Actions.GC).apply {
-            toolTipText = "Delete all project data in .agentbridge and .agent-work — resets to first-use state"
-            alignmentX = LEFT_ALIGNMENT
-            maximumSize = Dimension(JBUI.scale(480), JBUI.scale(28))
-            background = JBColor(Color(0xCC, 0x33, 0x33), Color(0x8B, 0x22, 0x22))
-            foreground = JBColor(Color(0xFF, 0xFF, 0xFF), Color(0xEE, 0xEE, 0xEE))
+        val clearAllBtn = cleanBtn(
+            "Clear All Data",
+            "Delete all project data in .agentbridge and .agent-work — resets to first-use state",
+            AllIcons.Actions.GC
+        ) {
+            confirmAndRun(
+                "Clear All Data",
+                "Delete all contents of .agentbridge and .agent-work?\n" +
+                    "This will reset the project to first-use state.\nThis action cannot be undone."
+            ) { clearAllData() }
+        }.apply {
+            foreground = JBColor(Color(0xCC, 0x33, 0x33), Color(0xFF, 0x6B, 0x6B))
             font = JBUI.Fonts.smallFont().asBold()
-            addActionListener {
-                confirmAndRun(
-                    "Clear All Data",
-                    "Delete all contents of .agentbridge and .agent-work?\n" +
-                        "This will reset the project to first-use state.\nThis action cannot be undone."
-                ) { clearAllData() }
-            }
         }
-        section.add(clearAllBtn)
+
+        section.add(twoColumns(col(b1, b2, b3), col(b4, b5, clearAllBtn)))
 
         return section
     }

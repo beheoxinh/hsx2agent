@@ -1618,7 +1618,7 @@ class ChatToolWindowContent(
                 // If a new turn was started by unhandled nudge, don't interrupt it.
                 if (isSending || project.isDisposed) return@invokeLater
                 submitTurn(
-                    "Commit all approved changes now. Use a descriptive conventional commit message. No more actions or research needed.",
+                    "If further work is needed to complete the task, pick the best and most efficient solution then finish it. If there are no more actions required, commit all approved changes now with a descriptive conventional commit message without more actions or research needed.",
                     emptyList(),
                     isAutoCommit = true,
                     isSilent = true
