@@ -421,12 +421,12 @@ class AcpConnectPanel(
             ) { clearSessionHistory() }
         }
         val b3 = cleanBtn(
-            "Clear Tool Statistics History",
+            "Clear Statistics History",
             "Delete all recorded tool call statistics",
             AllIcons.Actions.GC
         ) {
             confirmAndRun(
-                "Clear Tool Statistics History",
+                "Clear Statistics History",
                 "Delete all tool call statistics records? Session history will be preserved."
             ) { clearToolStatistics() }
         }
@@ -472,12 +472,12 @@ class AcpConnectPanel(
             }
 
         val clearAllBtn = cleanBtn(
-            "Clear All Data",
+            "Clear All Plugins Data",
             "Delete all project data in .agentbridge and .agent-work — resets to first-use state",
             AllIcons.Actions.GC
         ) {
             confirmAndRun(
-                "Clear All Data",
+                "Clear All Plugins Data",
                 "Delete all contents of .agentbridge and .agent-work?\n" +
                     "This will reset the project to first-use state.\nThis action cannot be undone."
             ) { clearAllData() }

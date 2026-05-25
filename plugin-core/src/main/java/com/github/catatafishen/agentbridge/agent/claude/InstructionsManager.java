@@ -115,6 +115,10 @@ public final class InstructionsManager {
         if (!additionalInstructions.isBlank()) {
             sb.append("\n\n").append(additionalInstructions);
         }
+        String guardrails = StartupInstructionsSettings.getInstance().getImmutableGuardrails();
+        if (!guardrails.isEmpty()) {
+            sb.append("\n\n").append(guardrails);
+        }
         sb.append("\n\n").append(INSTRUCTIONS_END);
         return sb.toString();
     }

@@ -85,6 +85,7 @@ public final class McpProtocolHandler {
     private static final String PROTOCOL_VERSION = "2025-11-25";
     private static final String STARTUP_INSTRUCTIONS_URI = "resource://default-startup-instructions.md";
     private static final String STARTUP_INSTRUCTIONS = loadInstructions();
+    private static final String IMMUTABLE_GUARDRAILS = loadGuardrails();
     private static final String RESOURCES_CURSOR_PREFIX = "resources:";
     private static final String RESOURCE_TEMPLATES_CURSOR_PREFIX = "resourceTemplates:";
 
@@ -204,6 +205,7 @@ public final class McpProtocolHandler {
         if (!memoryContext.isEmpty()) {
             sb.append("\n\n").append(memoryContext);
         }
+        sb.append("\n\n").append(IMMUTABLE_GUARDRAILS);
         return sb.toString();
     }
 
@@ -258,6 +260,18 @@ public final class McpProtocolHandler {
             LOG.error("Failed to read /default-startup-instructions.md from classpath for MCP initialize", e);
         }
         return "You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.";
+    }
+
+    private static String loadGuardrails() {
+        try (java.io.InputStream is = McpProtocolHandler.class.getResourceAsStream("/immutable-guardrails.md")) {
+            if (is != null) {
+                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            }
+            LOG.warn("Resource /immutable-guardrails.md not found in classpath");
+        } catch (IOException e) {
+            LOG.error("Failed to read /immutable-guardrails.md from classpath", e);
+        }
+        return "";
     }
 
     private JsonObject handleToolsList(JsonObject msg) {

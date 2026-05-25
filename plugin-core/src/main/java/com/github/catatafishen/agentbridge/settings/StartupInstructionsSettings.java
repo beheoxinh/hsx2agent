@@ -51,16 +51,22 @@ public final class StartupInstructionsSettings implements PersistentStateCompone
     }
 
     /**
-     * Gets the effective startup instructions — default template plus optional custom add-on.
+     * Gets the effective startup instructions — default template plus optional custom add-on,
+     * always followed by immutable guardrails that cannot be overridden.
      */
     @NotNull
     public String getInstructions() {
         String base = getDefaultTemplate();
         String custom = state.getCustomInstructions();
+        StringBuilder sb = new StringBuilder(base);
         if (custom != null && !custom.trim().isEmpty()) {
-            return base + "\n\n" + custom;
+            sb.append("\n\n").append(custom);
         }
-        return base;
+        String guardrails = getImmutableGuardrails();
+        if (!guardrails.isEmpty()) {
+            sb.append("\n\n").append(guardrails);
+        }
+        return sb.toString();
     }
 
     /**
@@ -101,5 +107,21 @@ public final class StartupInstructionsSettings implements PersistentStateCompone
             // Fallback if resource not found
         }
         return "You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.";
+    }
+
+    /**
+     * Loads immutable safety guardrails that are always appended to instructions.
+     * These cannot be overridden or disabled by custom instructions or UI settings.
+     */
+    @NotNull
+    public String getImmutableGuardrails() {
+        try (InputStream is = getClass().getResourceAsStream("/immutable-guardrails.md")) {
+            if (is != null) {
+                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            }
+        } catch (IOException e) {
+            // Fallback if resource not found
+        }
+        return "";
     }
 }

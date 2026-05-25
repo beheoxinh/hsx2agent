@@ -57,8 +57,8 @@ class StartupInstructionsSettingsTest {
         settings.setCustomInstructions("Custom prompt.");
         String result = settings.getInstructions();
         assertTrue(result.startsWith(settings.getDefaultTemplate()));
-        assertTrue(result.endsWith("Custom prompt."));
         assertTrue(result.contains("\n\nCustom prompt."));
+        assertTrue(result.contains(settings.getImmutableGuardrails()));
     }
 
     @Test
@@ -97,7 +97,8 @@ class StartupInstructionsSettingsTest {
         assertTrue(settings.isUsingCustomInstructions());
         String result = settings.getInstructions();
         assertTrue(result.startsWith(settings.getDefaultTemplate()));
-        assertTrue(result.endsWith("Loaded custom"));
+        assertTrue(result.contains("Loaded custom"));
+        assertTrue(result.contains(settings.getImmutableGuardrails()));
     }
 
     @Test
