@@ -466,7 +466,6 @@ class AcpConnectPanel(
             JBPanel<JBPanel<*>>(GridLayout(1, 2, JBUI.scale(8), 0)).apply {
                 isOpaque = false
                 alignmentX = LEFT_ALIGNMENT
-                maximumSize = Dimension(JBUI.scale(480), JBUI.scale(96))
                 add(left)
                 add(right)
             }
@@ -963,7 +962,18 @@ class AcpConnectPanel(
             isVisible = false // Hidden if no sessions
         }.also { recentSessionsTitle = it })
         panel.add(Box.createVerticalStrut(JBUI.scale(4)))
-        panel.add(recentSessionsPanel)
+        val recentScroll = JBScrollPane(recentSessionsPanel).apply {
+            isOpaque = false
+            viewport.isOpaque = false
+            border = JBUI.Borders.empty()
+            horizontalScrollBarPolicy = JBScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+            verticalScrollBarPolicy = JBScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+            alignmentX = LEFT_ALIGNMENT
+            val rowHeight = JBUI.scale(24)
+            maximumSize = Dimension(Int.MAX_VALUE, rowHeight * 3)
+            preferredSize = Dimension(0, rowHeight * 3)
+        }
+        panel.add(recentScroll)
 
         refreshSessionCombo()
         return panel
