@@ -52,6 +52,7 @@ class ToolsConfigurable(private val project: Project) :
     private var toolNameFilter: JTextField? = null
     private var hooksOnlyFilter: JCheckBox? = null
     private var hookStatusPanel: HookFileStatusPanel? = null
+    private var databaseSecurityCheckbox: JBCheckBox? = null
 
     override fun createPanel() = panel {
         row {
