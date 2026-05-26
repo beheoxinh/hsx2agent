@@ -214,6 +214,11 @@ public final class AgentNudgeService {
         messageQueue.remove(message.trim());
     }
 
+    /** Clears all queued messages. Used when the turn is stopped by the user. */
+    public void clearMessageQueue() {
+        messageQueue.clear();
+    }
+
     @Nullable
     public String getNextQueuedMessage() {
         return messageQueue.poll();

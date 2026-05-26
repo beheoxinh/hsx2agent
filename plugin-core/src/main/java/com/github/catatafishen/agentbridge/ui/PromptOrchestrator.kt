@@ -111,6 +111,15 @@ class PromptOrchestrator(
 
     private var turnGeneration = 0
 
+    /** Number of consecutive auto-commit turns without user interaction. */
+    private var consecutiveAutoCommits = 0
+
+    /** Max auto-commits before the loop is suppressed. */
+    private val maxAutoCommitCount = 3
+
+    /** Whether the current turn was started as auto-commit. */
+    private var isTurnAutoCommit = false
+
     private var pendingRawText = ""
     private var pendingContextItems: List<ContextItemData> = emptyList()
     private var pendingPromptEntryId = ""
@@ -132,6 +141,8 @@ class PromptOrchestrator(
             return
         }
         val myGeneration = synchronized(this) { ++turnGeneration }
+        isTurnAutoCommit = isAutoCommit
+        if (!isAutoCommit) consecutiveAutoCommits = 0
         cleanupPreviousTurnEditors()
         pendingRawText = rawText
         pendingContextItems = contextItems
@@ -168,6 +179,10 @@ class PromptOrchestrator(
         thread?.interrupt()
         consolePanel().cancelAllRunning()
         consolePanel().addErrorEntry("Stopped by user")
+
+        // Clear any pending queued messages so they do not auto-fire after stop.
+        com.github.catatafishen.agentbridge.services.AgentNudgeService
+            .getInstance(project).clearMessageQueue()
 
         // Fallback: if the agent process ignores session/cancel, kill the transport after
         // a grace period so the process does not keep consuming tokens. Use a daemon
@@ -530,6 +545,16 @@ class PromptOrchestrator(
 
         callbacks.notifyIfUnfocused(turnToolCallCount)
 
+        // After a successful auto-commit turn, clear the edit session so the old
+        // changes do not trigger another auto-commit on the next checkAutoCommit().
+        if (isTurnAutoCommit && consecutiveAutoCommits < maxAutoCommitCount) {
+            consecutiveAutoCommits++
+            try {
+                com.github.catatafishen.agentbridge.psi.review.AgentEditSession
+                    .getInstance(project)?.removeAllApproved()
+            } catch (_: Throwable) {}
+        }
+
         callbacks.saveTurnStatistics(prompt, turnToolCallCount, turnModelId)
         callbacks.appendNewEntries()
         val lastResponse = consolePanel().getLastResponseText()
@@ -551,7 +576,8 @@ class PromptOrchestrator(
         )
 
         val nextMsg = AgentNudgeService.getInstance(project).nextQueuedMessage
-        if (nextMsg != null) {
+        // Skip queued messages when we've hit the auto-commit limit to prevent loops.
+        if (nextMsg != null && consecutiveAutoCommits < maxAutoCommitCount) {
             callbacks.onQueuedMessageConsumed(nextMsg)
             ApplicationManager.getApplication().invokeLater {
                 consolePanel().removeQueuedMessageByText(nextMsg)
