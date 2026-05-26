@@ -12,6 +12,7 @@ import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator;
 import com.github.catatafishen.agentbridge.ui.NudgeSource;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -251,6 +252,10 @@ public final class CopilotClient extends AcpClient {
     }
 
     private void migrateResumeSessionFromLegacyPath() {
+        if (!V1ToV2Migrator.isDbMigrationAllowed()) {
+            LOG.warn("Resume-session legacy path migration blocked: DB migrations are disabled by policy");
+            return;
+        }
         String resumeId = ActiveAgentManager.getInstance(project).getSettings().getResumeSessionId();
         if (resumeId == null) return;
 

@@ -97,6 +97,14 @@ class McpGroupConfigurable(private val project: Project) :
                     "<b>Safety:</b> Only read-only git tools (status, diff, log, blame, show, file history)"
             )
         }
+        row {
+            checkBox("Database tool security (block migrations and seeds)")
+                .comment(
+                    "When enabled, database migration/seed commands are blocked by policy. " +
+                        "This also controls the runtime safety gate used by shell/run-config tools and legacy migrations."
+                )
+                .bindSelected({ settings.isDbMigrationAllowed }, { settings.isDbMigrationAllowed = it })
+        }
         separator()
         row {
             button("Restart MCP Server") { e ->

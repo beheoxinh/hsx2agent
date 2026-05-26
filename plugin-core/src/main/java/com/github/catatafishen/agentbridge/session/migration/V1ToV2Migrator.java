@@ -28,6 +28,11 @@ import java.util.UUID;
  */
 public final class V1ToV2Migrator {
 
+    public static boolean isDbMigrationAllowed() {
+        return Boolean.getBoolean("agentbridge.allow.db.migration") ||
+            "true".equalsIgnoreCase(System.getenv("AGENTBRIDGE_ALLOW_DB_MIGRATION"));
+    }
+
     private static final Logger LOG = Logger.getInstance(V1ToV2Migrator.class);
 
     private static final String AGENT_WORK_DIR = ".agent-work";
@@ -53,6 +58,10 @@ public final class V1ToV2Migrator {
      * @param basePath absolute path to the project root, may be {@code null}
      */
     public static void migrateIfNeeded(@Nullable String basePath) {
+        if (!isDbMigrationAllowed()) {
+            LOG.warn("V1→V2 migration blocked: DB migrations are disabled by policy");
+            return;
+        }
         File sessionsDir = new File(agentWorkDir(basePath), SESSIONS_DIR);
         File indexFile = new File(sessionsDir, SESSIONS_INDEX);
         if (indexFile.exists()) return; // already migrated

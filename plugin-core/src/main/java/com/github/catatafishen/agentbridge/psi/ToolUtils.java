@@ -612,8 +612,10 @@ public final class ToolUtils {
             return "find";
         }
 
-        // Block direct Gradle compile tasks — should use build_project (IntelliJ incremental compiler)
-        if (isGradleCompileCommand(cmd)) return "compile";
+        // Block DB schema migration/seed commands — these can modify live schema or data.
+        if (isDbMigrationOrSeedCommand(cmd)) {
+            return "db_migration";
+        }
 
         // Block build/check tasks that implicitly run tests — should use build_project or run_tests
         if (isBuildCommand(cmd)) return "test";
@@ -782,6 +784,25 @@ public final class ToolUtils {
     }
 
     /**
+     * Detects database migration/seed commands that can modify schema or data.
+     */
+    private static boolean isDbMigrationOrSeedCommand(String cmd) {
+        String[] patterns = {
+            "migrate", "migratedb", "migrate:run", "db:migrate", "db push", "db:push",
+            "seed", "seed:run", "db:seed", "db seed", "schema push", "schema:push",
+            "flyway migrate", "liquibase update", "prisma migrate", "typeorm migration:run",
+            "sequelize db:migrate", "sequelize db:seed", "knex migrate", "alembic upgrade"
+        };
+        for (String p : patterns) {
+            if (cmd.equals(p) || cmd.contains(" " + p) || cmd.contains("&& " + p) || cmd.contains("; " + p)
+                || cmd.contains("| " + p) || cmd.startsWith(p + " ")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Checks if a command is a {@code find} command with {@code -name} or {@code -type} flags.
      * Uses indexOf chains instead of regex to avoid Sonar S5852 (ReDoS) hotspots.
      */
@@ -872,8 +893,8 @@ public final class ToolUtils {
                 + "CI artifacts, build/ output) — pass an explicit file/dir argument to use it.";
             case "find" -> "Error: find commands are not allowed via " + toolName + ". "
                 + "Use list_project_files to find files instead.";
-            case "compile" -> "Error: Gradle compile tasks are not allowed via " + toolName + ". "
-                + "Use build_project to compile via IntelliJ's incremental compiler instead.";
+            case "db_migration" -> "Error: database migration/seed commands are not allowed via " + toolName + ". "
+                + "Use the project migration tooling manually and review schema changes before execution.";
             case "test" -> "Error: test commands are not allowed via " + toolName + " (including build/check/verify " +
                 "which implicitly run tests). Use run_tests to run tests with proper IntelliJ integration instead.";
             default -> "Error: this command is not allowed via " + toolName + ". Use dedicated IntelliJ tools instead.";

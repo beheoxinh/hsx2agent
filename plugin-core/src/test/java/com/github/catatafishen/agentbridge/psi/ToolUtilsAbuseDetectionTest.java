@@ -233,7 +233,30 @@ class ToolUtilsAbuseDetectionTest {
         }
     }
 
-    // ── Allowed commands ─────────────────────────────────────────────────────
+    @Nested
+    @DisplayName("database migration/seed abuse detection")
+    class DbMigrationAbuse {
+        @ParameterizedTest
+        @ValueSource(strings = {
+            "prisma migrate deploy",
+            "prisma db push",
+            "flyway migrate",
+            "liquibase update",
+            "typeorm migration:run",
+            "sequelize db:migrate",
+            "sequelize db:seed",
+            "knex migrate:latest",
+            "alembic upgrade head",
+            "npm run seed",
+            "./manage.py migrate",
+            "python manage.py loaddata fixtures.json",
+        })
+        void blocksDbMigrationCommands(String cmd) {
+            assertEquals("db_migration", ToolUtils.detectCommandAbuseType(cmd),
+                "Should block: " + cmd);
+        }
+    }
+
 
     @Nested
     @DisplayName("allowed commands (no abuse detected)")

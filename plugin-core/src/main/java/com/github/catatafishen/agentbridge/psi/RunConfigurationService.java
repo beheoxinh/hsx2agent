@@ -243,6 +243,10 @@ public final class RunConfigurationService {
         if (hasPath && hasText) {
             return "Error: 'script_path' and 'script_text' are mutually exclusive — provide exactly one.";
         }
+
+        String dbAbuseError = checkDbMutationAbuse(args, "shell_script");
+        if (dbAbuseError != null) return dbAbuseError;
+
         var config = new ShellScriptRunConfigXmlBuilder.ShellScriptConfig(
             args.has(PARAM_SCRIPT_PATH) ? args.get(PARAM_SCRIPT_PATH).getAsString() : null,
             args.has(PARAM_SCRIPT_TEXT) ? args.get(PARAM_SCRIPT_TEXT).getAsString() : null,
@@ -380,6 +384,35 @@ public final class RunConfigurationService {
     }
 
     // ---- Helper Methods ----
+
+    /**
+     * Check shell script inputs for DB migration/seed commands.
+     */
+    private static String checkDbMutationAbuse(JsonObject args, String toolName) {
+        String[] fields = {PARAM_PROGRAM_ARGS, PARAM_SCRIPT_TEXT, PARAM_SCRIPT_OPTIONS, PARAM_SCRIPT_PATH};
+        for (String field : fields) {
+            if (!args.has(field)) continue;
+            String value = args.get(field).getAsString();
+            String probe = field.equals(PARAM_SCRIPT_PATH) ? readTextIfPossible(value) : value;
+            String abuseType = ToolUtils.detectCommandAbuseType(probe);
+            if ("db_migration".equals(abuseType)) {
+                return ToolUtils.getCommandAbuseMessage(abuseType, toolName);
+            }
+        }
+        return null;
+    }
+
+    private static String readTextIfPossible(String path) {
+        try {
+            java.nio.file.Path p = java.nio.file.Path.of(path);
+            if (java.nio.file.Files.isRegularFile(p) && java.nio.file.Files.isReadable(p)) {
+                return java.nio.file.Files.readString(p);
+            }
+        } catch (Exception ignored) {
+            // best-effort only
+        }
+        return path;
+    }
 
     /**
      * Check program_args for abuse patterns (same detection as run_command).

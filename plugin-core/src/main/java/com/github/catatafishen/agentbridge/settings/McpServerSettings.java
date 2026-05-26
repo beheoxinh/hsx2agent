@@ -195,17 +195,23 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
      * in the editor while a review session is active. Users who rely on git diff colors may
      * prefer to disable this to avoid redundant overlapping highlights.
      */
-    public boolean isShowEditorHighlights() {
-        return myState.showEditorHighlights;
+    public boolean isDbMigrationAllowed() {
+        return myState.dbMigrationAllowed;
     }
 
-    public void setShowEditorHighlights(boolean show) {
-        myState.showEditorHighlights = show;
+    public void setDbMigrationAllowed(boolean allowed) {
+        myState.dbMigrationAllowed = allowed;
+        syncDbMigrationFlag(allowed);
     }
 
-    /**
-     * Tools that modify remote state — blocked in STANDARD and SAFE modes.
-     */
+    private void syncDbMigrationFlag(boolean allowed) {
+        if (allowed) {
+            System.setProperty("agentbridge.allow.db.migration", "true");
+        } else {
+            System.clearProperty("agentbridge.allow.db.migration");
+        }
+    }
+
     public static final Set<String> REMOTE_GIT_TOOLS = Set.of(
         "git_push",
         "git_fetch",
@@ -342,6 +348,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     @Override
     public void loadState(@NotNull State state) {
         myState = state;
+        syncDbMigrationFlag(myState.dbMigrationAllowed);
     }
 
     public static class State {
@@ -361,6 +368,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private boolean autoCommit = false;
         private boolean suggestGitInit = true;
         private boolean showEditorHighlights = true;
+        private boolean dbMigrationAllowed = false;
         private String gitPolicy = "STANDARD";
         private String kindReadColorKey = null;
         private String kindEditColorKey = null;
