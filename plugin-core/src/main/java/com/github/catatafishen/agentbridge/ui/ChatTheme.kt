@@ -34,8 +34,6 @@ object ChatTheme {
         JBColor(Color(0x28, 0x6B, 0xC0), Color(86, 156, 214)),
     )
 
-    // Tool kind chip colors — semantic categories (kept for external API compatibility)
-    val KIND_THINK_COLOR: JBColor = JBColor(Color(0x7A, 0x70, 0xA8), Color(170, 155, 210))
     val KIND_OTHER_COLOR: JBColor = JBColor(Color(0x78, 0x7C, 0x80), Color(160, 165, 170))
 
     fun buildCssVars(): String = buildCssVars(null)
@@ -164,17 +162,30 @@ object ChatTheme {
         val kindRead = ToolKindColors.readColor(mcpSettings)
         val kindSearch = ToolKindColors.searchColor(mcpSettings)
         val kindEdit = ToolKindColors.editColor(mcpSettings)
+        val kindWrite = ToolKindColors.writeColor(mcpSettings)
         val kindExecute = ToolKindColors.executeColor(mcpSettings)
+        val kindDestructive = ToolKindColors.destructiveColor(mcpSettings)
+        val kindThink = ToolKindColors.thinkColor(mcpSettings)
         sb.append("--kind-read:${rgb(kindRead)};--kind-search:${rgb(kindSearch)};")
-        sb.append("--kind-edit:${rgb(kindEdit)};--kind-execute:${rgb(kindExecute)};")
-        sb.append("--kind-think:${rgb(KIND_THINK_COLOR)};--kind-other:${rgb(KIND_OTHER_COLOR)};")
+        sb.append("--kind-edit:${rgb(kindEdit)};--kind-write:${rgb(kindWrite)};")
+        sb.append("--kind-execute:${rgb(kindExecute)};--kind-destructive:${rgb(kindDestructive)};")
+        sb.append("--kind-think:${rgb(kindThink)};--kind-other:${rgb(KIND_OTHER_COLOR)};")
+        sb.append("--ring-running:rgb(225,125,125);--ring-pending:rgb(200,200,50);")
+        sb.append("--ring-complete:rgb(80,200,80);--ring-failed:rgb(225,50,50);")
+        sb.append("--ring-denied:rgb(140,140,140);--ring-thinking:rgb(100,150,200);")
         val diffAdd = ToolRenderers.SUCCESS_COLOR as Color
         val diffDel = ToolRenderers.FAIL_COLOR as Color
         sb.append("--diff-add:${rgb(diffAdd)};--diff-del:${rgb(diffDel)};")
         // Aliases for web-app.css generic var names (used by tool-calls-view, shared with PWA)
         sb.append("--border:${rgb(tblBorder)};--input-bg:${rgb(codeBg)};--accent:${rgb(linkColor)};")
         sb.append("--green:${rgb(diffAdd)};--red:${rgb(ERROR_COLOR)};--muted:${rgba(fg, 0.55)};")
-        sb.append("--tool-read:${rgb(kindRead)};--tool-edit:${rgb(kindEdit)};--tool-execute:${rgb(kindExecute)};")
+        sb.append(
+            "--tool-read:${rgb(kindRead)};--tool-edit:${rgb(kindEdit)};--tool-write:${rgb(kindWrite)};--tool-execute:${
+                rgb(
+                    kindExecute
+                )
+            };"
+        )
         // Per-agent bubble color overrides — injected only when the user has chosen a custom color.
         // The CSS uses var(--client-X-bubble-bg, fallback) so these only take effect when present.
         for (clientType in listOf("copilot", "claude", "opencode", "junie", "kiro", "codex", "pi")) {
