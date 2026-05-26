@@ -1373,6 +1373,19 @@ file-nav {
     flex-wrap: wrap;
 }
 
+.tcv-historic {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    flex: 0 0 auto;
+    color: var(--muted);
+    opacity: 0.85;
+    font-size: 11px;
+    line-height: 1;
+}
+
 .tcv-title {
     flex: 1;
     min-width: 0;

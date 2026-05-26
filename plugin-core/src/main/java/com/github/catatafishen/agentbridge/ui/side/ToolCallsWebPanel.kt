@@ -264,7 +264,8 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
         fun entryToJson(entry: LiveToolCallEntry, registry: ToolRegistry? = null): String {
             val sb = StringBuilder(256)
             sb.append("{\"id\":").append(entry.callId())
-            sb.append(",\"title\":").append(escapeJson(entry.displayName()))
+            val title = resolveDisplayTitle(entry.displayName(), entry.toolName(), registry)
+            sb.append(",\"title\":").append(escapeJson(title))
             sb.append(",\"toolName\":").append(escapeJson(entry.toolName()))
             // Prefer the live tool definition's kind so that any reclassification of tools
             // (e.g. RunCommandTool changed from EDIT to EXECUTE) is reflected immediately
@@ -310,7 +311,8 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
         ): String {
             val sb = StringBuilder(256)
             sb.append("{\"id\":").append(escapeJson(entry.eventId()))
-            sb.append(",\"title\":").append(escapeJson(entry.displayName()))
+            val title = resolveDisplayTitle(entry.displayName(), entry.toolName(), registry)
+            sb.append(",\"title\":").append(escapeJson(title))
             sb.append(",\"toolName\":").append(escapeJson(entry.toolName()))
             val kind = registry?.findById(entry.toolName())?.kind()?.value() ?: entry.category()
             kind?.let { sb.append(",\"kind\":").append(escapeJson(it)) }
@@ -339,6 +341,22 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             }
             sb.append('}')
             return sb.toString()
+        }
+
+        private fun resolveDisplayTitle(displayName: String?, toolName: String, registry: ToolRegistry?): String {
+            val fromRegistry = registry?.findById(toolName)?.displayName()?.trim().orEmpty()
+            if (fromRegistry.isNotEmpty()) return fromRegistry
+
+            val normalized = displayName?.trim().orEmpty()
+            if (normalized.isNotEmpty() && !normalized.contains('_')) return normalized
+
+            return toolName
+                .trim()
+                .replace('-', ' ')
+                .replace('_', ' ')
+                .split(Regex("\\s+"))
+                .filter { it.isNotEmpty() }
+                .joinToString(" ") { token -> token.lowercase().replaceFirstChar { c -> c.uppercase() } }
         }
 
         private fun escapeJson(value: String?): String {

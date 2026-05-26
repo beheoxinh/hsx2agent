@@ -176,8 +176,13 @@ export class ToolCallsView extends PollableView {
 
         // Mirror chat panel chip classes exactly: turn-chip tool is-agentbridge-tool kind-* status-*
         // so chip-ring CSS (spinning/filled/broken circle) renders identically in both panels.
+        const historicBadge = item.historic
+            ? '<span class="tcv-historic" title="Historic tool call" aria-label="Historic tool call">◷</span>'
+            : '';
+
         return `<div class="tcv-item turn-chip tool is-agentbridge-tool ${kindClass} status-${status}" data-id="${item.id}">
             <span class="chip-ring" aria-hidden="true"></span>
+            ${historicBadge}
             <span class="tcv-title">${this.esc(item.title)}</span>
             ${duration ? `<span class="tcv-duration">${duration}</span>` : ''}
         </div>`;

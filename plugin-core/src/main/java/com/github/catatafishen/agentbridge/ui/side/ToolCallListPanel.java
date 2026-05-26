@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.services.LiveToolCallEntry;
 import com.github.catatafishen.agentbridge.services.LiveToolCallService;
+import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.services.hooks.HookRegistry;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.ui.ChatTheme;
@@ -230,14 +231,14 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         timeLabel.setFont(timeLabel.getFont().deriveFont(11f));
         timeLabel.setBorder(JBUI.Borders.emptyRight(6));
 
-        // Display name (humanized) by default
-        String shownName = entry.displayName();
+        ToolRegistry registry = ToolRegistry.getInstance(project);
+        // Display name must stay human-readable (e.g. "Read File"), never raw id.
+        String shownName = resolveShownName(entry, registry);
         Color nameColor = colorForKind(entry.category());
         JBLabel nameLabel = new JBLabel(shownName);
         nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 12f));
         nameLabel.setForeground(nameColor);
 
-        // Duration/status: gray timer while running, green/red when done
         String durationStr;
         Color durationColor;
         if (entry.isRunning()) {
@@ -378,6 +379,33 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         area.setBackground(UIUtil.getPanelBackground());
         area.setBorder(JBUI.Borders.empty(4, 6));
         return area;
+    }
+
+    private String resolveShownName(@NotNull LiveToolCallEntry entry, ToolRegistry registry) {
+        String displayName = entry.displayName().trim();
+        if (!displayName.isEmpty() && !displayName.contains("_")) {
+            return displayName;
+        }
+
+        var def = registry != null ? registry.findById(entry.toolName()) : null;
+        String registryName = def != null ? def.displayName().trim() : "";
+        if (!registryName.isEmpty()) {
+            return registryName;
+        }
+
+        return humanizeToolId(entry.toolName());
+    }
+
+    private static String humanizeToolId(@NotNull String toolId) {
+        String[] parts = toolId.replace('-', ' ').replace('_', ' ').trim().split("\\s+");
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (part.isEmpty()) continue;
+            if (!sb.isEmpty()) sb.append(' ');
+            sb.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) sb.append(part.substring(1).toLowerCase(Locale.ROOT));
+        }
+        return sb.length() > 0 ? sb.toString() : toolId;
     }
 
     private Color colorForKind(String kind) {
