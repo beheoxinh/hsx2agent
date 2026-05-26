@@ -195,6 +195,18 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
      * in the editor while a review session is active. Users who rely on git diff colors may
      * prefer to disable this to avoid redundant overlapping highlights.
      */
+    public boolean isShowEditorHighlights() {
+        return myState.showEditorHighlights;
+    }
+
+    public void setShowEditorHighlights(boolean show) {
+        myState.showEditorHighlights = show;
+    }
+
+    /**
+     * When true, database migration and seed commands (flyway, liquibase, prisma, etc.)
+     * are allowed. Default is false — migrations are blocked by policy.
+     */
     public boolean isDbMigrationAllowed() {
         return myState.dbMigrationAllowed;
     }
