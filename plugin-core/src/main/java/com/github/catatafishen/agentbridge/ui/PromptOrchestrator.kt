@@ -125,6 +125,12 @@ class PromptOrchestrator(
         rawText: String, promptEntryId: String, isAutoCommit: Boolean = false,
         isContinue: Boolean = false
     ) {
+        // Refuse to start a new turn while a stop is in progress — the watchdog may be about
+        // to kill the transport. The caller should retry after the stop completes.
+        if (stopped) {
+            log.warn("execute() called while stop is in progress — refusing to start new turn")
+            return
+        }
         val myGeneration = synchronized(this) { ++turnGeneration }
         cleanupPreviousTurnEditors()
         pendingRawText = rawText
@@ -151,6 +157,7 @@ class PromptOrchestrator(
         // completes the turn before Thread.interrupt() fires.
         stopped = true
         val sessionId = currentSessionId
+        val thread = currentPromptThread
         if (sessionId != null) {
             try {
                 agentManager.client.cancelSession(sessionId)
@@ -158,9 +165,28 @@ class PromptOrchestrator(
                 // Best-effort cancellation
             }
         }
-        currentPromptThread?.interrupt()
+        thread?.interrupt()
         consolePanel().cancelAllRunning()
         consolePanel().addErrorEntry("Stopped by user")
+
+        // Fallback: if the agent process ignores session/cancel, kill the transport after
+        // a grace period so the process does not keep consuming tokens. Use a daemon
+        // watchdog so it never blocks the EDT or stop() caller.
+        val client = agentManager.getClientIfRunning() ?: return
+        val watchdog = Thread({
+            try {
+                Thread.sleep(3000)
+                if (stopped && thread != null && thread.isAlive) {
+                    log.warn("stop(): prompt thread still alive after 3 s — killing transport")
+                    try { client.close() } catch (_: Exception) {}
+                    try { agentManager.stop() } catch (_: Exception) {}
+                }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }, "stop-watchdog")
+        watchdog.isDaemon = true
+        watchdog.start()
     }
 
     /** Returns true if [stop] was called for the current turn and [execute] has not reset it. */
@@ -879,8 +905,12 @@ class PromptOrchestrator(
             consolePanel().removePromptEntry(pendingPromptEntryId)
         }
 
-        consolePanel().cancelAllRunning()
-        consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
+        // Skip duplicate UI cleanup when stop() already handled it — avoids
+        // cancelAllRunning/finishResponse racing with the stop watchdog.
+        if (!stopped) {
+            consolePanel().cancelAllRunning()
+            consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
+        }
         callbacks.appendNewEntries()
 
         // shouldRestorePrompt case handled above to ensure correct ordering with removePromptEntry
@@ -910,7 +940,8 @@ class PromptOrchestrator(
         if (!stopped) {
             consolePanel().addErrorEntry("Error: ${c.displayMessage}")
         }
-        if (!c.isCancelled) {
+        // When stopped by user, skip the error banner — "Stopped by user" already shown.
+        if (!stopped && !c.isCancelled) {
             val bannerMsg = if (c.shouldRestorePrompt)
                 "${c.displayMessage} — your message has been restored to the input box"
             else c.displayMessage
