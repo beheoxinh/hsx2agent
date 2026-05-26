@@ -163,6 +163,9 @@ class PromptOrchestrator(
         consolePanel().addErrorEntry("Stopped by user")
     }
 
+    /** Returns true if [stop] was called for the current turn and [execute] has not reset it. */
+    fun wasStopped(): Boolean = stopped
+
     private fun executePrompt(
         prompt: String,
         contextItems: List<ContextItemData>,

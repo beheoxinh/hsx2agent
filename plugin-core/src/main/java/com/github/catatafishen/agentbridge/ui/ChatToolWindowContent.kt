@@ -1604,6 +1604,7 @@ class ChatToolWindowContent(
     }
 
     private fun checkAutoCommit() {
+        if (promptOrchestrator.wasStopped()) return
         val mcp = com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project)
         if (!mcp.isAutoCommit) return
 
@@ -1631,6 +1632,7 @@ class ChatToolWindowContent(
         val bubbleId = activeBubbleId ?: return
         // Capture human-typed text before clearing — reprimand text should not be restored to input.
         val humanText = pendingHumanText
+        val stopped = promptOrchestrator.wasStopped()
         activeBubbleId = null
         pendingHumanText = null
         val nudgeService = AgentNudgeService.getInstance(project)
@@ -1639,7 +1641,11 @@ class ChatToolWindowContent(
         nudgeService.clearHumanNudges()
         ApplicationManager.getApplication().invokeLater {
             consolePanel.removeNudgeBubble(bubbleId)
-            humanText?.let { restoreUnhandledNudgeText(it) }
+            if (stopped) {
+                prependNudgeToInput(humanText ?: return@invokeLater)
+            } else {
+                humanText?.let { restoreUnhandledNudgeText(it) }
+            }
         }
     }
 
