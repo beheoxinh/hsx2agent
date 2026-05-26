@@ -1075,22 +1075,67 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
                 val g2 = g.create() as Graphics2D
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
                 val s = ringSize - 2
+                val rc = NativeChatColors.ringColor(currentStatus)
+                val bgColor = UIUtil.getPanelBackground()
                 when (currentStatus.lowercase()) {
-                    "running", "pending" -> {
-                        g2.color = kindCol
+                    "running" -> {
+                        g2.color = rc
+                        g2.stroke = BasicStroke(1.5f)
+                        g2.drawArc(1, 1, s, s, spinAngle, 270)
+                    }
+
+                    "pending" -> {
+                        val alpha = (0.4 + 0.6 * Math.abs(Math.sin(spinAngle * Math.PI / 180))).toFloat()
+                        g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha)
+                        g2.color = rc
                         g2.stroke = BasicStroke(1.5f)
                         g2.drawArc(1, 1, s, s, spinAngle, 270)
                     }
 
                     "complete", "completed", "success", "done" -> {
-                        g2.color = kindCol
+                        g2.color = rc
+                        g2.fillOval(1, 1, s, s)
+                        g2.color = bgColor
+                        g2.stroke = BasicStroke(1.2f)
+                        val cx = 1 + s / 2
+                        val cy = 1 + s / 2
+                        g2.drawLine(cx - 2, cy, cx - 1, cy + 2)
+                        g2.drawLine(cx - 1, cy + 2, cx + 2, cy - 1)
+                    }
+
+                    "failed", "error" -> {
+                        g2.color = rc
+                        g2.fillOval(1, 1, s, s)
+                        g2.color = bgColor
+                        g2.stroke = BasicStroke(1.2f)
+                        val cx = 1 + s / 2
+                        val cy = 1 + s / 2
+                        val d = s / 4
+                        g2.drawLine(cx - d, cy - d, cx + d, cy + d)
+                        g2.drawLine(cx - d, cy + d, cx + d, cy - d)
+                    }
+
+                    "denied" -> {
+                        g2.color = rc
+                        g2.fillOval(1, 1, s, s)
+                        g2.color = bgColor
+                        g2.stroke = BasicStroke(1.2f)
+                        val cx = 1 + s / 2
+                        val cy = 1 + s / 2
+                        g2.drawLine(cx - s / 4, cy, cx + s / 4, cy)
+                    }
+
+                    "thinking" -> {
+                        val alpha = (0.4 + 0.6 * Math.abs(Math.sin(spinAngle * Math.PI / 180))).toFloat()
+                        g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha)
+                        g2.color = rc
                         g2.fillOval(1, 1, s, s)
                     }
 
                     else -> {
-                        g2.color = NativeChatColors.ERROR
+                        g2.color = rc
                         g2.stroke = BasicStroke(1.5f)
-                        g2.drawArc(1, 1, s, s, 0, 270)
+                        g2.drawArc(1, 1, s, s, spinAngle, 270)
                     }
                 }
                 g2.dispose()

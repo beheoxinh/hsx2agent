@@ -442,9 +442,9 @@ class ToolsConfigurable(private val project: Project) :
     private fun kindColorFor(tool: ToolDefinition, settings: McpServerSettings): Color =
         when (tool.kind()) {
             ToolDefinition.Kind.SEARCH -> ToolKindColors.searchColor(settings)
-            ToolDefinition.Kind.EDIT, ToolDefinition.Kind.WRITE,
-            ToolDefinition.Kind.DELETE, ToolDefinition.Kind.MOVE -> ToolKindColors.editColor(settings)
-
+            ToolDefinition.Kind.EDIT, ToolDefinition.Kind.MOVE -> ToolKindColors.editColor(settings)
+            ToolDefinition.Kind.WRITE -> ToolKindColors.writeColor(settings)
+            ToolDefinition.Kind.DELETE -> ToolKindColors.destructiveColor(settings)
             ToolDefinition.Kind.EXECUTE -> ToolKindColors.executeColor(settings)
             else -> ToolKindColors.readColor(settings)
         }

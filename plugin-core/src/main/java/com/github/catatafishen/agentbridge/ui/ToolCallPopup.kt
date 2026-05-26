@@ -26,12 +26,14 @@ internal object ToolCallPopup {
     private var currentPopup: com.intellij.openapi.ui.popup.JBPopup? = null
 
     private val KIND_COLORS = mapOf(
-        "read" to JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185)),
-        "edit" to JBColor(Color(0xA0, 0x7A, 0x3A), Color(205, 155, 95)),
-        "execute" to JBColor(Color(0x4A, 0x90, 0x4A), Color(130, 190, 130)),
-        "search" to JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185)),
-        "think" to JBColor(Color(0x7A, 0x70, 0xA8), Color(170, 155, 210)),
-        "other" to JBColor(Color(0x78, 0x7C, 0x80), Color(160, 165, 170)),
+        "read" to JBColor(Color(150, 150, 150), Color(200, 200, 200)),
+        "edit" to JBColor(Color(175, 125, 65), Color(205, 155, 95)),
+        "write" to JBColor(Color(150, 150, 30), Color(200, 200, 50)),
+        "execute" to JBColor(Color(180, 100, 15), Color(225, 125, 25)),
+        "delete" to JBColor(Color(180, 20, 40), Color(225, 25, 50)),
+        "search" to JBColor(Color(35, 150, 150), Color(50, 200, 200)),
+        "think" to JBColor(Color(150, 75, 150), Color(200, 100, 200)),
+        "other" to JBColor(Color(130, 135, 140), Color(160, 165, 170)),
     )
 
     data class Request(
