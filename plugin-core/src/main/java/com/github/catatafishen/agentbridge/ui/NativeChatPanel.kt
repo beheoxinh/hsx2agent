@@ -297,8 +297,9 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
     ) {
         val turn = ensureTurn()
         val resolvedKind = kind ?: "other"
-        toolCallData[id] = ToolCallData(title, resolvedKind, arguments)
-        val chip = ToolChipComponent(title, kind, "running") { showToolPopup(id) }
+        val canonicalTitle = toolDisplayNameFallback(title)
+        toolCallData[id] = ToolCallData(canonicalTitle, resolvedKind, arguments)
+        val chip = ToolChipComponent(canonicalTitle, kind, "running") { showToolPopup(id) }
         allChips[id] = chip
         turn.chipStrip.add(chip)
         turn.chipStrip.isVisible = true

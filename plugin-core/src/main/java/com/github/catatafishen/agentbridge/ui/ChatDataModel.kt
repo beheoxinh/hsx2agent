@@ -346,3 +346,17 @@ internal val TOOL_DISPLAY_INFO = mapOf(
 internal fun toolDisplayInfo(name: String): ToolInfo? = TOOL_DISPLAY_INFO[name.lowercase()]
 
 internal fun toolSubtitleKey(name: String): String? = TOOL_SUBTITLE_KEY[name.lowercase()]
+
+internal fun humanizeToolName(name: String): String =
+    name.trim()
+        .replace('-', ' ')
+        .replace('_', ' ')
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { token -> token.lowercase().replaceFirstChar { c -> c.uppercase() } }
+
+internal fun toolDisplayNameFallback(name: String): String {
+    val clean = name.trim()
+    toolDisplayInfo(clean)?.displayName?.let { return it }
+    return if (clean.contains('_') || clean.contains('-')) humanizeToolName(clean) else clean
+}

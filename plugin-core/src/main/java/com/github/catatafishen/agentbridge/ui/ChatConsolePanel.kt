@@ -1959,7 +1959,7 @@ class ChatConsolePanel(
         if (baseName == null) return "Tool Call"
         val clean = baseName.trim('\'', '"')
         val toolDef = toolRegistry?.findById(clean)
-        val displayFallback = toolDisplayInfo(clean)?.displayName ?: clean.replaceFirstChar { it.uppercaseChar() }
+        val displayFallback = toolDisplayNameFallback(clean)
         val display = toolDef?.displayName() ?: displayFallback
         val subtitle = formatToolSubtitle(clean, arguments)
         return if (subtitle != null) "$display — $subtitle" else display

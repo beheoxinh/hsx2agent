@@ -154,7 +154,7 @@ internal object ToolCallPopup {
         if (baseName == null) return "Tool Call"
         val clean = baseName.trim('\'', '"')
         val toolDef = ToolRegistry.getInstance(project).findById(clean)
-        val display = toolDef?.displayName() ?: clean.replaceFirstChar { it.uppercaseChar() }
+        val display = toolDef?.displayName() ?: toolDisplayNameFallback(clean)
         val subtitle = formatToolSubtitle(clean, arguments)
         return if (subtitle != null) "$display — $subtitle" else display
     }
