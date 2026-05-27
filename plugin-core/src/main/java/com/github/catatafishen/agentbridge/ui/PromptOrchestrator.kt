@@ -967,6 +967,11 @@ class PromptOrchestrator(
         if (!c.isRecoverable) {
             if (c.isProcessCrashWithRecovery) {
                 log.info("Agent process crashed but recovered — preserving session ...")
+            } else if (c.isNetworkTimeoutOrZombie) {
+                log.info("Network timeout or zombie process detected — restarting agent to recover ...")
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    agentManager.restart()
+                }
             } else {
                 agentManager.client.dropCurrentSession()
                 currentSessionId = null

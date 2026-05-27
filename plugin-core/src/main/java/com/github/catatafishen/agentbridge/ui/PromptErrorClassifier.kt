@@ -19,6 +19,7 @@ object PromptErrorClassifier {
         val isAuthError: Boolean,
         val isRecoverable: Boolean,
         val isProcessCrashWithRecovery: Boolean,
+        val isNetworkTimeoutOrZombie: Boolean,
         val shouldRestorePrompt: Boolean,
         val displayMessage: String,
     )
@@ -71,6 +72,12 @@ object PromptErrorClassifier {
         }
             && isClientHealthy
 
+        val isNetworkTimeoutOrZombie = !isCancelled
+            && generateSequence(exception as Throwable?) { it.cause }.any {
+            it is java.util.concurrent.TimeoutException ||
+                it.message?.contains("timeout", ignoreCase = true) == true
+        }
+
         val shouldRestorePrompt = !turnHadContent
 
         return Classification(
@@ -78,6 +85,7 @@ object PromptErrorClassifier {
             isAuthError = isAuthError,
             isRecoverable = isRecoverable,
             isProcessCrashWithRecovery = isProcessCrashWithRecovery,
+            isNetworkTimeoutOrZombie = isNetworkTimeoutOrZombie,
             shouldRestorePrompt = shouldRestorePrompt,
             displayMessage = msg,
         )
