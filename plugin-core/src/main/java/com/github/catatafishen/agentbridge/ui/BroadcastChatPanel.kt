@@ -192,6 +192,11 @@ class BroadcastChatPanel(
         jcefPanel.updateSubAgentToolCall(toolId, status, details, description, autoDenied, denialReason)
     }
 
+    override fun appendSubAgentStream(subAgentId: String, text: String, isThinking: Boolean) {
+        nativePanel.appendSubAgentStream(subAgentId, text, isThinking)
+        jcefPanel.appendSubAgentStream(subAgentId, text, isThinking)
+    }
+
     override fun addErrorEntry(message: String) {
         nativePanel.addErrorEntry(message)
         jcefPanel.addErrorEntry(message)

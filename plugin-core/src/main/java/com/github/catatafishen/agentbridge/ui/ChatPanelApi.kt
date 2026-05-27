@@ -112,6 +112,8 @@ interface ChatPanelApi : Disposable {
         autoDenied: Boolean = false, denialReason: String? = null
     )
 
+    fun appendSubAgentStream(subAgentId: String, text: String, isThinking: Boolean)
+
     // ── Status / errors ────────────────────────────────────────────
 
     /** Callback invoked to display a transient status banner (error/info). */

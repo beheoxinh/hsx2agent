@@ -104,7 +104,7 @@ class PromptOrchestrator(
     private val activeSubAgentStack = ArrayDeque<String>()
 
     /** The most recently started sub-agent call ID still in-flight, or null if none. */
-    private val activeSubAgentId: String? get() = activeSubAgentStack.lastOrNull()
+    val activeSubAgentId: String? get() = activeSubAgentStack.lastOrNull()
     private var pendingBanner: PendingBanner? = null
     private var turnHadContent = false
     private var codeChangeListener: Runnable? = null
@@ -123,6 +123,10 @@ class PromptOrchestrator(
     private var pendingRawText = ""
     private var pendingContextItems: List<ContextItemData> = emptyList()
     private var pendingPromptEntryId = ""
+
+    fun hasActiveSubAgent(id: String): Boolean {
+        return activeSubAgentStack.contains(id)
+    }
 
     private fun cleanupPreviousTurnEditors() {
         PsiBridgeService.getInstance(project).closeAgentOpenedFiles()
@@ -193,8 +197,14 @@ class PromptOrchestrator(
                 Thread.sleep(3000)
                 if (stopped && thread != null && thread.isAlive) {
                     log.warn("stop(): prompt thread still alive after 3 s — killing transport")
-                    try { client.close() } catch (_: Exception) {}
-                    try { agentManager.stop() } catch (_: Exception) {}
+                    try {
+                        client.close()
+                    } catch (_: Exception) {
+                    }
+                    try {
+                        agentManager.stop()
+                    } catch (_: Exception) {
+                    }
                 }
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
@@ -552,7 +562,8 @@ class PromptOrchestrator(
             try {
                 com.github.catatafishen.agentbridge.psi.review.AgentEditSession
                     .getInstance(project)?.removeAllApproved()
-            } catch (_: Throwable) {}
+            } catch (_: Throwable) {
+            }
         }
 
         callbacks.saveTurnStatistics(prompt, turnToolCallCount, turnModelId)

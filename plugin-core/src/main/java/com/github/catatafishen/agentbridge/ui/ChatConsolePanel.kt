@@ -767,6 +767,11 @@ class ChatConsolePanel(
         executeJs("ChatController.updateToolCall('$did','$jsStatus','$jsStatus')")
     }
 
+    override fun appendSubAgentStream(subAgentId: String, text: String, isThinking: Boolean) {
+        val did = domId(subAgentId)
+        executeJs("ChatController.appendSubAgentStream('$did', '${escJs(text)}', $isThinking)")
+    }
+
     override fun addSubAgentEntry(
         id: String, agentType: String, description: String, prompt: String?,
         initialState: ChatPanelApi.SubAgentInitialState

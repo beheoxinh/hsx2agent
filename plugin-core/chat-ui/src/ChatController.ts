@@ -565,6 +565,42 @@ const ChatController = {
         this._container()?.scheduleScrollIfNeeded();
     },
 
+    appendSubAgentStream(subAgentDomId: string, text: string, isThinking: boolean): void {
+        const msg = document.getElementById('sa-' + subAgentDomId);
+        if (!msg) return;
+
+        // Find or create the stream container before the result bubble
+        let streamContainer = msg.querySelector('.subagent-stream');
+        if (!streamContainer) {
+            streamContainer = document.createElement('div');
+            streamContainer.className = 'subagent-stream';
+            // Insert before the result bubble
+            const resultBubble = msg.querySelector('.subagent-result');
+            if (resultBubble) {
+                msg.insertBefore(streamContainer, resultBubble);
+            } else {
+                msg.appendChild(streamContainer);
+            }
+        }
+
+        if (isThinking) {
+            let tb = streamContainer.querySelector('thinking-block:last-child') as HTMLElement;
+            if (!tb) {
+                tb = document.createElement('thinking-block');
+                streamContainer.appendChild(tb);
+            }
+            (tb as any).appendRaw(text);
+        } else {
+            let bubble = streamContainer.querySelector('message-bubble:last-child');
+            if (!bubble || bubble.tagName.toLowerCase() === 'thinking-block') {
+                bubble = document.createElement('message-bubble');
+                streamContainer.appendChild(bubble);
+            }
+            bubble.appendChild(document.createTextNode(text));
+        }
+        this._container()?.scheduleScrollIfNeeded();
+    },
+
     addSessionSeparator(timestamp: string, agent: string = ''): void {
         const el = document.createElement('session-divider');
         el.setAttribute('timestamp', timestamp);

@@ -213,7 +213,8 @@ class ChatToolWindowContent(
     }
 
     private fun subscribeToHistoryEvents() {
-        project.messageBus.connect().subscribe(
+        val connection = project.messageBus.connect()
+        connection.subscribe(
             ConversationListener.TOPIC,
             object : ConversationListener {
                 override fun historyChanged(allHistoryCleared: Boolean) {
@@ -227,6 +228,26 @@ class ChatToolWindowContent(
                 }
             }
         )
+        connection.subscribe(
+            com.github.catatafishen.agentbridge.services.SubagentStreamListener.TOPIC,
+            com.github.catatafishen.agentbridge.services.SubagentStreamListener { subagentId, isThinking, content ->
+                ApplicationManager.getApplication().invokeLater {
+                    // Try exact subagentId first; if not found or empty, try activeSubAgentId
+                    var targetId = subagentId
+                    if (targetId.isBlank() || !hasActiveSubAgent(targetId)) {
+                        targetId = promptOrchestrator?.activeSubAgentId ?: return@invokeLater
+                    }
+                    val record = ToolCallTracker.getInstance(project).findByAcpId(targetId)
+                    val recordId = record?.recordId ?: targetId
+                    consolePanel.appendSubAgentStream(recordId, content, isThinking)
+                }
+            }
+        )
+    }
+
+    private fun hasActiveSubAgent(id: String): Boolean {
+        if (!::promptOrchestrator.isInitialized) return false
+        return promptOrchestrator.hasActiveSubAgent(id)
     }
 
     /**

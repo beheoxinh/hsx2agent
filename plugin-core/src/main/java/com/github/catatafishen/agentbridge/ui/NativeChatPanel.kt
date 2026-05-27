@@ -381,6 +381,10 @@ class NativeChatPanel(private val project: Project) : ChatPanelApi {
         description: String?, autoDenied: Boolean, denialReason: String?
     ) = updateToolCall(toolId, status, ChatPanelApi.ToolCallUpdate())
 
+    override fun appendSubAgentStream(subAgentId: String, text: String, isThinking: Boolean) {
+        // Native panel does not support subagent streaming right now
+    }
+
     override fun addErrorEntry(message: String) {
         finalizeTurn()
         val bubble = RoundedPanel(NativeChatColors.ERROR_BG).apply {
