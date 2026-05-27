@@ -2487,14 +2487,14 @@ class ChatToolWindowContent(
         }
 
         override fun update(e: AnActionEvent) {
-            val profile = agentManager.activeProfile
             e.presentation.text = currentModelSelectorText()
             e.presentation.isEnabled = !isSending && modelsStatusText == null && loadedModels.isNotEmpty()
-            // Hide entirely when models loaded successfully but list is empty
-            // (agent uses configOptions for model selection instead), but keep it visible
-            // for Claude CLI so user sees it's empty (or loading).
-            e.presentation.isVisible = modelsStatusText != null || loadedModels.isNotEmpty() ||
-                profile.id == AgentProfileManager.CLAUDE_CLI_PROFILE_ID
+            // Keep visible while connected so the selector never disappears during transient
+            // model-load failures or lag (e.g. OpenCode session timeout).  When the agent
+            // genuinely has no models (uses configOptions instead), loadedModels stays empty
+            // AND isConnected is true — but the selector shows "Loading..." / "No models"
+            // which is still better than vanishing without explanation.
+            e.presentation.isVisible = agentManager.isConnected || modelsStatusText != null || loadedModels.isNotEmpty()
         }
     }
 
@@ -2503,11 +2503,7 @@ class ChatToolWindowContent(
         if (selectedModelIndex in loadedModels.indices) {
             return loadedModels[selectedModelIndex].name()
         }
-        return if (loadedModels.isEmpty() && agentManager.activeProfile.id == AgentProfileManager.CLAUDE_CLI_PROFILE_ID) {
-            "No models"
-        } else {
-            MSG_LOADING
-        }
+        return if (loadedModels.isEmpty() && agentManager.isConnected) "No models" else MSG_LOADING
     }
 
     private fun createModelSelectionAction(model: Model, index: Int, cost: String?): AnAction {
@@ -3597,11 +3593,12 @@ class ChatToolWindowContent(
         onFailure: ((Exception) -> Unit)? = null
     ) {
         val generation = ++modelLoadGeneration
-        ApplicationManager.getApplication().invokeLater {
-            loadedModels = emptyList()
-            modelsStatusText = MSG_LOADING
-            selectedModelIndex = -1
-        }
+        // Set status text immediately (all three fields are @Volatile) so the toolbar
+        // never sees a gap where modelsStatusText==null AND loadedModels is empty —
+        // that combination made the selector invisible for non-Claude-CLI profiles.
+        modelsStatusText = MSG_LOADING
+        loadedModels = emptyList()
+        selectedModelIndex = -1
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 val models = fetchModelsWithRetry()
