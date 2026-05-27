@@ -2345,7 +2345,7 @@ class ChatToolWindowContent(
     private var autoScrollEnabled = true
 
     private inner class AutoScrollToggleAction : ToggleAction(
-        "Auto-Scroll",
+        "Auto Scroll",
         "Scroll to bottom automatically when new content arrives",
         AllIcons.RunConfigurations.Scroll_down
     ) {

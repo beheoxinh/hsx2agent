@@ -23,7 +23,7 @@ private val APPROVED_BG = com.intellij.ui.JBColor(
 )
 
 class AutoApproveToggleAction(private val project: Project) : ToggleAction(
-    "Auto-Approve",
+    "Auto Approve",
     "Apply agent edits without per-file approval",
     AllIcons.Nodes.Related
 ), CustomComponentAction {
@@ -69,7 +69,7 @@ class AutoApproveToggleAction(private val project: Project) : ToggleAction(
 }
 
 class AutoCleanOnNewPromptToggleAction(private val project: Project) : ToggleAction(
-    "Auto-Clean on New Prompt",
+    "Auto Clean Approved",
     "Remove approved rows automatically when starting a new prompt",
     AllIcons.Actions.SynchronizeScrolling
 ), CustomComponentAction {
@@ -109,7 +109,7 @@ class AutoCleanOnNewPromptToggleAction(private val project: Project) : ToggleAct
 }
 
 class AutoCommitToggleAction(private val project: Project) : ToggleAction(
-    "Auto-Commit",
+    "Auto Commit",
     "Automatically trigger a commit turn when all changes are approved and turn ends",
     AllIcons.Actions.RerunAutomatically
 ), CustomComponentAction {
@@ -175,7 +175,7 @@ class AutoCommitToggleAction(private val project: Project) : ToggleAction(
 }
 
 class ShowEditorHighlightsToggleAction(private val project: Project) : ToggleAction(
-    "Show Editor Highlights",
+    "Editor Highlights",
     "Paint agent-edit background colors in the editor. Disable when git diff colors are sufficient",
     AllIcons.Actions.Highlighting
 ), CustomComponentAction {
