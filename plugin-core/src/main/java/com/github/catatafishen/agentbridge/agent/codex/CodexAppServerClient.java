@@ -24,7 +24,6 @@ import com.github.catatafishen.agentbridge.settings.BinaryDetector;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.ProjectFilesSettings;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
-import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -98,7 +97,9 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private static final String F_TOOL = "tool";
     private static final String F_ARGUMENTS = "arguments";
     private static final String F_COMMAND = "command";
-    private static final String AGENTBRIDGE_PREFIX = "agentbridge_";
+    private static final String AGENTBRIDGE_HYPHEN_PREFIX = "agentbridge-";
+    private static final String AGENTBRIDGE_UNDERSCORE_PREFIX = "agentbridge_";
+    private static final String MCP_AGENTBRIDGE_PREFIX = "mcp__agentbridge__";
     private static final String TYPE_MCP_TOOL_CALL = "mcpToolCall";
     private static final String MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX = "mcp_tool_call_approval_";
     private static final String AGENTS_MD = "AGENTS.md";
@@ -883,6 +884,20 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         return MessageType.UNKNOWN;
     }
 
+    @NotNull
+    private static String normalizeToolName(@NotNull String name) {
+        if (name.startsWith(MCP_AGENTBRIDGE_PREFIX)) {
+            return name.substring(MCP_AGENTBRIDGE_PREFIX.length());
+        }
+        if (name.startsWith(AGENTBRIDGE_HYPHEN_PREFIX)) {
+            return name.substring(AGENTBRIDGE_HYPHEN_PREFIX.length());
+        }
+        if (name.startsWith(AGENTBRIDGE_UNDERSCORE_PREFIX)) {
+            return name.substring(AGENTBRIDGE_UNDERSCORE_PREFIX.length());
+        }
+        return name;
+    }
+
     private void handleResponse(@NotNull JsonObject msg) {
         JsonElement idEl = msg.get(F_ID);
         if (idEl.isJsonPrimitive() && idEl.getAsJsonPrimitive().isNumber()) {
@@ -1154,7 +1169,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         // Cache tool name for in-flight MCP calls (used by handleUserInputRequest for permission checks)
         if (TYPE_MCP_TOOL_CALL.equals(type) && item.has(F_ID) && item.has(F_TOOL)) {
             String rawTool = item.get(F_TOOL).getAsString();
-            String toolName = rawTool.startsWith(AGENTBRIDGE_PREFIX) ? rawTool.substring(AGENTBRIDGE_PREFIX.length()) : rawTool;
+            String toolName = normalizeToolName(rawTool);
             pendingMcpToolNames.put(item.get(F_ID).getAsString(), toolName);
         }
 
@@ -1265,8 +1280,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         String id = item.has(F_ID) ? item.get(F_ID).getAsString() : UUID.randomUUID().toString();
         // MCP tool call fields: server, tool, arguments
         String rawTool = item.has(F_TOOL) ? item.get(F_TOOL).getAsString() : "tool";
-        // Strip "agentbridge_" prefix if the server namespaces tool names
-        String toolName = rawTool.startsWith(AGENTBRIDGE_PREFIX) ? rawTool.substring(AGENTBRIDGE_PREFIX.length()) : rawTool;
+        String toolName = normalizeToolName(rawTool);
         JsonObject args = item.has(F_ARGUMENTS) && item.get(F_ARGUMENTS).isJsonObject()
             ? item.getAsJsonObject(F_ARGUMENTS) : new JsonObject();
 
@@ -1487,15 +1501,9 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         Consumer<PermissionPrompt> listener = permissionRequestListener.get();
         if (listener != null) {
             listener.accept(prompt);
-        } else if (project != null) {
-            ChatConsolePanel chatPanel = ChatConsolePanel.Companion.getInstance(project);
-            if (chatPanel != null) {
-                String reqId = UUID.randomUUID().toString();
-                chatPanel.showPermissionRequest(reqId, displayName, description, response -> {
-                    future.complete(response);
-                    return kotlin.Unit.INSTANCE;
-                });
-            }
+        } else {
+            LOG.warn("No permission request listener registered for Codex native approval: " + method);
+            future.complete(PermissionResponse.DENY);
         }
 
         try {
