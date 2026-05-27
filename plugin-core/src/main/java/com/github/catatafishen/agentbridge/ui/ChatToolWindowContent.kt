@@ -335,8 +335,8 @@ class ChatToolWindowContent(
         val actions = listOf(
             com.github.catatafishen.agentbridge.ui.review.ApproveAllAction(project),
             com.github.catatafishen.agentbridge.ui.review.CleanApprovedAction(project),
-            com.github.catatafishen.agentbridge.ui.review.AutoApproveToggleAction(project),
             com.github.catatafishen.agentbridge.ui.review.ShowEditorHighlightsToggleAction(project),
+            com.github.catatafishen.agentbridge.ui.review.AutoApproveToggleAction(project),
             com.github.catatafishen.agentbridge.ui.review.AutoCleanOnNewPromptToggleAction(project),
             Separator.create(),
             com.github.catatafishen.agentbridge.ui.review.AutoCommitToggleAction(project),
