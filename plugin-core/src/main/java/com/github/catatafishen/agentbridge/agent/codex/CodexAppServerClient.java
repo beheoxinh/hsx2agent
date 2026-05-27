@@ -627,29 +627,9 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         }
     }
 
-    /**
-     * Returns a thread ID for the session, resuming a persisted thread if available or starting a new one.
-     */
     @NotNull
     private String getOrResumeThread(@NotNull String sessionId, @NotNull String model) throws AgentException {
-        String savedThreadId = loadCodexThreadId();
-        if (savedThreadId != null) {
-            try {
-                String resumed = resumeThread(savedThreadId, model, sessionId);
-                LOG.info("Resumed Codex thread " + resumed + " for session " + sessionId);
-                return resumed;
-            } catch (AgentException e) {
-                LOG.warn("thread/resume failed (thread may be expired), starting new thread: " + e.getMessage());
-                persistCodexThreadId(null);
-                com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
-                    com.github.catatafishen.agentbridge.psi.PlatformApiCompat.showNotification(
-                        project,
-                        "Codex session resume failed",
-                        "Could not resume the previous Codex thread (it may have expired). "
-                            + "A new thread will be started. Previous conversation context will not be restored.",
-                        com.intellij.notification.NotificationType.WARNING));
-            }
-        }
+        persistCodexThreadId(null);
         return startThread(sessionId, model);
     }
 
