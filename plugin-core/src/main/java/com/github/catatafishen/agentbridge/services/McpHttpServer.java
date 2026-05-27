@@ -89,7 +89,11 @@ public final class McpHttpServer implements Disposable, McpServerControl {
                 httpServer.createContext("/message", sseTransport::handleMessage);
                 sseTransport.start();
             } else {
-                httpServer.createContext("/mcp", this::handleMcp);
+                // Streamable HTTP: GET /mcp opens an SSE stream for server→client notifications,
+                // POST /mcp sends JSON-RPC requests whose responses come back through the SSE stream.
+                sseTransport = new McpSseTransport(protocolHandler, "/mcp");
+                httpServer.createContext("/mcp", this::handleMcpStreamable);
+                sseTransport.start();
             }
 
             // Bounded thread pool: SSE mode blocks one thread per connection, streamable HTTP
@@ -222,10 +226,10 @@ public final class McpHttpServer implements Disposable, McpServerControl {
 
     private static final int MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
 
-    private void handleMcp(HttpExchange exchange) throws IOException {
+    private void handleMcpStreamable(HttpExchange exchange) throws IOException {
         // CORS headers for browser-based agents
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "POST, OPTIONS");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         exchange.getResponseHeaders().set("Access-Control-Allow-Headers", CONTENT_TYPE);
 
         if ("OPTIONS".equals(exchange.getRequestMethod())) {
@@ -234,11 +238,21 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             return;
         }
 
-        if (!"POST".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1);
-            exchange.close();
+        if ("GET".equals(exchange.getRequestMethod())) {
+            sseTransport.handleSseConnect(exchange);
             return;
         }
+
+        if ("POST".equals(exchange.getRequestMethod())) {
+            handleMcpPost(exchange);
+            return;
+        }
+
+        exchange.sendResponseHeaders(405, -1);
+        exchange.close();
+    }
+
+    private void handleMcpPost(HttpExchange exchange) throws IOException {
 
         activeConnections.incrementAndGet();
         McpServerSettings settings = McpServerSettings.getInstance(project);

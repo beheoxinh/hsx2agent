@@ -43,8 +43,19 @@ final class McpSseTransport {
     private final AtomicInteger sessionCount = new AtomicInteger(0);
     private ScheduledExecutorService keepAliveExecutor;
 
+    /**
+     * The URL path clients POST to for sending MCP messages.
+     * The SSE endpoint event advertises this path with a {@code ?sessionId=} parameter.
+     */
+    private final String messagePath;
+
     McpSseTransport(@NotNull McpProtocolHandler protocolHandler) {
+        this(protocolHandler, "/message");
+    }
+
+    McpSseTransport(@NotNull McpProtocolHandler protocolHandler, @NotNull String messagePath) {
         this.protocolHandler = protocolHandler;
+        this.messagePath = messagePath;
     }
 
     void start() {
@@ -105,7 +116,7 @@ final class McpSseTransport {
         SseSession session = new SseSession(exchange);
         sessions.put(session.getSessionId(), session);
 
-        String endpointUrl = "/message?sessionId=" + session.getSessionId();
+        String endpointUrl = messagePath + "?sessionId=" + session.getSessionId();
         try {
             session.sendEvent("endpoint", endpointUrl);
             LOG.info("SSE session opened: " + session.getSessionId());
