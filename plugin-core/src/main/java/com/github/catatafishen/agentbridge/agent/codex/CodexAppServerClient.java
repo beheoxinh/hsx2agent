@@ -506,6 +506,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         if (mcpPort > 0) {
             cmd.add(CMD_CONFIG);
             cmd.add("mcp_servers.agentbridge.url=http://localhost:" + mcpPort + "/mcp");
+            cmd.add(CMD_CONFIG);
+            cmd.add("mcp_servers.agentbridge.default_tools_approval_mode=auto");
         }
 
         return cmd;
@@ -601,8 +603,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         JsonObject params = new JsonObject();
         params.addProperty(F_MODEL, model);
         params.addProperty("cwd", cwd);
-        // on-request: server sends approval notifications we can decline
-        params.addProperty("approvalPolicy", "on-request");
+        // onRequest: server sends approval notifications when approval is needed
+        params.addProperty("approvalPolicy", "onRequest");
 
         try {
             JsonObject result = sendRequest("thread/start", params).get(15, TimeUnit.SECONDS);
