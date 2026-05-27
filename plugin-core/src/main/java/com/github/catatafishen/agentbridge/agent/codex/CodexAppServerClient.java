@@ -998,29 +998,13 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         }
     }
 
-    /**
-     * Handles {@code item/tool/requestUserInput} — a generic user-input mechanism that
-     * Codex uses both for MCP tool call approvals and potentially other question types.
-     *
-     * <p>MCP tool approval questions are identified by ID prefix {@code mcp_tool_call_approval_}
-     * (matching Codex's {@code MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}). These are auto-approved
-     * at the protocol level for ALLOW/ASK tools (the real permission enforcement happens in
-     * {@link com.github.catatafishen.agentbridge.psi.PsiBridgeService#callTool}),
-     * and declined early for DENY tools to avoid unnecessary MCP round-trips.</p>
-     *
-     * <p>Non-approval questions are forwarded to the user via {@link PromptUserTool}.</p>
-     *
-     * <p><b>Wire format</b> (per Codex app-server protocol spec):</p>
-     * <pre>
-     * Response: { answers: { questionId: { answers: ["label"] } } }
-     * </pre>
-     *
-     * @see <a href="https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/typescript/v2/ToolRequestUserInputResponse.ts">ToolRequestUserInputResponse</a>
-     * @see <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_call.rs">mcp_tool_call.rs</a>
-     */
     private void handleUserInputRequest(@NotNull JsonElement id, @NotNull JsonObject params) {
-        JsonArray questions = params.has("questions") ? params.getAsJsonArray("questions") : new JsonArray();
-        String itemId = params.has("itemId") ? params.get("itemId").getAsString() : "";
+        JsonArray questions;
+        if (params.has("questions") && params.get("questions").isJsonArray()) {
+            questions = params.getAsJsonArray("questions");
+        } else {
+            questions = new JsonArray();
+        }
 
         JsonObject answers = new JsonObject();
         for (JsonElement elem : questions) {
@@ -1030,6 +1014,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
             String answerLabel;
             if (isMcpToolApprovalQuestion(qId)) {
+                String itemId = params.has("itemId") ? params.get("itemId").getAsString() : "";
                 answerLabel = resolveMcpToolApprovalAnswer(itemId, qId);
             } else {
                 answerLabel = askUserForQuestionAnswer(q);
@@ -1054,19 +1039,6 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         return questionId.startsWith(MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX);
     }
 
-    /**
-     * Resolves an MCP tool approval answer using the plugin's shared permission infrastructure.
-     *
-     * <p>Looks up the tool name from the {@link #pendingMcpToolNames} cache (populated by
-     * {@code item/started} notifications) and checks {@link ToolLayerSettings#getToolPermission}.
-     * DENY tools are declined at this level to avoid an unnecessary MCP round-trip.
-     * ALLOW and ASK tools are auto-approved here — matching the Copilot CLI approach where real
-     * permission enforcement happens at the MCP server layer
-     * ({@link com.github.catatafishen.agentbridge.psi.PsiBridgeService#callTool}).</p>
-     *
-     * @see <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_call.rs">
-     * Codex MCP_TOOL_APPROVAL_ACCEPT / CANCEL constants</a>
-     */
     @NotNull
     private String resolveMcpToolApprovalAnswer(@NotNull String itemId, @NotNull String questionId) {
         String toolName = pendingMcpToolNames.get(itemId);
@@ -1166,7 +1138,6 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         JsonObject item = params.getAsJsonObject(F_ITEM);
         String type = item.has(F_TYPE) ? item.get(F_TYPE).getAsString() : "";
 
-        // Cache tool name for in-flight MCP calls (used by handleUserInputRequest for permission checks)
         if (TYPE_MCP_TOOL_CALL.equals(type) && item.has(F_ID) && item.has(F_TOOL)) {
             String rawTool = item.get(F_TOOL).getAsString();
             String toolName = normalizeToolName(rawTool);
@@ -1178,7 +1149,6 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         if (TYPE_MCP_TOOL_CALL.equals(type)) {
             emitMcpToolCallStart(item, cb);
         } else if ("reasoning".equals(type)) {
-            // Emit one thinking chip per turn, then stream any available reasoning text into it.
             if (!reasoningActive) {
                 reasoningActive = true;
                 cb.accept(new SessionUpdate.AgentThoughtChunk(List.of(new ContentBlock.Text("Thought"))));
@@ -1424,14 +1394,17 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                         sendNativeApprovalDecision(id, "acceptForSession");
                     }
                     case ALLOW_ONCE -> sendNativeApprovalDecision(id, DECISION_ACCEPT);
+                    case ALLOW_ALWAYS -> {
+                        if (sessionId != null) allowSessionApproval(sessionId, permissionKey);
+                        ActiveAgentManager.getInstance(project).getSettings().setToolPermission(permissionKey, ToolPermission.ALLOW);
+                        sendNativeApprovalDecision(id, DECISION_ACCEPT);
+                    }
                     case DENY -> {
                         sendNativeApprovalDecision(id, "decline");
                         emitToolDeclinedBanner(method, params);
                     }
-                    default -> throw new IllegalStateException("Unexpected value: " + response);
                 }
             }
-            default -> throw new IllegalStateException("Unexpected value: " + permission);
         }
     }
 
@@ -1487,6 +1460,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             public void allow(String optionId) {
                 if (optionId != null && optionId.contains("session")) {
                     future.complete(PermissionResponse.ALLOW_SESSION);
+                } else if (optionId != null && optionId.contains("always")) {
+                    future.complete(PermissionResponse.ALLOW_ALWAYS);
                 } else {
                     future.complete(PermissionResponse.ALLOW_ONCE);
                 }
