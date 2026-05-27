@@ -489,13 +489,13 @@ class ChatToolWindowContent(
         // Invalidate any in-flight loadModelsAsync() threads so they don't restart the agent
         // or apply stale model results after the user has explicitly disconnected.
         ++modelLoadGeneration
-        try {
-            agentManager.stop()
-            resetSession()
-            sidePanel?.clearToolCalls()
-        } catch (e: Exception) {
-            LOG.warn("Error stopping agent", e)
-        }
+
+        // Reset UI state immediately on EDT so the user sees the connect panel right away.
+        // The potentially slow agentManager.stop() (process kill + waitFor up to 5 s)
+        // runs on a pooled thread to avoid freezing the EDT — which previously caused the
+        // IDE to become unresponsive after network outages, requiring a full restart.
+        resetSession()
+        sidePanel?.clearToolCalls()
         agentManager.isConnected = false
         chatSessionInitialized = false
         project.messageBus.syncPublisher(ConversationListener.TOPIC).connectionChanged(false)
@@ -514,9 +514,17 @@ class ChatToolWindowContent(
         updateSideTabContents(false)
 
         cardLayout.show(mainPanel, CARD_CONNECT)
-        // Reset toolbar icon to default when disconnecting
         restartSessionGroup?.updateIconForDisconnect()
         notifyWebServerDisconnected()
+
+        // Stop the agent process off-EDT to avoid blocking the UI thread.
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                agentManager.stop()
+            } catch (e: Exception) {
+                LOG.warn("Error stopping agent during disconnect", e)
+            }
+        }
     }
 
     // ── Web server state helpers ──────────────────────────────────────────────

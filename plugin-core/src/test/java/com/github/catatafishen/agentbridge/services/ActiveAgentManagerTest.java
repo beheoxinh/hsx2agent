@@ -225,7 +225,7 @@ class ActiveAgentManagerTest {
 
         @Test
         void inactivityTimeoutSeconds() {
-            assertEquals(3000, ActiveAgentManager.DEFAULT_INACTIVITY_TIMEOUT_SECONDS);
+            assertEquals(300, ActiveAgentManager.DEFAULT_INACTIVITY_TIMEOUT_SECONDS);
         }
 
         @Test
