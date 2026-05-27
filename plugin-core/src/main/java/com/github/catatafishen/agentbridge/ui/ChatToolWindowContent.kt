@@ -1673,19 +1673,61 @@ class ChatToolWindowContent(
             return
         }
 
-        val session = com.github.catatafishen.agentbridge.psi.review.AgentEditSession.getInstance(project)
-        if (session.hasChanges() && !session.hasPendingChanges()) {
-            ApplicationManager.getApplication().invokeLater {
-                // If a new turn was started by unhandled nudge, don't interrupt it.
-                if (isSending || project.isDisposed) return@invokeLater
-                submitTurn(
-                    "If further work is needed to complete the task, pick the best and most efficient solution then finish it. If there are no more actions required, commit all approved changes now with a descriptive conventional commit message without more actions or research needed.",
-                    emptyList(),
-                    isAutoCommit = true,
-                    isSilent = true
-                )
+        val entries = chatConsolePanel.getEntries()
+        val lastTurnToolCalls = mutableListOf<EntryData.ToolCall>()
+        for (i in entries.indices.reversed()) {
+            val e = entries[i]
+            if (e is EntryData.Prompt || e is EntryData.SessionSeparator) break
+            if (e is EntryData.ToolCall) {
+                lastTurnToolCalls.add(e)
             }
         }
+
+        // If the agent already self-committed in this turn, don't nag it again.
+        val hasGitCommit = lastTurnToolCalls.any { it.acpName == "git_commit" && it.status == "completed" }
+        if (hasGitCommit) return
+
+        val hasDataAlteringTool = lastTurnToolCalls.any {
+            it.kind == "edit" || it.kind == "delete" || it.kind == "move" || it.kind == "execute" ||
+                it.acpName == "run_command" || it.acpName == "bash"
+        }
+
+        val session = com.github.catatafishen.agentbridge.psi.review.AgentEditSession.getInstance(project)
+        val ideHasApprovedChanges = session.hasChanges() && !session.hasPendingChanges()
+        val ideIsClear = !session.hasChanges()
+
+        if (ideHasApprovedChanges) {
+            triggerAutoCommit()
+        } else if (ideIsClear && hasDataAlteringTool) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                try {
+                    val gitStatusTool = com.github.catatafishen.agentbridge.psi.tools.git.GitStatusTool(project)
+                    val args = com.google.gson.JsonObject()
+                    val status = gitStatusTool.execute(args)
+                    // Check for actual file changes, ignoring branches/stash
+                    val hasUncommittedChanges = status.lines().any { line ->
+                        line.isNotBlank() && !line.startsWith("## ") && !line.startsWith("Stash: ")
+                    }
+                    if (hasUncommittedChanges) {
+                        ApplicationManager.getApplication().invokeLater {
+                            triggerAutoCommit()
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore failures from git status check
+                }
+            }
+        }
+    }
+
+    private fun triggerAutoCommit() {
+        if (isSending || project.isDisposed) return
+        submitTurn(
+            "If further work is needed to complete the task, pick the best and most efficient solution then finish it. If there are no more actions required, commit all approved changes now with a descriptive conventional commit message without more actions or research needed.",
+            emptyList(),
+            isAutoCommit = true,
+            isSilent = true
+        )
     }
 
     private fun restoreUnhandledNudgeIfNeeded() {
