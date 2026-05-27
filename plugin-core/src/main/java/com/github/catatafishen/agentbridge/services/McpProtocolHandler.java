@@ -407,8 +407,13 @@ public final class McpProtocolHandler {
 
         Path path;
         try {
-            path = Paths.get(new URI(uri)).toAbsolutePath().normalize();
-        } catch (URISyntaxException | InvalidPathException e) {
+            URI parsed = new URI(uri);
+            // UnixUriUtils rejects file:// URIs with authority (e.g. file://localhost/foo)
+            if (parsed.getAuthority() != null && "file".equals(parsed.getScheme())) {
+                parsed = new URI("file", null, parsed.getPath(), parsed.getQuery(), parsed.getFragment());
+            }
+            path = Paths.get(parsed).toAbsolutePath().normalize();
+        } catch (URISyntaxException | IllegalArgumentException e) {
             return ResourceReadResult.error(-32602, "Invalid resource URI: " + uri);
         }
 
