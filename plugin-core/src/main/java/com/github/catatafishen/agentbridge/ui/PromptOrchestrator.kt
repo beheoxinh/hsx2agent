@@ -132,17 +132,19 @@ class PromptOrchestrator(
         PsiBridgeService.getInstance(project).closeAgentOpenedFiles()
     }
 
-    /** Executes a prompt on the calling thread (must be called from a background thread). */
     fun execute(
         prompt: String, contextItems: List<ContextItemData>, selectedModelId: String,
         rawText: String, promptEntryId: String, isAutoCommit: Boolean = false,
         isContinue: Boolean = false
     ) {
-        // Refuse to start a new turn while a stop is in progress — the watchdog may be about
-        // to kill the transport. The caller should retry after the stop completes.
         if (stopped) {
-            log.warn("execute() called while stop is in progress — refusing to start new turn")
-            return
+            val thread = currentPromptThread
+            if (thread != null && thread.isAlive) {
+                log.warn("execute() called while stop is in progress — refusing to start new turn")
+                return
+            }
+            log.info("execute() called after stop completed — resetting stopped flag")
+            stopped = false
         }
         val myGeneration = synchronized(this) { ++turnGeneration }
         isTurnAutoCommit = isAutoCommit
@@ -166,10 +168,7 @@ class PromptOrchestrator(
         }
     }
 
-    /** Cancels the running prompt: interrupts the thread and cancels the remote session. */
     fun stop() {
-        // Set the flag FIRST so the background thread sees it even if the remote session
-        // completes the turn before Thread.interrupt() fires.
         stopped = true
         val sessionId = currentSessionId
         val thread = currentPromptThread
@@ -177,20 +176,15 @@ class PromptOrchestrator(
             try {
                 agentManager.client.cancelSession(sessionId)
             } catch (_: Exception) {
-                // Best-effort cancellation
             }
         }
         thread?.interrupt()
         consolePanel().cancelAllRunning()
         consolePanel().addErrorEntry("Stopped by user")
 
-        // Clear any pending queued messages so they do not auto-fire after stop.
         com.github.catatafishen.agentbridge.services.AgentNudgeService
             .getInstance(project).clearMessageQueue()
 
-        // Fallback: if the agent process ignores session/cancel, kill the transport after
-        // a grace period so the process does not keep consuming tokens. Use a daemon
-        // watchdog so it never blocks the EDT or stop() caller.
         val client = agentManager.getClientIfRunning() ?: return
         val watchdog = Thread({
             try {
@@ -205,6 +199,9 @@ class PromptOrchestrator(
                         agentManager.stop()
                     } catch (_: Exception) {
                     }
+                    stopped = false
+                    log.info("stop(): transport killed — auto-restarting agent")
+                    reconnectAfterError()
                 }
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
