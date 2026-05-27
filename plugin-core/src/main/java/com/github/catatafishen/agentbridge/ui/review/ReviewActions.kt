@@ -25,7 +25,7 @@ private val APPROVED_BG = com.intellij.ui.JBColor(
 class AutoApproveToggleAction(private val project: Project) : ToggleAction(
     "Auto-Approve",
     "Apply agent edits without per-file approval",
-    AllIcons.Actions.GroupByFile
+    AllIcons.Actions.Copy
 ), CustomComponentAction {
 
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -71,7 +71,7 @@ class AutoApproveToggleAction(private val project: Project) : ToggleAction(
 class AutoCleanOnNewPromptToggleAction(private val project: Project) : ToggleAction(
     "Auto-Clean on New Prompt",
     "Remove approved rows automatically when starting a new prompt",
-    AllIcons.Actions.ClearCash
+    AllIcons.Actions.SynchronizeScrolling
 ), CustomComponentAction {
 
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
