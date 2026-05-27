@@ -505,9 +505,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
         if (mcpPort > 0) {
             cmd.add(CMD_CONFIG);
-            cmd.add("mcp_servers.agentbridge.url=http://127.0.0.1:" + mcpPort + "/mcp");
-            cmd.add(CMD_CONFIG);
-            cmd.add("mcp_servers.agentbridge.transport=streamable-http");
+            cmd.add("mcp_servers.agentbridge.url=http://localhost:" + mcpPort + "/mcp");
         }
 
         return cmd;

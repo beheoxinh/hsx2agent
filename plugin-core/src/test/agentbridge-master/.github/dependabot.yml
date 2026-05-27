@@ -1,0 +1,63 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    # github-actions uses tag-based versioning — semver-major-days is not supported
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+    groups:
+      gradle-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      # Kotlin 2.3.20+ is not supported by GitHub CodeQL (as of April 2026).
+      # Bumping causes CI failures in the code-scanning workflow.
+      # Remove this ignore rule once CodeQL adds support for newer Kotlin versions.
+      - dependency-name: "org.jetbrains.kotlin:*"
+        versions: [ ">= 2.3.20" ]
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+
+  - package-ecosystem: "npm"
+    directory: "/plugin-core/chat-ui"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+    groups:
+      chat-ui-npm:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+
+  - package-ecosystem: "npm"
+    directory: "/plugin-core/js-tests"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+    groups:
+      js-tests-npm:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30

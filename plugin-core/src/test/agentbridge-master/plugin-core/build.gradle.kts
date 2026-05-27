@@ -1,0 +1,698 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
+import java.security.MessageDigest
+import java.util.zip.ZipInputStream
+
+plugins {
+    id("java")
+    kotlin("jvm") version "2.3.21"
+    id("org.jetbrains.intellij.platform") version "2.16.0"
+    jacoco
+    `maven-publish`
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs("src/main/java")
+        }
+        kotlin {
+            srcDirs("src/main/java")
+        }
+        resources {
+            srcDir(layout.buildDirectory.dir("generated/resources/chat-ui"))
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+    intellijPlatform {
+        defaultRepositories()
+    }
+}
+
+dependencies {
+    intellijPlatform {
+        val localPath = providers.gradleProperty("intellijPlatform.localPath").orNull
+        if (localPath != null) {
+            local(localPath)
+        } else {
+            intellijIdeaUltimate("2025.3")
+        }
+        testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
+        bundledPlugin("com.intellij.java")
+        bundledPlugin("Git4Idea")
+        bundledPlugin("org.jetbrains.plugins.terminal")
+        bundledPlugin("com.intellij.database")
+    }
+
+    // Kotlin stdlib for UI layer
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+
+    // Force annotations version to match the platform (TYPE_USE support required for lambdas)
+    implementation("org.jetbrains:annotations:${providers.gradleProperty("annotationsVersion").get()}")
+
+    // JSON processing (Gson)
+    implementation("com.google.code.gson:gson:${providers.gradleProperty("gsonVersion").get()}")
+
+    // QR code generation (ZXing)
+    implementation("com.google.zxing:core:${providers.gradleProperty("zxingVersion").get()}")
+    implementation("com.google.zxing:javase:${providers.gradleProperty("zxingVersion").get()}")
+
+    // SQLite JDBC (used by OpenCode session import)
+    implementation("org.xerial:sqlite-jdbc:${providers.gradleProperty("sqliteJdbcVersion").get()}")
+
+    testImplementation("org.junit.jupiter:junit-jupiter:${providers.gradleProperty("junitVersion").get()}")
+    testImplementation(
+        "junit:junit:${
+            providers.gradleProperty("junit4Version").get()
+        }"
+    )  // Required by IntelliJ test framework
+    testImplementation("org.mockito:mockito-core:${providers.gradleProperty("mockitoVersion").get()}")
+    // Jazzer API — provides FuzzedDataProvider for fuzz targets in src/test/.../fuzz/.
+    // Actual fuzzing runs use the full Jazzer engine via the CI fuzz workflow.
+    testImplementation("com.code-intelligence:jazzer-api:${providers.gradleProperty("jazzerVersion").get()}")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:${providers.gradleProperty("junitVersion").get()}")
+}
+
+// Ensure annotations 26.x is used everywhere (needed for TYPE_USE @NotNull on functional interfaces)
+configurations.all {
+    resolutionStrategy.force("org.jetbrains:annotations:${providers.gradleProperty("annotationsVersion").get()}")
+}
+
+// Strip unused SQLite native libraries from sqlite-jdbc JAR.
+// sqlite-jdbc bundles 24 platform/arch combinations (~14 MB), but only 3 are needed:
+// - Linux x86_64
+// - macOS aarch64
+// - Windows x86_64
+// This task repacks the JAR keeping only these 3, saving ~10 MB.
+val stripSqliteNatives = tasks.register("stripSqliteNatives") {
+    group = "build"
+    description = "Strip unused native libraries from sqlite-jdbc JAR"
+
+    val runtimeClasspath = configurations.named("runtimeClasspath")
+    val outputJar = layout.buildDirectory.file("libs/sqlite-jdbc-stripped.jar")
+
+    inputs.files(runtimeClasspath)
+    outputs.file(outputJar)
+
+    doLast {
+        val sqliteJar = runtimeClasspath.get().find { it.name.startsWith("sqlite-jdbc-") }
+            ?: error("sqlite-jdbc not found in runtime classpath")
+        SqliteJarStripper().strip(sqliteJar, outputJar.get().asFile)
+    }
+}
+
+// Copy MCP server JAR into plugin lib for bundling
+tasks.named("prepareSandbox") {
+    dependsOn(project(":mcp-server").tasks.named("jar"))
+    doLast {
+        val mcpJar = project(":mcp-server").tasks.named("jar").get().outputs.files.singleFile
+        // Copy to the versioned sandbox directory where the IDE actually runs
+        val ideDirs = File(
+            layout.buildDirectory.asFile.get(),
+            "idea-sandbox"
+        ).listFiles { f -> f.isDirectory && f.name.startsWith("IU-") }
+        ideDirs?.forEach { ideDir ->
+            val sandboxLib = File(ideDir, "plugins/plugin-core/lib")
+            sandboxLib.mkdirs()
+            mcpJar.copyTo(File(sandboxLib, "mcp-server.jar"), overwrite = true)
+        }
+
+        // Restore persisted sandbox config (disabled plugins, settings, etc.)
+        val persistentConfig = rootProject.file(".sandbox-config")
+        if (persistentConfig.exists() && persistentConfig.isDirectory) {
+            ideDirs?.forEach { ideDir ->
+                val configDir = File(ideDir, "config")
+                configDir.mkdirs()
+                persistentConfig.walkTopDown().forEach { src ->
+                    if (src.isFile) {
+                        val rel = src.relativeTo(persistentConfig)
+                        val dest = File(configDir, rel.path)
+                        dest.parentFile.mkdirs()
+                        src.copyTo(dest, overwrite = true)
+                    }
+                }
+            }
+            logger.lifecycle("Restored sandbox config from .sandbox-config/")
+        }
+
+        // Restore marketplace-installed plugins (zips/jars in system/plugins/)
+        val persistentPlugins = rootProject.file(".sandbox-plugins")
+        if (persistentPlugins.exists() && persistentPlugins.isDirectory) {
+            ideDirs?.forEach { ideDir ->
+                // Extract plugin zips into the plugins/ directory (alongside plugin-core)
+                // IntelliJ loads plugins from plugins/, not system/plugins/
+                val pluginsDir = File(ideDir, "plugins")
+                pluginsDir.mkdirs()
+                persistentPlugins.listFiles()?.filter { it.extension == "zip" }?.forEach { zipFile ->
+                    val pluginName = zipFile.nameWithoutExtension
+                    val extractedDir = File(pluginsDir, pluginName)
+                    if (!extractedDir.exists()) {
+                        logger.lifecycle("Extracting marketplace plugin: ${zipFile.name}")
+                        ZipInputStream(zipFile.inputStream()).use { zis: ZipInputStream ->
+                            var entry = zis.nextEntry
+                            while (entry != null) {
+                                val dest = File(pluginsDir, entry.name)
+                                if (entry.isDirectory) dest.mkdirs()
+                                else {
+                                    dest.parentFile.mkdirs(); dest.outputStream().use { zis.copyTo(it) }
+                                }
+                                zis.closeEntry()
+                                entry = zis.nextEntry
+                            }
+                        }
+                    }
+                }
+                // Copy standalone jars
+                persistentPlugins.listFiles()?.filter { it.extension == "jar" }?.forEach { jarFile ->
+                    val dest = File(pluginsDir, jarFile.name)
+                    if (!dest.exists()) {
+                        jarFile.copyTo(dest)
+                    }
+                }
+                // Also keep the zips in system/plugins/ for IntelliJ's plugin manager UI
+                val systemPlugins = File(ideDir, "system/plugins")
+                systemPlugins.mkdirs()
+                persistentPlugins.listFiles()?.filter { it.extension == "zip" || it.extension == "jar" }
+                    ?.forEach { src ->
+                        val dest = File(systemPlugins, src.name)
+                        if (!dest.exists()) {
+                            src.copyTo(dest)
+                        }
+                    }
+            }
+            logger.lifecycle("Restored marketplace plugins from .sandbox-plugins/")
+        }
+    }
+}
+
+// Resolve nvm Node so Gradle's exec tasks use the right version.
+// Prefers the nvm default alias (~/.nvm/alias/default) so the same
+// Node version used in the terminal is used here. Falls back to the
+// highest installed version, then to system PATH.
+val nvmNodeBin: String? by lazy {
+    val home = System.getProperty("user.home")
+    val nvmVersionsDir = File(home, ".nvm/versions/node")
+    if (!nvmVersionsDir.isDirectory) return@lazy null
+
+    // Try the nvm default alias first
+    val defaultAlias = File(home, ".nvm/alias/default")
+    if (defaultAlias.isFile) {
+        val defaultVersion = defaultAlias.readText().trim()
+        val defaultBin = File(nvmVersionsDir, "$defaultVersion/bin")
+        if (File(defaultBin, "node").exists()) return@lazy defaultBin.absolutePath
+    }
+
+    // Fall back to highest installed version
+    nvmVersionsDir.listFiles()
+        ?.filter { it.isDirectory }
+        ?.sortedByDescending { it.name }
+        ?.map { File(it, "bin") }
+        ?.firstOrNull { File(it, "node").exists() }
+        ?.absolutePath
+}
+
+// Full path to npm from nvm, or bare "npm" if nvm is not available.
+// Using a full path ensures Gradle doesn't resolve the executable from the
+// system PATH before our environment override takes effect.
+val npmCmd: String by lazy { nvmNodeBin?.let { "$it/npm" } ?: "npm" }
+
+fun runProcess(workDir: File, vararg cmd: String) {
+    val pb = ProcessBuilder(*cmd).directory(workDir).inheritIO()
+    nvmNodeBin?.let { bin -> pb.environment()["PATH"] = "$bin:${System.getenv("PATH")}" }
+    val exit = pb.start().waitFor()
+    if (exit != 0) error("Command failed (exit $exit): ${cmd.joinToString(" ")}")
+}
+
+// Build chat-ui TypeScript → bundled JS + copy static assets
+val buildChatUi by tasks.registering {
+    val outputDir = layout.buildDirectory.dir("generated/resources/chat-ui/chat")
+    inputs.dir("chat-ui/src")
+    outputs.dir(outputDir)
+
+    doLast {
+        // Ensure dist exists
+        file("chat-ui/dist").mkdirs()
+
+        runProcess(file("chat-ui"), npmCmd, "run", "build")
+
+        // Sync to generated resources directory
+        copy {
+            from("chat-ui/dist")              // chat-components.js, web-app.js, sw.js
+            from("chat-ui/src/chat.css")      // chat component styles
+            from("chat-ui/src/web-app.css")   // web app layout styles
+            from("chat-ui/src/manifest.json") // PWA manifest
+            into(outputDir)
+        }
+    }
+}
+
+// Run chat-ui JavaScript tests (Vitest + happy-dom)
+val jsTest by tasks.registering {
+    group = "verification"
+    description = "Run chat-ui JavaScript unit tests (Vitest)"
+    inputs.dir("chat-ui/src")
+    inputs.dir("js-tests")
+
+    doLast {
+        runProcess(file("js-tests"), npmCmd, "test")
+    }
+}
+
+tasks.named("check") {
+    dependsOn(jsTest)
+}
+
+tasks.named("processResources") {
+    dependsOn(buildChatUi)
+    dependsOn("generateHookHashes")
+}
+
+// Generate bundled-hashes.properties from all hook script resources listed in manifest.txt.
+// Runs at build time so: (a) missing resources fail the build immediately rather than silently
+// at runtime on end-user machines, and (b) the runtime can load pre-computed hashes from the
+// JAR without re-reading every resource on each IDE startup.
+//
+// Hash history is accumulated across builds: when a file's content changes, the old hash is
+// moved to a comma-separated history list. This lets the runtime recognize officially-shipped
+// versions across multiple plugin upgrades (including skipped versions).
+val generateHookHashes by tasks.registering {
+    group = "build"
+    description = "Pre-compute SHA-256 hashes for default hook resources listed in manifest.txt"
+
+    val manifestFile = file("src/main/resources/default-hooks/manifest.txt")
+    val scriptsDir = file("src/main/resources/default-hooks")
+    val jsonConfigNames = listOf("run_command.json", "run_in_terminal.json", "write_file.json")
+    val outputFile = file("src/main/resources/default-hooks/bundled-hashes.properties")
+
+    inputs.file(manifestFile)
+    inputs.dir(scriptsDir)
+    outputs.file(outputFile)
+
+    doLast {
+        val scriptExt = if (System.getProperty("os.name", "").lowercase().contains("windows")) ".ps1" else ".sh"
+        val digest = MessageDigest.getInstance("SHA-256")
+
+        fun sha256(bytes: ByteArray): String {
+            digest.reset()
+            return digest.digest(bytes).joinToString("") { b: Byte -> "%02x".format(b.toInt() and 0xFF) }
+        }
+
+        val entries = manifestFile.readLines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+
+        // Load existing hashes to carry forward historical values
+        val existingCurrent = mutableMapOf<String, String>()
+        val existingHistory = mutableMapOf<String, MutableList<String>>()
+        if (outputFile.exists()) {
+            outputFile.readLines().forEach { line ->
+                if (line.startsWith("#") || "=" !in line) return@forEach
+                val (key, value) = line.split("=", limit = 2)
+                when {
+                    key.endsWith(".history") -> existingHistory[key.removeSuffix(".history")] =
+                        value.split(",").filter { it.isNotBlank() }.toMutableList()
+
+                    else -> existingCurrent[key] = value
+                }
+            }
+        }
+
+        val currentHashes = mutableMapOf<String, String>()
+        val historyHashes = mutableMapOf<String, List<String>>()
+
+        fun recordHash(name: String, newHash: String) {
+            currentHashes[name] = newHash
+            val oldHash = existingCurrent[name]
+            val history = (existingHistory[name] ?: mutableListOf()).toMutableList()
+            if (oldHash != null && oldHash != newHash && !history.contains(oldHash)) {
+                history.add(0, oldHash) // most recent first
+            }
+            historyHashes[name] = history
+        }
+
+        // Hash all script files from the manifest
+        for (entry in entries) {
+            val file = File(scriptsDir, entry)
+            if (!file.exists()) {
+                throw GradleException("Default hook resource missing from manifest: $entry (expected at ${file.absolutePath})")
+            }
+            recordHash(entry, sha256(file.readBytes()))
+        }
+
+        // Hash the generated JSON configs (keep in sync with DefaultHookProvisioner.buildJsonConfigs)
+        val jsonContent = mapOf(
+            "run_command.json" to """{"permission":[{"script":"scripts/run-command-abuse$scriptExt","rejectOnFailure":true,"timeout":10}]}""",
+            "run_in_terminal.json" to """{"permission":[{"script":"scripts/run-in-terminal-abort$scriptExt","rejectOnFailure":true,"timeout":10}],"success":[{"script":"scripts/run-in-terminal-reprimand$scriptExt","timeout":10,"failSilently":true}]}""",
+            "write_file.json" to """{"success":[{"script":"scripts/check-stale-naming$scriptExt","timeout":10,"failSilently":true}]}"""
+        )
+        for (name in jsonConfigNames) {
+            val content = jsonContent[name] ?: throw GradleException("Unknown JSON config: $name")
+            recordHash(name, sha256(content.toByteArray(Charsets.UTF_8)))
+        }
+
+        // Write properties: current=<hash> and optional history=<h1,h2,...>
+        val sb = StringBuilder("# Auto-generated by generateHookHashes Gradle task — do not edit\n")
+        (currentHashes.keys + historyHashes.keys).toSortedSet().forEach { name ->
+            val current = currentHashes[name] ?: return@forEach
+            sb.append("$name=$current\n")
+            val history = historyHashes[name]?.filter { it.isNotBlank() } ?: emptyList()
+            if (history.isNotEmpty()) {
+                sb.append("$name.history=${history.joinToString(",")}\n")
+            }
+        }
+        outputFile.writeText(sb.toString())
+        logger.lifecycle("Generated bundled-hashes.properties with ${currentHashes.size} entries")
+    }
+}
+
+// Also include in the distribution ZIP
+tasks.named<Zip>("buildPlugin") {
+    archiveBaseName.set("agentbridge")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    dependsOn(project(":mcp-server").tasks.named("jar"))
+    from(project(":mcp-server").tasks.named("jar")) {
+        into("lib")
+        rename { "mcp-server.jar" }
+    }
+}
+
+
+sourceSets {
+    main {
+        resources.srcDir(layout.buildDirectory.dir("generated/buildinfo"))
+    }
+}
+
+intellijPlatform {
+    pluginConfiguration {
+        id = "com.github.catatafishen.ideagentforcopilot"
+        name = "AgentBridge"
+        version = project.version.toString()
+        // Description is maintained in plugin.xml as rich HTML for the marketplace.
+
+        // Change-notes: generated by scripts/generate-changelog.sh in CI.
+        // Reads from CHANGELOG_FILE env var (path relative to repo root).
+        // Falls back to the static content in plugin.xml for local dev builds.
+        val changelogFile = providers.environmentVariable("CHANGELOG_FILE")
+        if (changelogFile.isPresent) {
+            changeNotes = providers.fileContents(
+                rootProject.layout.projectDirectory.file(changelogFile.get())
+            ).asText
+        }
+
+        ideaVersion {
+            sinceBuild = "253"
+            untilBuild = provider { null }
+        }
+    }
+
+    publishing {
+        token = providers.environmentVariable("INTELLIJ_PUBLISH_TOKEN")
+    }
+
+    pluginVerification {
+        // Don't fail on COMPATIBILITY_PROBLEMS or MISSING_DEPENDENCIES: our Java support
+        // classes (psi.java package) reference Java PSI and Compiler APIs that are absent in
+        // non-Java IDEs (PY, WS, GO). These classes are guarded at runtime by
+        // isPluginInstalled("com.intellij.modules.java") + NoClassDefFoundError catch.
+        // TODO: Move psi.java classes to a separate Gradle module (separate JAR) so the
+        //       verifier only checks them against IDEs with Java support.
+        //
+        failureLevel.set(
+            listOf(
+                FailureLevel.INVALID_PLUGIN,
+                FailureLevel.INTERNAL_API_USAGES,
+                FailureLevel.OVERRIDE_ONLY_API_USAGES,
+                FailureLevel.NON_EXTENDABLE_API_USAGES,
+                FailureLevel.PLUGIN_STRUCTURE_WARNINGS,
+            )
+        )
+        ides {
+            // In CI, the verifyIde Gradle property selects a single IDE so that each
+            // verification job runs in its own process with its own isolated copy of IDE
+            // and plugin JARs — no shared CachingJarFileSystemProvider, no race conditions.
+            // Without the property (local dev or manual all-in-one run), all four IDEs
+            // are registered and run sequentially (see verifyPlugin jvmArgs below).
+            //
+            // Use explicit stable versions only — recommended() also pulls in EAP builds
+            // (IU-261, IU-262) which cause ClosedByInterruptException from resource exhaustion
+            // when 6+ verifiers run in parallel on CI.
+            // IntelliJ IDEA Community (IC) is no longer published as a separate artifact
+            // since 2025.3 — JetBrains unified the distribution. Use Ultimate (IU) instead;
+            // it covers the same platform API surface for compatibility verification.
+            val target = if (project.hasProperty("verifyIde")) project.property("verifyIde") as String else null
+            if (target == null || target == "IU") create(IntelliJPlatformType.IntellijIdeaUltimate, "2025.3")
+            if (target == null || target == "PY") create(IntelliJPlatformType.PyCharmProfessional, "2026.1")
+            if (target == null || target == "WS") create(IntelliJPlatformType.WebStorm, "2026.1")
+            if (target == null || target == "GO") create(IntelliJPlatformType.GoLand, "2026.1")
+            // Track the latest GA release to catch removed/deprecated API issues early.
+            // JetBrains stopped publishing LATEST-EAP-SNAPSHOT in their Maven repos and changed
+            // the EAP artifact naming convention (idea-BUILD.tar.gz instead of ideaIU-*.tar.gz),
+            // so we pin to the latest stable release instead. This job runs in its own isolated
+            // CI process (verifyIde=IU-EAP), so there is no shared-filesystem race with the
+            // stable-IDE jobs that verify against our build target (2025.3).
+            if (target == "IU-EAP") create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.1")
+            // Note: Android Studio verification via Gradle plugin is broken
+            // (URL resolution bug in IntelliJPlatformGradlePlugin). Android Studio
+            // Panda 2 (2025.3.2) uses platform build 253.30387.90 — same base as
+            // IntelliJ IDEA 2025.3 which we verify above.
+        }
+    }
+}
+
+tasks {
+    // Generate build info properties file
+    val generateBuildInfo by registering {
+        val outputDir = layout.buildDirectory.dir("generated/buildinfo")
+        val pluginVersion = project.version.toString()
+        outputs.dir(outputDir)
+        outputs.upToDateWhen { false }
+        doLast {
+            val propsFile = outputDir.get().file("build-info.properties").asFile
+            propsFile.parentFile.mkdirs()
+            val gitHash = try {
+                providers.exec { commandLine("git", "rev-parse", "--short", "HEAD") }
+                    .standardOutput.asText.get().trim()
+            } catch (_: Exception) {
+                "unknown"
+            }
+            val timestamp = System.currentTimeMillis().toString()
+            propsFile.writeText("build.timestamp=$timestamp\nbuild.git.hash=$gitHash\nbuild.version=$pluginVersion\n")
+        }
+    }
+
+    named("processResources") {
+        dependsOn(generateBuildInfo)
+        dependsOn(buildChatUi)
+    }
+
+    withType<Jar> {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    }
+
+    withType<JavaCompile> {
+        options.compilerArgs.add("-Xlint:deprecation")
+    }
+
+    test {
+        useJUnitPlatform {
+            excludeTags("integration")
+        }
+        // IntelliJ Platform loads classes via a custom classloader that doesn't
+        // provide class file locations. Without this flag, JaCoCo reports 0% coverage.
+        extensions.configure<JacocoTaskExtension> {
+            isIncludeNoLocationClasses = true
+            excludes = listOf("jdk.internal.*")
+        }
+        finalizedBy(named("jacocoTestReport"))
+    }
+
+    named<JacocoReport>("jacocoTestReport") {
+        dependsOn(named("test"))
+        reports {
+            xml.required.set(true)
+            html.required.set(true)
+        }
+        // IntelliJ Platform's instrumentCode task applies @NotNull bytecode checks,
+        // changing class hashes. Tests run against these instrumented classes (in
+        // build/instrumented/instrumentCode/), so the report must use them too —
+        // otherwise JaCoCo reports "execution data does not match" for every class.
+        //
+        // Exclude Swing/JCEF UI classes that require the full IDE runtime — these
+        // can only be tested via integration tests. Pure-logic classes in ui/ (e.g.
+        // ConversationSerializer, MessageFormatter, UsageStatisticsData) are kept.
+        //
+        // NOTE: These are TRULY UNTESTABLE in unit tests (require IDE runtime).
+        // Missing tests for testable logic should NOT be hidden via exclusions.
+        val uiExcludes = listOf(
+            "**/ui/*Panel*",                   // Swing panels (AcpConnect, ChatConsole, Permissions, etc.)
+            "**/ui/*Banner*",                  // Swing banners (AuthSetup, GitWarning, Status)
+            "**/ui/ChatToolWindow*",           // ChatToolWindowFactory, ChatToolWindowContent
+            "**/ui/ChatConsolePanel*",         // JCEF chat panel
+            "**/ui/ChatPanelApi*",             // Chat panel API interface (Swing-dependent)
+            "**/ui/ToolCallPopup*",            // Swing popup
+            "**/ui/AgentIconProvider*",        // Icon loading (needs IDE runtime)
+            "**/ui/PromptOrchestrator*",       // Prompt orchestration (needs Project + services)
+            "**/ui/PromptContextManager*",     // Context management (needs Project)
+            "**/ui/PromptShortcut*",           // AnAction + Swing
+            "**/ui/ContextChipRenderer*",      // Swing renderer
+            "**/ui/ContextItemData*",          // Data class with Swing dependencies
+            "**/ui/AuthLoginService*",         // OAuth flow (needs IDE runtime)
+            "**/ui/AuthTerminalHelper*",       // Terminal auth (needs IDE runtime)
+            "**/ui/BillingManager*",           // Billing API (needs HTTP client + IDE)
+            "**/ui/CopilotBillingClient*",     // Billing HTTP client
+            "**/ui/PasteToScratchHandler*",    // Editor paste handler (needs IDE runtime)
+            "**/ui/renderers/**",              // All Swing renderers
+            "**/ui/statistics/*Panel*",        // Swing statistics panel
+            "**/ui/statistics/*Dialog*",       // Swing statistics dialog
+        )
+        val otherExcludes = listOf(
+            "**/actions/**",                   // AnAction subclasses (need ActionManager)
+            "**/settings/*Configurable*",      // Settings UI configurables (need IDE runtime)
+            "**/settings/QrCodePanel*",        // QR code panel (UI, needs IDE runtime)
+            "**/settings/ThemeColorComboBox*", // Theme color combo (UI, needs IDE runtime)
+            "**/memory/*Configurable*",        // MemorySettingsConfigurable (Swing, needs IDE runtime)
+            "**/custommcp/*Configurable*",     // CustomMcpConfigurable (Swing, needs IDE runtime)
+            // ── Raw I/O infrastructure (socket/HTTP/subprocess) ───────────────────────
+            // These are excluded because they're thin wrappers around OS/network I/O.
+            // Protocol logic (parsing, state machines) should be extracted and tested.
+            "**/psi/QodanaAnalyzer*",          // Runs external Qodana process
+            // ── IDE-coupled tool implementations (need full IntelliJ runtime) ────────
+            "**/psi/tools/project/RunScratchFileTool*", // ScratchFileService + RunManager
+            "**/psi/tools/project/DownloadSourcesTool*", // Reflection into Gradle/Maven internals
+            "**/psi/tools/quality/InteractWithModalTool*", // Swing dialog traversal
+            // ── PSI Java support (need full PSI infrastructure) ──────────────────────
+            "**/psi/java/RefactoringJavaSupport*", // PsiClass/PsiMethod traversal
+            "**/psi/java/CodeNavigationJavaSupport*", // PsiClass outline + hierarchy
+            "**/psi/java/ClassResolverUtil*",     // JavaPsiFacade class resolution
+            // ── Platform compatibility shim ──────────────────────────────────
+            "**/psi/PlatformApiCompat*",          // IDE API version shim (pure logic tested separately)
+        )
+        val allExcludes = uiExcludes + otherExcludes
+
+        // Use a Provider so the directory-existence check happens at EXECUTION time,
+        // not configuration time. On fresh CI the instrumented/ dir doesn't exist yet
+        // during configuration, but it WILL exist by the time this report task runs
+        // (jacocoTestReport → test → instrumentCode). Using the instrumented classes is
+        // critical: JaCoCo records probe IDs against the instrumented bytecode, so the
+        // report must read those same class files to match execution data.
+        classDirectories.setFrom(
+            layout.buildDirectory.map { buildDir ->
+                val instrumentedDir = buildDir.dir("instrumented/instrumentCode").asFile
+                val baseDir = if (instrumentedDir.exists()) instrumentedDir
+                else buildDir.dir("classes/java/main").asFile
+                fileTree(baseDir) { exclude(allExcludes) }
+            }
+        )
+        sourceDirectories.setFrom(files("src/main/java"))
+    }
+
+    test {
+        // Resolve the mockito-core JAR for use as a Java agent (required for JBR/JDK 25+
+        // since ByteBuddy/Mockito self-attachment is restricted on newer JVMs).
+        // See: https://github.com/mockito/mockito/issues/3754
+        val mockitoAgent = configurations.testRuntimeClasspath.get().resolvedConfiguration
+            .resolvedArtifacts
+            .firstOrNull { it.moduleVersion.id.group == "org.mockito" && it.moduleVersion.id.name == "mockito-core" }
+            ?.file
+        jvmArgs(
+            // Allow Mockito to mock final classes under Java 21's module system
+            "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+            // IntelliJ Platform 2.16+ sets -Djava.system.class.loader=PathClassLoader, which
+            // conflicts with Java 21 CDS (Class Data Sharing) initialization — the NIO filesystem
+            // (FileSystems$DefaultFileSystemHolder) initializes via CDS before the custom classloader
+            // is ready, causing "getSystemClassLoader cannot be called during instantiation".
+            // Disabling CDS avoids the conflict without affecting functionality.
+            "-XX:-UseSharedSpaces"
+        )
+        if (mockitoAgent != null) {
+            jvmArgs("-javaagent:${mockitoAgent.absolutePath}")
+        }
+    }
+
+    runIde {
+        maxHeapSize = "2g"
+        // Enable auto-reload of plugin when changes are built
+        autoReload = true
+
+        // Auto-open this project in the sandbox IDE (skips welcome screen)
+        args = listOf(project.rootDir.absolutePath)
+
+        // System properties to skip setup and preserve state
+        jvmArgs = listOf(
+            "-Didea.trust.all.projects=true",           // Skip trust dialog
+            "-Didea.is.internal=true",                   // Enable internal mode
+            "-Deap.require.license=false",               // Skip license checks
+            "-Didea.suppressed.plugins.id=",             // Don't suppress any plugins
+            "-Didea.plugin.in.sandbox.mode=true"         // Sandbox mode
+        )
+    }
+
+    named<VerifyPluginTask>("verifyPlugin") {
+        // In CI, each verify job sets -PverifyIde=XY so only one IDE is registered in
+        // pluginVerification.ides — the verifier runs a single thread and there is no
+        // shared-filesystem race at all.
+        //
+        // For local dev (no verifyIde property), all four IDEs run in the same process.
+        // The verifier uses getConcurrencyLevel() from the system property
+        // "intellij.plugin.verifier.concurrency.level"; its fallback is
+        // max(8, min(maxByMemory, availableProcessors())) which has a floor of 8.
+        // Multiple workers sharing CachingJarFileSystemProvider cause
+        // ClosedFileSystemException when one worker's ZipFileSystem is evicted while
+        // another is still reading it. Force concurrency=1 to run them sequentially.
+        jvmArgs("-Dintellij.plugin.verifier.concurrency.level=1")
+    }
+}
+
+tasks.register("printFuzzClasspath") {
+    description = "Print the test runtime classpath for standalone Jazzer fuzz runs"
+    group = "verification"
+    dependsOn("testClasses")
+    doLast {
+        println(sourceSets.test.get().runtimeClasspath.asPath)
+    }
+}
+
+// Publish the built plugin ZIP to GitHub Packages so users (and tooling like
+// OpenSSF Scorecard) can discover and consume the plugin via a real package
+// registry, in addition to the GitHub Release and the JetBrains Marketplace.
+// Uses configure<PublishingExtension> because the IntelliJ Platform extension
+// also exposes a `publishing { ... }` DSL that would otherwise be selected.
+configure<PublishingExtension> {
+    publications {
+        create<MavenPublication>("pluginZip") {
+            groupId = "com.github.catatafishen"
+            artifactId = "ide-agent-for-copilot"
+            version = project.version.toString()
+            artifact(tasks.named("buildPlugin")) {
+                extension = "zip"
+            }
+            pom {
+                name.set("IDE Agent for Copilot")
+                description.set("IntelliJ plugin integrating GitHub Copilot via ACP/MCP.")
+                url.set("https://github.com/catatafishen/agentbridge")
+                licenses {
+                    license {
+                        name.set("MIT")
+                        url.set("https://github.com/catatafishen/agentbridge/blob/master/LICENSE")
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/catatafishen/agentbridge")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: ""
+                password = System.getenv("GITHUB_TOKEN") ?: ""
+            }
+        }
+    }
+}

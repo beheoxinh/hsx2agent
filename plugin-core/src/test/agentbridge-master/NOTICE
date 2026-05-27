@@ -1,0 +1,16 @@
+IDE Agent for Copilot
+Copyright 2026 Henrik Westergård
+
+This product includes software developed under the Apache License, Version 2.0.
+
+This plugin integrates with GitHub Copilot via the Agent Client Protocol (ACP).
+GitHub and GitHub Copilot are trademarks of GitHub, Inc. This project is not
+affiliated with or endorsed by GitHub, Inc.
+
+This product includes concepts and algorithms adapted from MemPalace
+(https://github.com/ultrawideturbodev/mempalace) by UltraWideTurboDev,
+licensed under the MIT License. The Java implementation is original work.
+
+This product includes icons from Font Awesome Free 5.2.0 by Fonticons, Inc.
+(https://fontawesome.com), licensed under the Creative Commons Attribution 4.0
+International License (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/).

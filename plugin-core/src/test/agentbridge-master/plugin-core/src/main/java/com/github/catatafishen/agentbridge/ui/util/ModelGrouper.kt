@@ -1,0 +1,61 @@
+package com.github.catatafishen.agentbridge.ui.util
+
+import com.github.catatafishen.agentbridge.model.Model
+
+/**
+ * Groups a flat model list by provider for the model picker popup.
+ *
+ * Pure logic — zero Swing/UI dependencies, fully unit-testable.
+ */
+class ModelGrouper(private val favorites: Set<String>) {
+
+    data class Group(val provider: String, val models: List<GroupedModel>)
+    data class GroupedModel(
+        val index: Int,
+        val modelId: String,
+        val name: String,
+        val isFavorite: Boolean,
+        val providerName: String?
+    ) {
+        val displayName: String
+            get() = if (isFavorite && providerName != null) "$name ($providerName)" else name
+    }
+
+    companion object {
+        private const val OTHER = "Other"
+    }
+
+    fun group(models: List<Model>): List<Group> {
+        if (models.isEmpty()) return emptyList()
+
+        val indexed = models.mapIndexed { index, model ->
+            val name = ModelProvider.getModelName(model)
+            val provider = ModelProvider.getProvider(model)
+            GroupedModel(index, model.id(), name, favorites.contains(model.id()), provider)
+        }
+
+        // Partition favorites
+        val (favs, rest) = indexed.partition { it.isFavorite }
+
+        // Group rest by provider
+        val providerGroups = rest.groupBy { ModelProvider.getProvider(models[it.index]) ?: OTHER }
+
+        // Sort providers alphabetically, Other last
+        val sortedProviders = providerGroups.keys.sortedWith(
+            compareBy<String> { it == OTHER }.thenBy { it.lowercase() }
+        )
+
+        val result = mutableListOf<Group>()
+
+        if (favs.isNotEmpty()) {
+            result.add(Group("Favorites", favs))
+        }
+
+        for (provider in sortedProviders) {
+            val groupModels = providerGroups[provider] ?: continue
+            result.add(Group(provider, groupModels))
+        }
+
+        return result
+    }
+}

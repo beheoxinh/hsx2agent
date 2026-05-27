@@ -1,0 +1,242 @@
+package com.github.catatafishen.agentbridge.psi.tools.quality;
+
+import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
+import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
+import com.google.gson.JsonObject;
+import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.TextRange;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiManager;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Inserts a suppress annotation or comment for a specific inspection at a given line.
+ */
+public final class SuppressInspectionTool extends QualityTool {
+
+    private static final Logger LOG = Logger.getInstance(SuppressInspectionTool.class);
+    private static final String LABEL_SUPPRESS_INSPECTION = "Suppress Inspection";
+
+    public SuppressInspectionTool(Project project) {
+        super(project);
+    }
+
+    @Override
+    public @NotNull String id() {
+        return "suppress_inspection";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return LABEL_SUPPRESS_INSPECTION;
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Insert a suppress annotation or comment for a specific inspection at a given line";
+    }
+
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
+    }
+
+    @Override
+    public @NotNull JsonObject inputSchema() {
+        return schema(
+            Param.required("path", TYPE_STRING, "Path to the file containing the code to suppress"),
+            Param.required("line", TYPE_INTEGER, "Line number where the inspection finding is located"),
+            Param.required(PARAM_INSPECTION_ID, TYPE_STRING, "The inspection ID to suppress (e.g., 'SpellCheckingInspection')")
+        );
+    }
+
+    @Override
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        if (!args.has("path") || !args.has("line") || !args.has(PARAM_INSPECTION_ID)) {
+            return ToolUtils.ERROR_PREFIX + "Required parameters: path, line, " + PARAM_INSPECTION_ID;
+        }
+        String pathStr = args.get("path").getAsString();
+        int line = args.get("line").getAsInt();
+        String inspectionId = args.get(PARAM_INSPECTION_ID).getAsString().trim();
+
+        if (inspectionId.isEmpty()) {
+            return ToolUtils.ERROR_PREFIX + PARAM_INSPECTION_ID + " cannot be empty";
+        }
+
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                processSuppressInspection(pathStr, line, inspectionId, resultFuture);
+            } catch (Exception e) {
+                LOG.error("Error suppressing inspection", e);
+                resultFuture.complete("Error suppressing inspection: " + e.getMessage());
+            }
+        });
+        String result = resultFuture.get(10, TimeUnit.SECONDS);
+        if (result.startsWith("Added") || result.startsWith("Suppressed")) {
+            FileTool.followFileIfEnabled(project, pathStr, line, line,
+                FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " suppressed");
+        }
+        return result;
+    }
+
+    @Override
+    public @NotNull Object resultRenderer() {
+        return SimpleStatusRenderer.INSTANCE;
+    }
+
+    // ── Private helpers ──────────────────────────────────────
+
+    private void processSuppressInspection(String pathStr, int line, String inspectionId,
+                                           CompletableFuture<String> resultFuture) {
+        var vf = resolveVirtualFile(pathStr);
+        if (vf == null) {
+            resultFuture.complete("Error: file not found: " + pathStr);
+            return;
+        }
+
+        var psiFile = PsiManager.getInstance(project).findFile(vf);
+        if (psiFile == null) {
+            resultFuture.complete("Error: could not parse file: " + pathStr);
+            return;
+        }
+
+        var document = PsiDocumentManager.getInstance(project).getDocument(psiFile);
+        if (document == null) {
+            resultFuture.complete("Error: could not get document for: " + pathStr);
+            return;
+        }
+
+        int zeroLine = line - 1;
+        if (zeroLine < 0 || zeroLine >= document.getLineCount()) {
+            resultFuture.complete("Error: line " + line + " is out of range (file has " +
+                document.getLineCount() + FORMAT_LINES_SUFFIX);
+            return;
+        }
+
+        int offset = document.getLineStartOffset(zeroLine);
+        var element = psiFile.findElementAt(offset);
+        if (element == null) {
+            resultFuture.complete("Error: no code element found at line " + line);
+            return;
+        }
+
+        String fileName = vf.getName();
+
+        FileTool.notifyBeforeEdit(project, vf, document);
+        try {
+            if (fileName.endsWith(ToolUtils.JAVA_EXTENSION)) {
+                try {
+                    resultFuture.complete(com.github.catatafishen.agentbridge.psi.java.CodeQualityJavaSupport.suppress(project, element, inspectionId, document));
+                } catch (NoClassDefFoundError e) {
+                    resultFuture.complete(suppressWithComment(element, inspectionId, document));
+                }
+            } else if (fileName.endsWith(".kt") || fileName.endsWith(".kts")) {
+                resultFuture.complete(suppressKotlin(element, inspectionId, document));
+            } else {
+                resultFuture.complete(suppressWithComment(element, inspectionId, document));
+            }
+        } finally {
+            FileTool.notifyEditComplete();
+        }
+    }
+
+    private String suppressKotlin(PsiElement target, String inspectionId, Document document) {
+        LineInfo info = getLineInfo(target, document);
+
+        if (info.targetLine() > 0) {
+            int prevStart = document.getLineStartOffset(info.targetLine() - 1);
+            int prevEnd = document.getLineEndOffset(info.targetLine() - 1);
+            String prevLine = document.getText(new TextRange(prevStart, prevEnd)).trim();
+            if (prevLine.startsWith("@Suppress(") && prevLine.contains(inspectionId)) {
+                return "Inspection '" + inspectionId + "' is already suppressed at this location";
+            }
+        }
+
+        String annotation = buildKotlinSuppressAnnotation(info.indent(), inspectionId);
+        WriteCommandAction.runWriteCommandAction(project, LABEL_SUPPRESS_INSPECTION, null, () -> {
+            document.insertString(info.lineStart(), annotation);
+            PsiDocumentManager.getInstance(project).commitDocument(document);
+        });
+
+        return formatAnnotationResult(inspectionId, info.targetLine() + 1);
+    }
+
+    private String suppressWithComment(PsiElement target, String inspectionId, Document document) {
+        LineInfo info = getLineInfo(target, document);
+        String comment = buildSuppressComment(info.indent(), inspectionId);
+        WriteCommandAction.runWriteCommandAction(project, LABEL_SUPPRESS_INSPECTION, null, () -> {
+            document.insertString(info.lineStart(), comment);
+            PsiDocumentManager.getInstance(project).commitDocument(document);
+        });
+        return formatCommentResult(inspectionId, info.targetLine() + 1);
+    }
+
+    private record LineInfo(int targetLine, int lineStart, String indent) {
+    }
+
+    private LineInfo getLineInfo(PsiElement target, Document document) {
+        int targetOffset = target.getTextRange().getStartOffset();
+        int targetLine = document.getLineNumber(targetOffset);
+        int lineStart = document.getLineStartOffset(targetLine);
+        String lineText = document.getText(new TextRange(lineStart, document.getLineEndOffset(targetLine)));
+        return new LineInfo(targetLine, lineStart, extractIndent(lineText));
+    }
+
+    // ── Testable pure-logic helpers ──────────────────────────
+
+    /**
+     * Extracts leading whitespace (spaces and tabs) from a line of text.
+     */
+    static String extractIndent(String lineText) {
+        StringBuilder indent = new StringBuilder();
+        for (char c : lineText.toCharArray()) {
+            if (c == ' ' || c == '\t') indent.append(c);
+            else break;
+        }
+        return indent.toString();
+    }
+
+    /**
+     * Builds the {@code //noinspection} comment text to insert before a line.
+     */
+    static String buildSuppressComment(String indent, String inspectionId) {
+        return indent + "//noinspection " + inspectionId + "\n";
+    }
+
+    /**
+     * Builds the {@code @Suppress} annotation text to insert before a Kotlin element.
+     */
+    static String buildKotlinSuppressAnnotation(String indent, String inspectionId) {
+        return indent + "@Suppress(\"" + inspectionId + "\")\n";
+    }
+
+    /**
+     * Formats the result message after inserting a {@code //noinspection} comment.
+     *
+     * @param inspectionId the suppressed inspection ID
+     * @param oneBasedLine the 1-based line number where the comment was added
+     */
+    static String formatCommentResult(String inspectionId, int oneBasedLine) {
+        return "Added //noinspection " + inspectionId + " comment at line " + oneBasedLine;
+    }
+
+    /**
+     * Formats the result message after inserting a {@code @Suppress} annotation.
+     *
+     * @param inspectionId the suppressed inspection ID
+     * @param oneBasedLine the 1-based line number where the annotation was added
+     */
+    static String formatAnnotationResult(String inspectionId, int oneBasedLine) {
+        return "Added @Suppress(\"" + inspectionId + "\") at line " + oneBasedLine;
+    }
+}

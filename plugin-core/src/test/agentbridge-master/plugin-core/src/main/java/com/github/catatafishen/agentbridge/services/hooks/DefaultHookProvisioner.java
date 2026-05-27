@@ -1,0 +1,405 @@
+package com.github.catatafishen.agentbridge.services.hooks;
+
+import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.SystemInfo;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Provisions the default hook directory structure on plugin startup.
+ *
+ * <p><b>Update policy:</b> each hook file's SHA-256 is stored in {@code .provision-hashes}
+ * when the plugin writes it. On the next IDE startup:
+ * <ul>
+ *   <li>If the file on disk matches the stored hash → user never edited it → safe to overwrite
+ *       with the new bundled version.</li>
+ *   <li>If the file on disk differs from the stored hash → user has edited it → do not overwrite;
+ *       show a balloon notification so the user can choose.</li>
+ *   <li>If no hash file exists (old install predating this feature) → wipe and re-provision
+ *       everything from scratch, then record hashes for all files written.</li>
+ * </ul>
+ *
+ * <p><b>Script variants:</b>
+ * <ul>
+ *   <li>{@code scripts/*.sh} — POSIX shell, used on Unix/Mac.</li>
+ *   <li>{@code scripts/*.ps1} — PowerShell, used on Windows.</li>
+ * </ul>
+ * Both variants are always provisioned so users can read/reference either format.
+ * The active JSON configs reference the platform-appropriate extension ({@link #SCRIPT_EXT}).</p>
+ */
+public final class DefaultHookProvisioner {
+
+    private static final Logger LOG = Logger.getInstance(DefaultHookProvisioner.class);
+    private static final String RESOURCE_BASE = "/default-hooks/";
+    private static final String MANIFEST_RESOURCE = RESOURCE_BASE + "manifest.txt";
+
+    /**
+     * Script extension for the current platform.
+     */
+    static final String SCRIPT_EXT = SystemInfo.isWindows ? ".ps1" : ".sh";
+
+    private DefaultHookProvisioner() {
+    }
+
+    /**
+     * Provisions default hooks on plugin startup using hash-based change detection.
+     *
+     * <p>If no hash registry exists (old install), wipes the hooks directory and starts
+     * fresh so we have a clean known state. On subsequent startups, each file is only
+     * overwritten when the user has not modified it (disk hash matches stored hash).
+     *
+     * <p>Called from {@link HookRegistry} on first access after each IDE startup.
+     */
+    public static void provisionDefaults(@NotNull Project project) {
+        Path hooksDir = resolveHooksDir(project);
+        List<String> scriptEntries = requireManifest();
+        if (scriptEntries == null) return;
+
+        if (!HookHashRegistry.exists(hooksDir)) {
+            // Old install: no hash history, can't detect user edits — wipe and start fresh.
+            wipeThenProvision(hooksDir, scriptEntries);
+            return;
+        }
+
+        provisionWithHashCheck(project, hooksDir, scriptEntries);
+    }
+
+    /**
+     * Restores all hook configs and scripts to their bundled defaults, unconditionally.
+     * Called only on explicit user action ("Restore Default Hooks").
+     *
+     * @return true if all files were restored successfully
+     */
+    public static boolean restoreDefaults(@NotNull Project project) {
+        Path hooksDir = resolveHooksDir(project);
+        LOG.info("Restoring default hooks to " + hooksDir);
+
+        List<String> scriptEntries = requireManifest();
+        if (scriptEntries == null) return false;
+
+        return wipeThenProvision(hooksDir, scriptEntries);
+    }
+
+    private static @Nullable List<String> requireManifest() {
+        List<String> entries = readManifest();
+        if (entries.isEmpty()) {
+            LOG.warn("Default hooks manifest is empty or missing — cannot provision");
+            return null;
+        }
+        return entries;
+    }
+
+    private static boolean wipeThenProvision(@NotNull Path hooksDir, @NotNull List<String> scriptEntries) {
+        deleteScriptEntries(hooksDir, scriptEntries);
+        ensureScriptsDir(hooksDir);
+
+        Map<String, String> newHashes = new HashMap<>();
+        boolean allOk = true;
+
+        for (String entry : scriptEntries) {
+            String hash = copyAndHash(entry, hooksDir);
+            if (hash != null) {
+                newHashes.put(entry, hash);
+            } else {
+                allOk = false;
+            }
+        }
+
+        for (Map.Entry<String, String> jsonEntry : buildJsonConfigs().entrySet()) {
+            String filename = jsonEntry.getKey();
+            String content = jsonEntry.getValue();
+            writeJsonConfig(hooksDir, filename, content);
+            newHashes.put(filename, HookHashRegistry.computeStringHash(content));
+        }
+
+        HookHashRegistry.save(hooksDir, newHashes);
+
+        if (allOk) {
+            LOG.info("Provisioned " + (scriptEntries.size() + 3) + " hook files to " + hooksDir);
+        }
+        return allOk;
+    }
+
+    /**
+     * Compares each file against its stored hash and only overwrites files the user has not edited.
+     * Collects conflicts and notifies the user if any exist.
+     */
+    private static void provisionWithHashCheck(@NotNull Project project,
+                                               @NotNull Path hooksDir,
+                                               @NotNull List<String> scriptEntries) {
+        Map<String, String> storedHashes = HookHashRegistry.load(hooksDir);
+        Map<String, String> bundledHashes = HookHashRegistry.loadBundledHashes();
+        Map<String, String> updatedHashes = new HashMap<>(storedHashes);
+        List<HookUpdateNotifier.Conflict> conflicts = new ArrayList<>();
+
+        ensureScriptsDir(hooksDir);
+
+        for (String entry : scriptEntries) {
+            processScriptEntry(entry, hooksDir, storedHashes, bundledHashes, updatedHashes, conflicts);
+        }
+
+        for (Map.Entry<String, String> jsonEntry : buildJsonConfigs().entrySet()) {
+            processJsonConfig(jsonEntry.getKey(), jsonEntry.getValue(), hooksDir, storedHashes, bundledHashes, updatedHashes, conflicts);
+        }
+
+        HookHashRegistry.save(hooksDir, updatedHashes);
+
+        if (!conflicts.isEmpty()) {
+            HookUpdateNotifier.notify(project, conflicts, updatedHashes, hooksDir);
+        }
+    }
+
+    private static void processScriptEntry(@NotNull String entry,
+                                           @NotNull Path hooksDir,
+                                           @NotNull Map<String, String> storedHashes,
+                                           @NotNull Map<String, String> bundledHashes,
+                                           @NotNull Map<String, String> updatedHashes,
+                                           @NotNull List<HookUpdateNotifier.Conflict> conflicts) {
+        String bundledHash = resolveBundledHash(entry, bundledHashes);
+        if (bundledHash == null) return;
+
+        Path diskPath = hooksDir.resolve(entry);
+        String storedHash = storedHashes.get(entry);
+        String diskHash = HookHashRegistry.computeFileHash(diskPath);
+
+        if (diskHash == null) {
+            String written = copyAndHash(entry, hooksDir);
+            if (written != null) updatedHashes.put(entry, written);
+        } else if (diskHash.equals(storedHash) || HookHashRegistry.isOfficialHash(entry, diskHash, bundledHashes)) {
+            if (!bundledHash.equals(diskHash)) {
+                String written = copyAndHash(entry, hooksDir);
+                if (written != null) updatedHashes.put(entry, written);
+            }
+        } else if (!bundledHash.equals(storedHash)) {
+            String content = readBundledResourceAsString(RESOURCE_BASE + entry);
+            if (content != null) {
+                conflicts.add(new HookUpdateNotifier.Conflict(entry, content, diskPath, bundledHash));
+            }
+        }
+        // else: bundledHash == storedHash but disk differs → user edited, no new version to offer.
+    }
+
+    /**
+     * Returns the expected SHA-256 for {@code entry} from the pre-computed bundled hashes.
+     * Falls back to computing it at runtime if the pre-computed file is unavailable.
+     *
+     * @return hash, or {@code null} if the resource cannot be read
+     */
+    private static @Nullable String resolveBundledHash(@NotNull String entry,
+                                                       @NotNull Map<String, String> bundledHashes) {
+        String hash = bundledHashes.get(entry);
+        if (hash != null) return hash;
+        String content = readBundledResourceAsString(RESOURCE_BASE + entry);
+        return content != null ? HookHashRegistry.computeStringHash(content) : null;
+    }
+
+    private static void processJsonConfig(@NotNull String filename,
+                                          @NotNull String content,
+                                          @NotNull Path hooksDir,
+                                          @NotNull Map<String, String> storedHashes,
+                                          @NotNull Map<String, String> bundledHashes,
+                                          @NotNull Map<String, String> updatedHashes,
+                                          @NotNull List<HookUpdateNotifier.Conflict> conflicts) {
+        String bundledHash = bundledHashes.getOrDefault(filename, HookHashRegistry.computeStringHash(content));
+        String storedHash = storedHashes.get(filename);
+        Path diskPath = hooksDir.resolve(filename);
+        String diskHash = HookHashRegistry.computeFileHash(diskPath);
+
+        if (diskHash == null) {
+            writeJsonConfig(hooksDir, filename, content);
+            updatedHashes.put(filename, bundledHash);
+        } else if (diskHash.equals(storedHash) || HookHashRegistry.isOfficialHash(filename, diskHash, bundledHashes)) {
+            if (!bundledHash.equals(diskHash)) {
+                writeJsonConfig(hooksDir, filename, content);
+                updatedHashes.put(filename, bundledHash);
+            }
+        } else if (!bundledHash.equals(storedHash)) {
+            conflicts.add(new HookUpdateNotifier.Conflict(filename, content, diskPath, bundledHash));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // JSON config generation
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns the generated JSON configs keyed by filename.
+     * Extension is platform-specific ({@link #SCRIPT_EXT}).
+     */
+    static @NotNull Map<String, String> buildJsonConfigs() {
+        Map<String, String> configs = new HashMap<>();
+        configs.put("run_command.json",
+            "{\"permission\":[{\"script\":\"scripts/run-command-abuse" + SCRIPT_EXT + "\",\"rejectOnFailure\":true,\"timeout\":10}]}");
+        configs.put("run_in_terminal.json",
+            "{\"permission\":[{\"script\":\"scripts/run-in-terminal-abort" + SCRIPT_EXT + "\",\"rejectOnFailure\":true,\"timeout\":10}],"
+                + "\"success\":[{\"script\":\"scripts/run-in-terminal-reprimand" + SCRIPT_EXT + "\",\"timeout\":10,\"failSilently\":true}]}");
+        configs.put("write_file.json",
+            "{\"success\":[{\"script\":\"scripts/check-stale-naming" + SCRIPT_EXT + "\",\"timeout\":10,\"failSilently\":true}]}");
+        return configs;
+    }
+
+    private static void writeJsonConfig(@NotNull Path hooksDir,
+                                        @NotNull String filename,
+                                        @NotNull String content) {
+        Path target = hooksDir.resolve(filename);
+        try {
+            Files.writeString(target, content, StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException e) {
+            LOG.warn("Failed to write hook config: " + filename, e);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // File I/O helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Copies a bundled resource to the hooks directory and returns the SHA-256 of the written bytes.
+     *
+     * @return SHA-256 hex of the written content, or {@code null} on failure
+     */
+    private static @Nullable String copyAndHash(@NotNull String entry, @NotNull Path hooksDir) {
+        String resourcePath = RESOURCE_BASE + entry;
+        String content = readBundledResourceAsString(resourcePath);
+        if (content == null) return null;
+        return copyStringAndHash(entry, content, hooksDir);
+    }
+
+    /**
+     * Writes the given string content to {@code entry} inside the hooks directory and returns its SHA-256.
+     *
+     * @return SHA-256 hex of the written content, or {@code null} on failure
+     */
+    private static @Nullable String copyStringAndHash(@NotNull String entry,
+                                                      @NotNull String content,
+                                                      @NotNull Path hooksDir) {
+        Path targetPath = hooksDir.resolve(entry);
+        try {
+            Files.writeString(targetPath, content, StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+            if (entry.endsWith(".sh") && !targetPath.toFile().setExecutable(true)) {
+                LOG.warn("Failed to set executable permission on: " + entry);
+            }
+            return HookHashRegistry.computeStringHash(content);
+        } catch (IOException e) {
+            LOG.warn("Failed to write hook file: " + entry, e);
+            return null;
+        }
+    }
+
+    /**
+     * Reads a classpath resource as a UTF-8 string.
+     *
+     * @return the resource content, or {@code null} if the resource is not found or cannot be read
+     */
+    private static @Nullable String readBundledResourceAsString(@NotNull String resourcePath) {
+        try (InputStream is = DefaultHookProvisioner.class.getResourceAsStream(resourcePath)) {
+            if (is == null) {
+                LOG.warn("Bundled resource not found: " + resourcePath);
+                return null;
+            }
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            LOG.warn("Failed to read bundled resource: " + resourcePath, e);
+            return null;
+        }
+    }
+
+    /**
+     * Deletes only the manifest-managed script entries from the hooks directory.
+     * Custom scripts placed alongside the managed ones (e.g. project-specific bot-identity
+     * hooks) are intentionally preserved — they are outside the provisioner's scope.
+     */
+    private static void deleteScriptEntries(@NotNull Path hooksDir, @NotNull List<String> scriptEntries) {
+        for (String entry : scriptEntries) {
+            Path file = hooksDir.resolve(entry);
+            try {
+                Files.deleteIfExists(file);
+            } catch (IOException e) {
+                LOG.warn("Failed to delete hook file: " + entry + ": " + e.getMessage());
+            }
+        }
+    }
+
+    private static void ensureScriptsDir(@NotNull Path hooksDir) {
+        try {
+            Files.createDirectories(hooksDir.resolve("scripts"));
+        } catch (IOException e) {
+            LOG.warn("Failed to create hooks/scripts directory: " + hooksDir, e);
+        }
+    }
+
+    private static @NotNull List<String> readManifest() {
+        List<String> entries = new ArrayList<>();
+        try (InputStream is = DefaultHookProvisioner.class.getResourceAsStream(MANIFEST_RESOURCE)) {
+            if (is == null) {
+                LOG.warn("Default hooks manifest resource not found: " + MANIFEST_RESOURCE);
+                return entries;
+            }
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (!line.isEmpty() && !line.startsWith("#")) {
+                        entries.add(line);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            LOG.warn("Failed to read default hooks manifest", e);
+        }
+        return entries;
+    }
+
+    /**
+     * Reverts a single hook file to its bundled default and updates the stored hash.
+     *
+     * <p>Works for both scripts (read from classpath resources) and generated JSON configs.
+     * After reverting, the file will be recognized as official on the next startup.
+     *
+     * @param project  the current project (used to resolve the hooks directory)
+     * @param filename relative path within the hooks directory (e.g. {@code scripts/run-command-abuse.sh})
+     * @return true if the file was successfully reverted
+     */
+    public static boolean revertFile(@NotNull Project project, @NotNull String filename) {
+        Path hooksDir = resolveHooksDir(project);
+        String content = readBundledResourceAsString(RESOURCE_BASE + filename);
+        if (content == null) {
+            content = buildJsonConfigs().get(filename);
+        }
+        if (content == null) {
+            LOG.warn("Cannot revert: no bundled content found for " + filename);
+            return false;
+        }
+        String hash = copyStringAndHash(filename, content, hooksDir);
+        if (hash == null) return false;
+        Map<String, String> hashes = HookHashRegistry.load(hooksDir);
+        hashes.put(filename, hash);
+        HookHashRegistry.save(hooksDir, hashes);
+        return true;
+    }
+
+    @NotNull
+    public static Path resolveHooksDir(@NotNull Project project) {
+        return AgentBridgeStorageSettings.getInstance()
+            .getProjectStorageDir(project)
+            .resolve("hooks");
+    }
+}

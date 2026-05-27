@@ -1,0 +1,50 @@
+name: OpenSSF Scorecard
+
+on:
+  push:
+    branches: [ master ]
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  analysis:
+    name: Scorecard Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
+      # Needed so the default GITHUB_TOKEN can read repo metadata as a fallback
+      # when SCORECARD_READ_TOKEN is not configured.
+      contents: read
+      actions: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5  # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a  # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+          # Admin-scoped PAT so the Branch-Protection check can read settings
+          # that GITHUB_TOKEN cannot see (DismissStaleReviews, EnforceAdmins,
+          # RequireLastPushApproval, RequiresStatusChecks, UpToDateBeforeMerge).
+          # Without it, those settings are silently skipped and the score caps
+          # at Tier 1 (3/10) regardless of actual branch protection.
+          # See docs/SCORECARD-SETUP.md for one-time PAT setup.
+          repo_token: ${{ secrets.SCORECARD_READ_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+        with:
+          sarif_file: results.sarif

@@ -1,0 +1,155 @@
+package com.github.catatafishen.agentbridge.psi.tools.memory;
+
+import com.github.catatafishen.agentbridge.memory.MemoryService;
+import com.github.catatafishen.agentbridge.memory.embedding.EmbeddingService;
+import com.github.catatafishen.agentbridge.memory.store.DrawerDocument;
+import com.github.catatafishen.agentbridge.memory.store.MemoryQuery;
+import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
+import com.github.catatafishen.agentbridge.psi.tools.Tool;
+import com.github.catatafishen.agentbridge.services.ToolDefinition;
+import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.google.gson.JsonObject;
+import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.List;
+
+/**
+ * Semantic search across the memory store. Supports text queries with optional
+ * wing/room/type filters.
+ *
+ * <p><b>Attribution:</b> search API adapted from MemPalace's mempalace_search (MIT License).
+ */
+public final class MemorySearchTool extends Tool {
+
+    private static final String PARAM_MEMORY_TYPE = "memory_type";
+    private static final String PARAM_LIMIT = "limit";
+    private static final String PARAM_STATE = "state";
+
+    MemorySearchTool(Project project) {
+        super(project);
+    }
+
+    @Override
+    public @NotNull String id() {
+        return "memory_search";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return "Memory Search";
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Semantic search across the memory store. Returns drawers ranked by relevance "
+            + "with verification status (verified/unverified/stale) and evidence links. "
+            + "Supports optional wing, room, memory_type, and state filters. "
+            + "Use for recalling past decisions, solutions, preferences, and technical context.";
+    }
+
+    @Override
+    public @NotNull ToolDefinition.Kind kind() {
+        return ToolDefinition.Kind.SEARCH;
+    }
+
+    @Override
+    public @NotNull ToolRegistry.Category category() {
+        return ToolRegistry.Category.MEMORY;
+    }
+
+    @Override
+    public boolean isReadOnly() {
+        return true;
+    }
+
+    @Override
+    public @NotNull JsonObject inputSchema() {
+        return schema(
+            Param.required("query", TYPE_STRING, "Search query text"),
+            Param.optional("wing", TYPE_STRING, "Filter by palace wing (project name)"),
+            Param.optional("room", TYPE_STRING, "Filter by room (topic category)"),
+            Param.optional(PARAM_MEMORY_TYPE, TYPE_STRING, "Filter by type: context, decision, problem, solution"),
+            Param.optional(PARAM_STATE, TYPE_STRING, "Filter by verification state: verified, unverified, stale"),
+            Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Max results to return (default: 10)")
+        );
+    }
+
+    @Override
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        String queryText = args.get("query").getAsString();
+        String wing = args.has("wing") ? args.get("wing").getAsString() : null;
+        String room = args.has("room") ? args.get("room").getAsString() : null;
+        String memoryType = args.has(PARAM_MEMORY_TYPE) ? args.get(PARAM_MEMORY_TYPE).getAsString() : null;
+        String stateFilter = args.has(PARAM_STATE) ? args.get(PARAM_STATE).getAsString() : null;
+        int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 10;
+
+        MemoryService memoryService = MemoryService.getInstance(project);
+        MemoryStore store = memoryService.getStore();
+        EmbeddingService embedding = memoryService.getEmbeddingService();
+        if (store == null || embedding == null) {
+            return "Error: Memory is not initialized. Enable it in Settings > AgentBridge > Memory.";
+        }
+
+        float[] queryEmbedding = embedding.embed(queryText);
+        MemoryQuery query = MemoryQuery.semantic(queryText)
+            .queryEmbedding(queryEmbedding)
+            .wing(wing)
+            .room(room)
+            .memoryType(memoryType)
+            .limit(limit)
+            .build();
+        List<DrawerDocument.SearchResult> results = store.search(query, queryEmbedding);
+
+        if (stateFilter != null) {
+            results = results.stream()
+                .filter(r -> stateFilter.equals(r.drawer().verificationState()))
+                .toList();
+        }
+
+        if (results.isEmpty()) {
+            return "No matching memories found for: " + queryText;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(results.size()).append(" result(s):\n\n");
+        for (int i = 0; i < results.size(); i++) {
+            DrawerDocument.SearchResult result = results.get(i);
+            DrawerDocument d = result.drawer();
+            sb.append("--- Result ").append(i + 1).append(" (score: ")
+                .append(String.format("%.3f", result.score())).append(") ---\n");
+            sb.append("ID: ").append(d.id()).append('\n');
+            sb.append("Wing: ").append(d.wing()).append(" | Room: ").append(d.room())
+                .append(" | Type: ").append(d.memoryType()).append('\n');
+            sb.append("Filed: ").append(d.filedAt()).append(" | By: ").append(d.addedBy()).append('\n');
+            appendSourceReference(sb, d);
+            sb.append("Content:\n").append(d.content()).append("\n\n");
+        }
+        return sb.toString().trim();
+    }
+
+    static void appendSourceReference(StringBuilder sb, DrawerDocument d) {
+        String state = d.verificationState();
+        if (!state.isEmpty() && !DrawerDocument.STATE_UNVERIFIED.equals(state)) {
+            sb.append("Status: ").append(state);
+            if (d.lastVerifiedAt() != null) {
+                sb.append(" (verified: ").append(d.lastVerifiedAt()).append(')');
+            }
+            sb.append('\n');
+        }
+        String evidence = d.evidence();
+        if (!evidence.isEmpty() && !"[]".equals(evidence)) {
+            sb.append("Evidence: ").append(evidence).append('\n');
+        }
+        String turn = d.sourceTurnIndex();
+        String session = d.sourceSession();
+        if (!turn.isEmpty() && !session.isEmpty()) {
+            sb.append("Source: session ").append(session).append(", turn ").append(turn).append('\n');
+            sb.append("  → query_conversation_history(session_id='").append(session).append("')\n");
+        }
+        String commits = d.sourceCommits();
+        if (!commits.isEmpty()) {
+            sb.append("Commits: ").append(commits).append('\n');
+        }
+    }
+}

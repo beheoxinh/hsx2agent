@@ -1,0 +1,136 @@
+name: IDE Compatibility Check
+
+# Runs automatically on every push to master and can be triggered manually
+# for any branch (e.g. to validate a PR before merging).
+#
+# Architecture:
+#   build-plugin  — compiles and packages the plugin ZIP once
+#   verify (×5)   — five parallel jobs, each verifying a single IDE in its own
+#                   process with its own isolated copy of JARs. No shared
+#                   CachingJarFileSystemProvider, no ClosedFileSystemException.
+#                   Verifies: IU 2025.3 (legacy/min), PY 2026.1, WS 2026.1, GO 2026.1,
+#                   and IU 2026.1 (latest stable, to catch API removals early).
+#
+# Results are checked by publish-marketplace.yml: if this workflow has not
+# run for a given release commit, or if it failed, marketplace publishing
+# is blocked until the check passes.
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or SHA to check (leave empty for the default branch)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-plugin:
+    name: Build Plugin
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5  # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
+        with:
+          gradle-version: 'wrapper'
+          cache-disabled: true
+
+      - name: Build plugin
+        # Skip buildChatUi — the JS/CSS bundle is not needed for API compatibility checks.
+        run: gradle :plugin-core:buildPlugin --no-daemon --quiet -x :plugin-core:buildChatUi
+
+      - name: Upload plugin distribution
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: plugin-distribution
+          path: plugin-core/build/distributions/*.zip
+          retention-days: 1
+
+  verify:
+    name: Verify – ${{ matrix.ide.name }}
+    needs: build-plugin
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        ide:
+          - { id: IU, name: "IntelliJ IDEA Ultimate 2025.3 (legacy)" }
+          - { id: PY, name: "PyCharm Professional 2026.1" }
+          - { id: WS, name: "WebStorm 2026.1" }
+          - { id: GO, name: "GoLand 2026.1" }
+          - { id: IU-EAP, name: "IntelliJ IDEA Ultimate 2026.1" }
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5  # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
+        with:
+          gradle-version: 'wrapper'
+          cache-disabled: true
+
+      - name: Download plugin distribution
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: plugin-distribution
+          path: plugin-core/build/distributions/
+
+      - name: Create pluginVerifier cache directory
+        run: mkdir -p ~/.pluginVerifier/extracted-plugins
+
+      - name: Verify plugin against ${{ matrix.ide.name }}
+        # -PverifyIde selects a single IDE in pluginVerification.ides so this process
+        # owns all its JARs exclusively — no shared CachingJarFileSystemProvider.
+        # -x buildPlugin skips rebuilding since the artifact was downloaded above.
+        run: >
+          gradle :plugin-core:verifyPlugin
+          --no-daemon --quiet
+          -PverifyIde=${{ matrix.ide.id }}
+          -x :plugin-core:buildPlugin
+          -x :plugin-core:buildChatUi
+
+      - name: Show disk space after verification
+        if: always()
+        run: df -h /
+

@@ -1,0 +1,223 @@
+package com.github.catatafishen.agentbridge.memory;
+
+import com.github.catatafishen.agentbridge.memory.embedding.EmbeddingService;
+import com.github.catatafishen.agentbridge.memory.kg.KnowledgeGraph;
+import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
+import com.github.catatafishen.agentbridge.memory.validation.MemoryRefactorListener;
+import com.github.catatafishen.agentbridge.memory.validation.MemoryStalenessTrigger;
+import com.github.catatafishen.agentbridge.memory.wal.WriteAheadLog;
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.components.Service;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Disposer;
+import org.apache.lucene.store.LockObtainFailedException;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+@Service(Service.Level.PROJECT)
+public final class MemoryService implements Disposable {
+
+    private static final Logger LOG = Logger.getInstance(MemoryService.class);
+
+    private static final String LUCENE_INDEX_DIR = "lucene-index";
+    private static final String WAL_DIR = "wal";
+    private static final String KG_DB_FILE = "knowledge.sqlite3";
+
+    private final Project project;
+
+    private volatile MemoryStore store;
+    private volatile EmbeddingService embeddingService;
+    private volatile WriteAheadLog wal;
+    private volatile KnowledgeGraph knowledgeGraph;
+    private volatile boolean initialized;
+    private volatile boolean initializationFailed;
+    private final Object initLock = new Object();
+
+    public MemoryService(@NotNull Project project) {
+        this.project = project;
+    }
+
+    /**
+     * Package-private constructor for testing — pre-initializes with provided components,
+     * bypassing {@link #ensureInitialized()} and model weight loading.
+     *
+     * <p>Use with {@code ServiceContainerUtil.replaceService()} in platform tests to inject
+     * a controllable MemoryService into the project's service container.
+     */
+    MemoryService(@NotNull Project project, @Nullable MemoryStore store,
+                  @Nullable EmbeddingService embeddingService,
+                  @Nullable WriteAheadLog wal, @Nullable KnowledgeGraph knowledgeGraph) {
+        this.project = project;
+        this.store = store;
+        this.embeddingService = embeddingService;
+        this.wal = wal;
+        this.knowledgeGraph = knowledgeGraph;
+        this.initialized = true;
+    }
+
+    public static MemoryService getInstance(@NotNull Project project) {
+        return PlatformApiCompat.getService(project, MemoryService.class);
+    }
+
+    /**
+     * Get the memory store. Initializes if needed.
+     * Returns null if memory is disabled or initialization fails.
+     */
+    public @Nullable MemoryStore getStore() {
+        if (!MemorySettings.getInstance(project).isEnabled()) return null;
+        ensureInitialized();
+        return store;
+    }
+
+    /**
+     * Get the embedding service. Initializes if needed.
+     * Returns null if memory is disabled or initialization fails.
+     */
+    public @Nullable EmbeddingService getEmbeddingService() {
+        if (!MemorySettings.getInstance(project).isEnabled()) return null;
+        ensureInitialized();
+        return embeddingService;
+    }
+
+    /**
+     * Get the write-ahead log. Initializes if needed.
+     * Returns null if memory is disabled or initialization fails.
+     */
+    public @Nullable WriteAheadLog getWriteAheadLog() {
+        if (!MemorySettings.getInstance(project).isEnabled()) return null;
+        ensureInitialized();
+        return wal;
+    }
+
+    /**
+     * Get the knowledge graph. Initializes if needed.
+     * Returns null if memory is disabled or initialization fails.
+     */
+    public @Nullable KnowledgeGraph getKnowledgeGraph() {
+        if (!MemorySettings.getInstance(project).isEnabled()) return null;
+        ensureInitialized();
+        return knowledgeGraph;
+    }
+
+    /**
+     * Get the effective palace wing name (from settings or auto-detected from project name).
+     */
+    public @NotNull String getEffectiveWing() {
+        String wing = MemorySettings.getInstance(project).getPalaceWing();
+        if (wing.isEmpty()) {
+            wing = project.getName()
+                .toLowerCase()
+                .replaceAll("[^a-z0-9_-]", "-")
+                .replaceAll("-+", "-");
+        }
+        return wing;
+    }
+
+    /**
+     * Check if memory is enabled and the system is initialized.
+     */
+    public boolean isActive() {
+        return MemorySettings.getInstance(project).isEnabled() && initialized;
+    }
+
+    private void ensureInitialized() {
+        if (initialized || initializationFailed) return;
+        synchronized (initLock) {
+            if (initialized || initializationFailed) return;
+            try {
+                Path memoryDir = getMemoryBasePath();
+                migrateLegacyMemoryDir(project.getBasePath(), memoryDir);
+
+                // Initialize WAL
+                wal = new WriteAheadLog(memoryDir.resolve(WAL_DIR));
+                wal.initialize();
+
+                // Initialize Lucene store
+                store = new MemoryStore(memoryDir.resolve(LUCENE_INDEX_DIR), wal);
+                store.initialize();
+                Disposer.register(this, store);
+
+                // Initialize embedding service
+                embeddingService = new EmbeddingService(project);
+                Disposer.register(this, embeddingService);
+
+                // Initialize knowledge graph
+                knowledgeGraph = new KnowledgeGraph(memoryDir.resolve(KG_DB_FILE), wal);
+                knowledgeGraph.initialize();
+                Disposer.register(this, knowledgeGraph);
+
+                initialized = true;
+
+                // Start staleness detection for grounded memory
+                MemoryStalenessTrigger stalenessTrigger = new MemoryStalenessTrigger(project);
+                stalenessTrigger.register(this);
+                Disposer.register(this, stalenessTrigger);
+
+                // Listen for refactors (rename/move) to update evidence references
+                MemoryRefactorListener refactorListener = new MemoryRefactorListener(project);
+                refactorListener.register(this);
+                Disposer.register(this, refactorListener);
+
+                LOG.info("MemoryService initialized for project: " + project.getName());
+            } catch (LockObtainFailedException e) {
+                initializationFailed = true;
+                store = null;
+                embeddingService = null;
+                knowledgeGraph = null;
+                LOG.warn("Memory tools are unavailable for project '" + project.getName() + "': " +
+                    "the Lucene index is locked by another IDE instance sharing the same project directory. " +
+                    "To use memory in both instances simultaneously, switch to the 'User Home' or 'Custom' " +
+                    "storage location in Settings → Tools → AgentBridge → Storage.");
+            } catch (IOException e) {
+                initializationFailed = true;
+                store = null;
+                embeddingService = null;
+                knowledgeGraph = null;
+                LOG.error("Failed to initialize MemoryService", e);
+            }
+        }
+    }
+
+    static void migrateLegacyMemoryDir(@Nullable String projectBasePath, @NotNull Path newMemoryDir) throws IOException {
+        if (projectBasePath == null) {
+            return;
+        }
+        if (Files.exists(newMemoryDir)) {
+            return;
+        }
+        for (Path legacyMemoryDir : legacyMemoryDirs(projectBasePath)) {
+            if (!Files.exists(legacyMemoryDir) || legacyMemoryDir.equals(newMemoryDir)) {
+                continue;
+            }
+            Files.createDirectories(newMemoryDir.getParent());
+            Files.move(legacyMemoryDir, newMemoryDir);
+            LOG.info("Migrated memory directory from " + legacyMemoryDir + " to " + newMemoryDir);
+            return;
+        }
+    }
+
+    private static @NotNull List<Path> legacyMemoryDirs(@NotNull String projectBasePath) {
+        return List.of(
+            Path.of(projectBasePath, ".agentbridge", "memory"),
+            Path.of(projectBasePath, ".agent-work", "memory")
+        );
+    }
+
+    private @NotNull Path getMemoryBasePath() {
+        return AgentBridgeStorageSettings.getInstance().getProjectMemoryDir(project);
+    }
+
+    @Override
+    public void dispose() {
+        initialized = false;
+        // Children (store, embeddingService, knowledgeGraph) are disposed via Disposer tree
+    }
+}

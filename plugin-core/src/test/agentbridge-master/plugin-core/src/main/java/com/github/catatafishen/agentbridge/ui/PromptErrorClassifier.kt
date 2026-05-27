@@ -1,0 +1,116 @@
+package com.github.catatafishen.agentbridge.ui
+
+import com.github.catatafishen.agentbridge.client.ClientException
+
+/**
+ * Pure error classification and quick-reply detection for prompt errors.
+ * Extracted from [PromptOrchestrator] to enable unit testing without UI dependencies.
+ */
+object PromptErrorClassifier {
+
+    private val QUICK_REPLY_TAG_REGEX = Regex("\\[\\s*quick-reply:\\s*([^]]+)]")
+
+    /**
+     * Classification result for a prompt error — all decisions are captured as data,
+     * so the UI layer can act on them without re-analyzing the exception.
+     */
+    data class Classification(
+        val isCancelled: Boolean,
+        val isAuthError: Boolean,
+        val isRecoverable: Boolean,
+        val isProcessCrashWithRecovery: Boolean,
+        val shouldRestorePrompt: Boolean,
+        val displayMessage: String,
+    )
+
+    fun classify(
+        exception: Exception,
+        turnHadContent: Boolean,
+        isAuthenticationError: (String) -> Boolean,
+        isClientHealthy: Boolean,
+    ): Classification {
+        val isCancelled = exception is InterruptedException
+            || exception.cause is InterruptedException
+
+        var msg = if (isCancelled) "Request cancelled"
+        else exception.message ?: "Unknown error"
+
+        // Walk the cause chain looking for an authentication error
+        var isAuthError = false
+        var cause: Throwable? = exception
+        while (cause != null) {
+            val causeMsg = cause.message ?: ""
+            if (isAuthenticationError(causeMsg)) {
+                msg = causeMsg
+                isAuthError = true
+                break
+            }
+            cause = cause.cause
+        }
+
+        // For ACP errors, ensure the message is descriptive
+        if (exception is ClientException && !msg.startsWith("(")) {
+            msg = "ACP error: $msg"
+        }
+
+        // Detect Node.js ES module error anywhere in the cause chain.
+        // The raw node warning ("To load an ES module, set 'type': 'module'...") is cryptic;
+        // it usually means package.json is missing from the CLI install directory
+        // (e.g., after a sandboxed run or broken install) — not necessarily an old Node.js.
+        if (!isAuthError && !isCancelled) {
+            val esModuleError = generateSequence(exception as Throwable?) { it.cause }.any {
+                it.message?.contains("To load an ES module", ignoreCase = true) == true
+            }
+            if (esModuleError) {
+                msg = "The agent CLI failed to start as an ES module — this usually means " +
+                    "package.json is missing from the CLI install directory " +
+                    "(e.g., after a sandboxed run or broken install). " +
+                    "Try reinstalling the CLI. " +
+                    "If you are using an older Node.js version, upgrading Node.js may also help."
+            }
+        }
+
+        val isRecoverable = isCancelled
+            || (exception is ClientException && exception.isRecoverable)
+
+        // Agent process crashed but already recovered — preserve session
+        val isProcessCrashWithRecovery = !isCancelled
+            && generateSequence(exception as Throwable?) { it.cause }.any {
+            it.message?.contains("process exited unexpectedly", ignoreCase = true) == true
+        }
+            && isClientHealthy
+
+        val shouldRestorePrompt = !turnHadContent && !isCancelled
+
+        return Classification(
+            isCancelled = isCancelled,
+            isAuthError = isAuthError,
+            isRecoverable = isRecoverable,
+            isProcessCrashWithRecovery = isProcessCrashWithRecovery,
+            shouldRestorePrompt = shouldRestorePrompt,
+            displayMessage = msg,
+        )
+    }
+
+    /**
+     * Detects `[quick-reply: opt1 | opt2]` tags in response text and returns the parsed options.
+     * Returns an empty list if no quick-reply tag is found.
+     */
+    fun detectQuickReplies(responseText: String): List<String> {
+        val match = QUICK_REPLY_TAG_REGEX.findAll(responseText).lastOrNull() ?: return emptyList()
+        return match.groupValues[1].split("|").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    /**
+     * Returns true if the exception cause chain contains a non-recoverable [ClientException],
+     * indicating the agent CLI binary was not found.
+     */
+    fun isCLINotFoundError(e: Exception): Boolean {
+        var cause: Throwable? = e
+        while (cause != null) {
+            if (cause is ClientException && !cause.isRecoverable) return true
+            cause = cause.cause
+        }
+        return false
+    }
+}

@@ -1,0 +1,651 @@
+package com.github.catatafishen.agentbridge.services;
+
+import com.github.catatafishen.agentbridge.bridge.AgentConfig;
+import com.github.catatafishen.agentbridge.bridge.ProfileBasedAgentConfig;
+import com.github.catatafishen.agentbridge.client.AbstractClient;
+import com.github.catatafishen.agentbridge.client.ClientRegistry;
+import com.github.catatafishen.agentbridge.client.claude.ClaudeClient;
+import com.github.catatafishen.agentbridge.client.codex.CodexClient;
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.session.SessionSwitchService;
+import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
+import com.intellij.ide.util.PropertiesComponent;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.components.Service;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
+import com.intellij.util.concurrency.AppExecutorUtil;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
+
+/**
+ * Project service that manages which ACP agent profile is currently active,
+ * and owns the ACP client lifecycle for that agent.
+ *
+ * <p>Replaces the old per-agent service classes (CopilotService, ClaudeService, etc.)
+ * with a single profile-driven service. The active profile is looked up from
+ * {@link AgentProfileManager}.</p>
+ *
+ * <p>Also hosts shared UI preferences that apply regardless of which agent is active
+ * (attach trigger character, follow-agent-files).</p>
+ */
+@Service(Service.Level.PROJECT)
+public final class ActiveAgentManager implements Disposable {
+
+    private static final Logger LOG = Logger.getInstance(ActiveAgentManager.class);
+
+    private static final String KEY_ACTIVE_PROFILE = "agent.activeProfileId";
+    private static final String KEY_FOLLOW_AGENT_FILES = "agent.followAgentFiles";
+    private static final String KEY_INJECT_CONV_HISTORY = "agent.injectConversationHistory";
+    private static final String KEY_AUTO_CONNECT = "agent.autoConnect";
+    private static final String KEY_CUSTOM_ACP_COMMAND = "agent.customAcpCommand";
+    private static final String KEY_SHARED_TURN_TIMEOUT_MINUTES = "agent.sharedTurnTimeoutMinutes";
+    private static final String KEY_SHARED_INACTIVITY_TIMEOUT_SECONDS = "agent.sharedInactivityTimeoutSeconds";
+    private static final String KEY_SHARED_MAX_TOOL_CALLS = "agent.sharedMaxToolCallsPerTurn";
+    static final int DEFAULT_TURN_TIMEOUT_MINUTES = 120;
+    static final int DEFAULT_INACTIVITY_TIMEOUT_SECONDS = 3000;
+    static final int DEFAULT_MAX_TOOL_CALLS_PER_TURN = 0;
+
+    private final Project project;
+    private final SessionSwitchService sessionSwitchService;
+    private volatile boolean acpConnected;
+
+    private volatile AbstractClient acpClient;
+    private AgentConfig cachedConfig;
+    private GenericSettings cachedSettings;
+    private GenericAgentUiSettings cachedUiSettings;
+    private volatile boolean started;
+
+    /**
+     * Reference count of in-flight prompts. Incremented by {@link #beginPrompt()} before a
+     * prompt is dispatched and decremented by {@link #endPrompt()} when it completes.
+     * <p>
+     * Used by {@link #getClient()} to suppress automatic agent restart while a prompt is
+     * streaming. Without this guard, any UI/EDT access of {@code agentManager.client} during
+     * streaming would race the dying transport: if the underlying CLI process has just been
+     * reaped by the OS (e.g. killed silently by bwrap/OOM), {@link AbstractClient#isHealthy()}
+     * flips to {@code false} before the read loop notices EOF — and the next {@code getClient()}
+     * call eagerly starts a fresh process, killing the old one and failing the in-flight
+     * prompt with a generic "Agent process exited unexpectedly" message before the proper
+     * error/Reconnect path in {@code PromptOrchestrator.handlePromptError} can run.
+     * <p>
+     * AtomicInteger (not AtomicBoolean) so nested or overlapping prompts both increment
+     * safely — the restart guard stays active until every active prompt has finished.
+     */
+    private final java.util.concurrent.atomic.AtomicInteger inFlightPromptCount =
+        new java.util.concurrent.atomic.AtomicInteger(0);
+
+    public ActiveAgentManager(@NotNull Project project) {
+        this.project = project;
+        this.sessionSwitchService = SessionSwitchService.getInstance(project);
+        LOG.info("ActiveAgentManager initialised for project: " + project.getName());
+        // Pre-warm the shell environment cache on a background thread so the first connect
+        // doesn't block on login-shell spawning (bash -l + nvm/sdkman/cargo init can take 1–5 s).
+        AppExecutorUtil.getAppExecutorService().submit(ShellEnvironment::getEnvironment);
+    }
+
+    @NotNull
+    public static ActiveAgentManager getInstance(@NotNull Project project) {
+        return PlatformApiCompat.getService(project, ActiveAgentManager.class);
+    }
+
+    // ── Active profile ───────────────────────────────────────────────────────
+
+    private final java.util.List<Runnable> switchListeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    public void addSwitchListener(@NotNull Runnable listener) {
+        switchListeners.add(listener);
+    }
+
+    public void removeSwitchListener(@NotNull Runnable listener) {
+        switchListeners.remove(listener);
+    }
+
+    /**
+     * Returns the ID of the currently active agent profile.
+     */
+    @NotNull
+    public String getActiveProfileId() {
+        String stored = PropertiesComponent.getInstance(project).getValue(KEY_ACTIVE_PROFILE);
+        if (stored != null && !stored.isEmpty()
+            && AgentProfileManager.getInstance().getProfile(stored) != null) {
+            return stored;
+        }
+        return AgentProfileManager.COPILOT_PROFILE_ID;
+    }
+
+    /**
+     * Returns the currently active agent profile.
+     */
+    @NotNull
+    public AgentProfile getActiveProfile() {
+        String id = getActiveProfileId();
+        AgentProfile profile = AgentProfileManager.getInstance().getProfile(id);
+        if (profile != null) return profile;
+        // Shouldn't happen, but fall back to Copilot
+        return AgentProfileManager.getInstance().getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
+    }
+
+    /**
+     * Switches the active agent profile. Stops the current connection if running.
+     */
+    public void switchAgent(@NotNull String profileId) {
+        String previousId = getActiveProfileId();
+        if (previousId.equals(profileId)) return;
+
+        LOG.info("Switching active agent from " + previousId + " to " + profileId);
+        stop();
+        clearCachedConfig();
+        PropertiesComponent.getInstance(project).setValue(KEY_ACTIVE_PROFILE, profileId);
+
+        for (Runnable listener : switchListeners) {
+            try {
+                listener.run();
+            } catch (Exception e) {
+                LOG.warn("Agent switch listener failed", e);
+            }
+        }
+
+        // Kick off the session export. onAgentSwitch dispatches work to a pooled thread
+        // and stores a CompletableFuture so the new agent can wait before createSession().
+        try {
+            sessionSwitchService
+                .onAgentSwitch(previousId, profileId);
+        } catch (Exception e) {
+            LOG.warn("SessionSwitchService.onAgentSwitch failed", e);
+        }
+    }
+
+    // ── Agent lifecycle (absorbed from AgentService) ─────────────────────────
+
+    /**
+     * Returns the agent configuration for the active profile.
+     */
+    @NotNull
+    public AgentConfig getConfig() {
+        if (cachedConfig == null) {
+            cachedConfig = ProfileBasedAgentConfig.create(getActiveProfile(), ToolRegistry.getInstance(project), project);
+        }
+        return cachedConfig;
+    }
+
+    /**
+     * Returns the UI settings for the active profile.
+     */
+    @NotNull
+    public AgentUiSettings getSettings() {
+        ensureSettingsForActiveProfile();
+        return cachedUiSettings;
+    }
+
+    public int getSharedTurnTimeoutMinutes() {
+        return normalizeSharedTurnTimeoutMinutes(
+            PropertiesComponent.getInstance(project).getValue(KEY_SHARED_TURN_TIMEOUT_MINUTES)
+        );
+    }
+
+    public int getSharedTurnTimeoutSeconds() {
+        return getSharedTurnTimeoutMinutes() * 60;
+    }
+
+    public void setSharedTurnTimeoutMinutes(int minutes) {
+        PropertiesComponent.getInstance(project).setValue(
+            KEY_SHARED_TURN_TIMEOUT_MINUTES,
+            clamp(minutes, 1, 1440),
+            DEFAULT_TURN_TIMEOUT_MINUTES
+        );
+    }
+
+    public int getSharedInactivityTimeoutSeconds() {
+        return normalizeSharedInactivityTimeoutSeconds(
+            PropertiesComponent.getInstance(project).getValue(KEY_SHARED_INACTIVITY_TIMEOUT_SECONDS)
+        );
+    }
+
+    public void setSharedInactivityTimeoutSeconds(int seconds) {
+        PropertiesComponent.getInstance(project).setValue(
+            KEY_SHARED_INACTIVITY_TIMEOUT_SECONDS,
+            clamp(seconds, 30, 86_400),
+            DEFAULT_INACTIVITY_TIMEOUT_SECONDS
+        );
+    }
+
+    public int getSharedMaxToolCallsPerTurn() {
+        PropertiesComponent properties = PropertiesComponent.getInstance(project);
+        return normalizeSharedMaxToolCallsPerTurn(
+            properties.getValue(KEY_SHARED_MAX_TOOL_CALLS),
+            migrateLegacyMaxToolCallsPerTurn()
+        );
+    }
+
+    public void setSharedMaxToolCallsPerTurn(int count) {
+        PropertiesComponent.getInstance(project).setValue(
+            KEY_SHARED_MAX_TOOL_CALLS,
+            Math.max(0, count),
+            DEFAULT_MAX_TOOL_CALLS_PER_TURN
+        );
+    }
+
+    private static final String KEY_BRANCH_SESSION_AT_STARTUP = "agent.branchSessionAtStartup";
+
+    /**
+     * Whether to snapshot the current session before each new session starts.
+     * When {@code true}, a copy of the current session JSONL is saved with a timestamp label
+     * so the user can revert to the state captured at that point via the session history picker.
+     */
+    public boolean isBranchSessionAtStartup() {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_BRANCH_SESSION_AT_STARTUP, false);
+    }
+
+    public void setBranchSessionAtStartup(boolean enabled) {
+        PropertiesComponent.getInstance(project).setValue(KEY_BRANCH_SESSION_AT_STARTUP, enabled, false);
+    }
+
+    /**
+     * Returns the agent client, starting it if necessary.
+     */
+    @NotNull
+    public AbstractClient getClient() {
+        // Skip auto-restart while a prompt is in flight. See inFlightPromptCount Javadoc:
+        // a silent CLI death during streaming would otherwise race with the prompt's error
+        // path — the restart kills the dying transport and fails the in-flight future with
+        // a bare "Agent process exited unexpectedly" before handlePromptError can show the
+        // proper Reconnect banner.
+        boolean needStart = !started || acpClient == null
+            || (!acpClient.isHealthy() && inFlightPromptCount.get() == 0);
+        if (needStart) {
+            start();
+        }
+        return acpClient;
+    }
+
+    /**
+     * Mark a prompt as in flight. Suppresses automatic agent restart in {@link #getClient()}
+     * until the matching {@link #endPrompt()} call. Must be paired in a try/finally.
+     */
+    public void beginPrompt() {
+        inFlightPromptCount.incrementAndGet();
+    }
+
+    /**
+     * Mark an in-flight prompt as finished. Re-enables automatic agent restart on
+     * {@link #getClient()} once all in-flight prompts have ended.
+     */
+    public void endPrompt() {
+        int remaining = inFlightPromptCount.updateAndGet(v -> Math.max(0, v - 1));
+        if (remaining == 0) {
+            // Snapshot the volatile field — a concurrent stop()/agent switch can
+            // null acpClient between the null check and isHealthy() otherwise.
+            AbstractClient client = acpClient;
+            if (client != null && !client.isHealthy()) {
+                LOG.info("In-flight prompt finished; agent client is unhealthy and will be "
+                    + "restarted on next access");
+            }
+        }
+    }
+
+    /**
+     * Returns the agent client only if it is already running and healthy — never starts it.
+     * Use this from EDT code paths (e.g., UI refresh timers) where blocking startup is not allowed.
+     *
+     * @return the running client, or {@code null} if the agent has not been started yet
+     */
+    @Nullable
+    public AbstractClient getClientIfRunning() {
+        if (started && acpClient != null && acpClient.isHealthy()) {
+            return acpClient;
+        }
+        return null;
+    }
+
+    @Nullable
+    public String checkAuthentication() {
+        if (started && acpClient != null && acpClient.isHealthy()) {
+            return acpClient.checkAuthentication();
+        }
+        // No pre-start credential probing — auth state is observed at runtime from the
+        // agent's own error responses. See docs/AUTH-HANDLING.md.
+        return null;
+    }
+
+    /**
+     * Start the agent process for the active profile.
+     */
+    public synchronized void start() {
+        if (started && acpClient != null && acpClient.isHealthy()) {
+            LOG.debug("Agent client already running for " + getActiveProfile().getDisplayName());
+            return;
+        }
+
+        // Wait for any pending session export to finish before the ACP client starts.
+        // CopilotClient.buildCommand() reads resumeSessionId to build the --resume CLI
+        // flag, so the export must complete before the process is launched.
+        sessionSwitchService.awaitPendingExport(10_000);
+
+        try {
+            String agentId = getActiveProfileId();
+            AgentProfile profile = getActiveProfile();
+            LOG.info("Starting agent " + agentId + " (" + profile.getDisplayName() + ") for project: " + project.getName());
+
+            if (acpClient != null) {
+                acpClient.close();
+            }
+
+            clearCachedConfig();
+
+            switch (profile.getTransportType()) {
+                case CLAUDE_CLI -> {
+                    int mcpPort = resolveMcpPort();
+                    AgentConfig config = resolveStartConfig();
+                    acpClient = new ClaudeClient(profile, config, ToolRegistry.getInstance(project), project, mcpPort);
+                }
+                case CODEX_APP_SERVER -> {
+                    int mcpPort = resolveMcpPort();
+                    AgentConfig config = resolveStartConfig();
+                    acpClient = new CodexClient(profile, config, ToolRegistry.getInstance(project), project, mcpPort);
+                }
+                case ACP -> acpClient = createAcpClient(agentId);
+            }
+
+            // Apply persisted agent selection before start() builds the launch command.
+            // Must happen before acpClient.start() since buildCommand() reads getCurrentAgentSlug().
+            String savedAgent = getSettings().getSelectedAgent();
+            if (!savedAgent.isEmpty()) {
+                acpClient.setCurrentAgentSlug(savedAgent);
+            }
+
+            acpClient.start();
+            started = true;
+
+            LOG.info(profile.getDisplayName() + " agent client started");
+        } catch (Exception e) {
+            LOG.warn("Failed to start agent client", e);
+            String message = e.getMessage();
+            if (e.getCause() != null && e.getCause().getMessage() != null) {
+                message = e.getCause().getMessage();
+            }
+            throw new IllegalStateException(message, e);
+        }
+    }
+
+    public synchronized void stop() {
+        if (!started) return;
+        started = false;
+        AbstractClient clientToStop = acpClient;
+        acpClient = null;
+        if (clientToStop != null) {
+            try {
+                clientToStop.close();
+            } catch (Exception e) {
+                LOG.error("Failed to stop ACP client", e);
+            }
+        }
+    }
+
+    /**
+     * Restart the agent process.
+     *
+     * <p>Before stopping the CLI, exports the current v2 session to the agent's native
+     * format. This ensures the native session directory has a valid {@code events.jsonl}
+     * (or equivalent) so the CLI can resume on restart — even if the previous CLI process
+     * was killed before flushing its event log to disk.</p>
+     */
+    public synchronized void restart() {
+        LOG.info("Restarting ACP client");
+
+        // Export the v2 session to native format before stopping the CLI.
+        // start() calls awaitPendingExport() to wait for completion.
+        sessionSwitchService.exportForRestart(getActiveProfileId());
+
+        stop();
+        clearCachedConfig();
+        start();
+    }
+
+    @Override
+    public void dispose() {
+        LOG.info("ActiveAgentManager disposed");
+
+        // Export the v2 session before shutting down, so that the next IDE startup
+        // can resume via --resume. This must be synchronous (best-effort with timeout)
+        // because async tasks may not complete during IDE shutdown.
+        try {
+            sessionSwitchService.exportForRestart(getActiveProfileId());
+            sessionSwitchService.awaitPendingExport(3000);
+        } catch (Exception e) {
+            LOG.warn("Failed to export session during dispose: " + e.getMessage());
+        }
+
+        stop();
+    }
+
+    // ── MCP port resolution ──────────────────────────────────────────────────
+
+    private int resolveMcpPort() {
+        McpServerControl mcpServer = McpServerControl.getInstance(project);
+        if (mcpServer != null) {
+            if (mcpServer.isRunning() && mcpServer.getPort() > 0) {
+                LOG.info("MCP server already running on port " + mcpServer.getPort());
+                return mcpServer.getPort();
+            }
+            try {
+                mcpServer.start();
+                if (mcpServer.isRunning() && mcpServer.getPort() > 0) {
+                    LOG.info("Auto-started MCP server on port " + mcpServer.getPort());
+                    return mcpServer.getPort();
+                }
+            } catch (Exception e) {
+                LOG.warn("Failed to auto-start MCP server: " + e.getMessage());
+            }
+        }
+        LOG.warn("No MCP server available — IntelliJ code tools will be unavailable for this session.");
+        return 0;
+    }
+
+    /**
+     * Returns the config to use for starting the ACP process.
+     * If the user has customised the start command, wraps it as a command override.
+     */
+    @NotNull
+    private AgentConfig resolveStartConfig() {
+        AgentProfile profile = getActiveProfile();
+        String storedCommand = getCustomAcpCommand();
+        String defaultCommand = profile.getDefaultStartCommand();
+
+        if (storedCommand.isEmpty() || storedCommand.equals(defaultCommand)) {
+            AgentConfig config = ProfileBasedAgentConfig.create(profile, ToolRegistry.getInstance(project), project);
+            cachedConfig = config;
+            return config;
+        }
+
+        // User has customised the command — use CommandOverrideAgentConfig
+        LOG.info("Using custom start command for " + profile.getDisplayName() + ": " + storedCommand);
+        AgentConfig realConfig = ProfileBasedAgentConfig.create(profile, ToolRegistry.getInstance(project), project);
+        cachedConfig = realConfig;
+        return new CommandOverrideAgentConfig(realConfig, storedCommand);
+    }
+
+    private void ensureSettingsForActiveProfile() {
+        String profileId = getActiveProfileId();
+        if (cachedSettings == null || !cachedSettings.getPrefix().equals(profileId + ".")) {
+            cachedSettings = new GenericSettings(profileId, project);
+            cachedUiSettings = new GenericAgentUiSettings(cachedSettings);
+        }
+    }
+
+    static int normalizeSharedTurnTimeoutMinutes(@Nullable String storedMinutes) {
+        return clamp(parseIntOrDefault(storedMinutes, DEFAULT_TURN_TIMEOUT_MINUTES), 1, 1440);
+    }
+
+    static int normalizeSharedInactivityTimeoutSeconds(@Nullable String storedSeconds) {
+        return clamp(parseIntOrDefault(storedSeconds, DEFAULT_INACTIVITY_TIMEOUT_SECONDS), 30, 86_400);
+    }
+
+    static int normalizeSharedMaxToolCallsPerTurn(@Nullable String storedCount, int legacyCount) {
+        if (storedCount != null) {
+            return Math.max(0, parseIntOrDefault(storedCount, DEFAULT_MAX_TOOL_CALLS_PER_TURN));
+        }
+        return Math.max(0, legacyCount);
+    }
+
+    private int migrateLegacyMaxToolCallsPerTurn() {
+        return Math.max(0, findLegacySharedInt(GenericSettings::getMaxToolCallsPerTurn, DEFAULT_MAX_TOOL_CALLS_PER_TURN));
+    }
+
+    private int findLegacySharedInt(@NotNull java.util.function.ToIntFunction<GenericSettings> reader, int defaultValue) {
+        GenericSettings activeSettings = new GenericSettings(getActiveProfileId(), project);
+        int activeValue = reader.applyAsInt(activeSettings);
+        if (activeValue != defaultValue) {
+            return activeValue;
+        }
+        for (AgentProfile profile : AgentProfileManager.getInstance().getAllProfiles()) {
+            GenericSettings settings = new GenericSettings(profile.getId(), project);
+            int value = reader.applyAsInt(settings);
+            if (value != defaultValue) {
+                return value;
+            }
+        }
+        return defaultValue;
+    }
+
+    static int parseIntOrDefault(@Nullable String value, int defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
+    static int clamp(int value, int min, int max) {
+        return Math.clamp(value, min, max);
+    }
+
+    @NotNull
+    private AbstractClient createAcpClient(@NotNull String profileId) {
+        AbstractClient client = ClientRegistry.create(profileId, project);
+        if (client != null) {
+            return client;
+        }
+        LOG.warn("Unknown ACP profile ID: " + profileId + " — no client registered in ClientRegistry");
+        throw new IllegalArgumentException("Unknown ACP agent profile: " + profileId);
+    }
+
+    private void clearCachedConfig() {
+        cachedConfig = null;
+        cachedSettings = null;
+        cachedUiSettings = null;
+    }
+
+    // ── Shared UI preferences (agent-agnostic) ──────────────────────────────
+
+    @NotNull
+    public static String getAttachTriggerChar() {
+        return ChatInputSettings.getInstance().getFileSearchTrigger();
+    }
+
+    public static void setAttachTriggerChar(@NotNull String trigger) {
+        ChatInputSettings.getInstance().setFileSearchTrigger(trigger);
+    }
+
+    public static boolean getFollowAgentFiles(@NotNull Project project) {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_FOLLOW_AGENT_FILES, true);
+    }
+
+    public static void setFollowAgentFiles(@NotNull Project project, boolean enabled) {
+        PropertiesComponent.getInstance(project).setValue(KEY_FOLLOW_AGENT_FILES, enabled, true);
+    }
+
+    public static boolean getInjectConversationHistory(@NotNull Project project) {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_INJECT_CONV_HISTORY, false);
+    }
+
+    public static void setInjectConversationHistory(@NotNull Project project, boolean enabled) {
+        PropertiesComponent.getInstance(project).setValue(KEY_INJECT_CONV_HISTORY, enabled, false);
+    }
+
+    // ── ACP connection state ─────────────────────────────────────────────────
+
+    public boolean isConnected() {
+        return acpConnected;
+    }
+
+    /**
+     * Returns {@code true} if the current agent client is alive and healthy,
+     * without triggering an automatic restart. Safe to call from error handlers
+     * where auto-starting a new process would be undesirable.
+     */
+    public boolean isClientHealthy() {
+        return started && acpClient != null && acpClient.isHealthy();
+    }
+
+    public void setConnected(boolean connected) {
+        this.acpConnected = connected;
+    }
+
+    // ── Auto-connect on startup ──────────────────────────────────────────────
+
+    public boolean isAutoConnect() {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_AUTO_CONNECT, false);
+    }
+
+    public void setAutoConnect(boolean enabled) {
+        PropertiesComponent.getInstance(project).setValue(KEY_AUTO_CONNECT, enabled, false);
+    }
+
+    // ── Custom ACP command (per-profile) ─────────────────────────────────────
+
+    @NotNull
+    public String getCustomAcpCommand() {
+        String profileId = getActiveProfileId();
+        String stored = PropertiesComponent.getInstance(project)
+            .getValue(KEY_CUSTOM_ACP_COMMAND + "." + profileId);
+        if (stored != null && !stored.isEmpty()) {
+            return stored;
+        }
+        return getActiveProfile().getDefaultStartCommand();
+    }
+
+    public void setCustomAcpCommand(@NotNull String command) {
+        String profileId = getActiveProfileId();
+        String defaultCommand = getActiveProfile().getDefaultStartCommand();
+        String value = command.equals(defaultCommand) ? "" : command;
+        PropertiesComponent.getInstance(project)
+            .setValue(KEY_CUSTOM_ACP_COMMAND + "." + profileId, value, "");
+    }
+
+    @NotNull
+    public String getCustomAcpCommandFor(@NotNull String profileId) {
+        String stored = PropertiesComponent.getInstance(project)
+            .getValue(KEY_CUSTOM_ACP_COMMAND + "." + profileId);
+        if (stored != null && !stored.isEmpty()) {
+            return stored;
+        }
+        AgentProfile profile = AgentProfileManager.getInstance().getProfile(profileId);
+        return profile != null ? profile.getDefaultStartCommand() : "";
+    }
+
+    public void setCustomAcpCommandFor(@NotNull String profileId, @NotNull String command) {
+        AgentProfile profile = AgentProfileManager.getInstance().getProfile(profileId);
+        String defaultCommand = profile != null ? profile.getDefaultStartCommand() : "";
+        String value = command.equals(defaultCommand) ? "" : command;
+        PropertiesComponent.getInstance(project)
+            .setValue(KEY_CUSTOM_ACP_COMMAND + "." + profileId, value, "");
+    }
+
+    // ── Backwards compatibility ──────────────────────────────────────────────
+
+    /**
+     * Returns a list of all available profile IDs and display names, for use
+     * by UI components that need to show an agent selector.
+     */
+    @NotNull
+    public List<AgentProfile> getAvailableProfiles() {
+        return AgentProfileManager.getInstance().getAllProfiles();
+    }
+}
