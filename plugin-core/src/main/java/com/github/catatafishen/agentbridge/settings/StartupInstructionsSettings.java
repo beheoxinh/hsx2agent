@@ -124,4 +124,46 @@ public final class StartupInstructionsSettings implements PersistentStateCompone
         }
         return "";
     }
+
+    /**
+     * Reads project-level instruction documents (AGENTS.md and README.md) from the
+     * project root. Matching is case-insensitive; AGENTS.md, agents.md, AGENT.md,
+     * Agent.MD etc. are all accepted.
+     *
+     * @return combined content of both documents, or empty string if neither exists
+     */
+    @NotNull
+    public static String readProjectDocuments(@Nullable String projectBasePath) {
+        if (projectBasePath == null || projectBasePath.isBlank()) return "";
+        java.nio.file.Path root = java.nio.file.Path.of(projectBasePath);
+        if (!java.nio.file.Files.isDirectory(root)) return "";
+
+        StringBuilder sb = new StringBuilder();
+
+        try (var files = java.nio.file.Files.list(root)) {
+            java.util.List<java.nio.file.Path> matches = files
+                .filter(f -> {
+                    String name = f.getFileName().toString();
+                    if (!name.endsWith(".md") && !name.endsWith(".MD")) return false;
+                    String lower = name.toLowerCase(java.util.Locale.ROOT);
+                    return lower.startsWith("agent") || lower.startsWith("readme");
+                })
+                .sorted()
+                .toList();
+
+            for (java.nio.file.Path file : matches) {
+                try {
+                    String content = java.nio.file.Files.readString(file, StandardCharsets.UTF_8).trim();
+                    if (content.isEmpty()) continue;
+                    if (!sb.isEmpty()) sb.append("\n\n");
+                    sb.append("## ").append(file.getFileName()).append("\n\n").append(content);
+                } catch (IOException ignored) {
+                }
+            }
+        } catch (IOException ignored) {
+        }
+
+        if (sb.isEmpty()) return "";
+        return sb.toString();
+    }
 }

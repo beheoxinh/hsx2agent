@@ -201,6 +201,10 @@ public final class McpProtocolHandler {
         if (custom != null && !custom.isBlank()) {
             sb.append("\n\n").append(custom);
         }
+        String projectDocs = StartupInstructionsSettings.readProjectDocuments(project.getBasePath());
+        if (!projectDocs.isBlank()) {
+            sb.append("\n\n").append(projectDocs);
+        }
         String memoryContext = buildMemoryContext();
         if (!memoryContext.isEmpty()) {
             sb.append("\n\n").append(memoryContext);

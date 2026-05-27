@@ -358,7 +358,13 @@ public final class JunieClient extends AcpClient {
     }
 
     private String buildInstructions(@Nullable String userInstructions) {
-        return buildInstructionsStatic(userInstructions);
+        String base = buildInstructionsStatic(userInstructions);
+        String projectDocs = com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings
+            .readProjectDocuments(project.getBasePath());
+        if (!projectDocs.isBlank()) {
+            return base + "\n\n" + projectDocs;
+        }
+        return base;
     }
 
     /**

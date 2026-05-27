@@ -746,9 +746,16 @@ public final class PiCliClient extends AbstractAgentClient {
 
     // ── System instructions ─────────────────────────────────────────────────────
 
-    private static String buildInstructions() {
-        return com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings
-            .getInstance().getInstructions();
+    private String buildInstructions() {
+        StringBuilder sb = new StringBuilder(
+            com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings
+                .getInstance().getInstructions());
+        String projectDocs = com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings
+            .readProjectDocuments(project.getBasePath());
+        if (!projectDocs.isBlank()) {
+            sb.append("\n\n").append(projectDocs);
+        }
+        return sb.toString();
     }
 
     // ── Turn state ─────────────────────────────────────────────────────────────
