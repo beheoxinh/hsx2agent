@@ -74,6 +74,8 @@ public final class PiCliClient extends AbstractAgentClient {
     private static final long PROMPT_TIMEOUT_SECONDS = 10 * 60L;
     private static final String MSG_NOT_STARTED = "Pi subprocess is not running";
 
+
+
     private final AgentProfile profile;
     private final Project project;
     private final AgentConfig config;
@@ -95,6 +97,7 @@ public final class PiCliClient extends AbstractAgentClient {
     private volatile String synthSessionId;
     @Nullable
     private volatile String currentModelId;
+    private volatile boolean instructionsInjected;
 
     public PiCliClient(@NotNull AgentProfile profile,
                        @NotNull AgentConfig config,
@@ -245,6 +248,7 @@ public final class PiCliClient extends AbstractAgentClient {
     @Override
     public String createSession(String cwd) {
         if (synthSessionId == null) synthSessionId = UUID.randomUUID().toString();
+        instructionsInjected = false;
         return synthSessionId;
     }
 
@@ -273,6 +277,14 @@ public final class PiCliClient extends AbstractAgentClient {
         String message = extractText(request.prompt());
         if (message.isBlank()) {
             return new PromptResponse("end_turn", null);
+        }
+
+        if (!instructionsInjected) {
+            String systemPrompt = buildInstructions();
+            if (!systemPrompt.isBlank()) {
+                message = systemPrompt + "\n\n" + message;
+            }
+            instructionsInjected = true;
         }
 
         TurnState turn = new TurnState(onUpdate);
@@ -730,6 +742,13 @@ public final class PiCliClient extends AbstractAgentClient {
         } catch (IOException e) {
             if (started.get()) LOG.warn("[pi] stderr reader failed", e);
         }
+    }
+
+    // ── System instructions ─────────────────────────────────────────────────────
+
+    private static String buildInstructions() {
+        return com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings
+            .getInstance().getInstructions();
     }
 
     // ── Turn state ─────────────────────────────────────────────────────────────

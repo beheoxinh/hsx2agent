@@ -25,7 +25,7 @@ private val APPROVED_BG = com.intellij.ui.JBColor(
 class AutoApproveToggleAction(private val project: Project) : ToggleAction(
     "Auto-Approve",
     "Apply agent edits without per-file approval",
-    AllIcons.Actions.OfflineMode
+    AllIcons.Actions.Checked
 ), CustomComponentAction {
 
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -72,7 +72,8 @@ class AutoCleanOnNewPromptToggleAction(private val project: Project) : ToggleAct
     "Auto-Clean on New Prompt",
     "Remove approved rows automatically when starting a new prompt",
     AllIcons.Actions.ClearCash
-) {
+), CustomComponentAction {
+
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun isSelected(e: AnActionEvent): Boolean {
@@ -82,12 +83,35 @@ class AutoCleanOnNewPromptToggleAction(private val project: Project) : ToggleAct
     override fun setSelected(e: AnActionEvent, state: Boolean) {
         McpServerSettings.getInstance(project).isAutoCleanReviewOnNewPrompt = state
     }
+
+    override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
+        return object : ActionButton(this, presentation, place, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE) {
+            override fun paintButtonLook(g: Graphics) {
+                if (isSelected) {
+                    val g2 = g.create() as Graphics2D
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                    g2.color = APPROVED_BG
+                    val arc = JBUI.scale(4)
+                    g2.fillRoundRect(2, 2, width - 4, height - 4, arc, arc)
+                    g2.dispose()
+                    val icon = presentation.icon
+                    if (icon != null) {
+                        val x = (width - icon.iconWidth) / 2
+                        val y = (height - icon.iconHeight) / 2
+                        icon.paintIcon(this, g, x, y)
+                    }
+                } else {
+                    super.paintButtonLook(g)
+                }
+            }
+        }
+    }
 }
 
 class AutoCommitToggleAction(private val project: Project) : ToggleAction(
     "Auto-Commit",
     "Automatically trigger a commit turn when all changes are approved and turn ends",
-    AllIcons.Actions.Commit
+    AllIcons.Actions.RerunAutomatically
 ), CustomComponentAction {
 
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -154,7 +178,8 @@ class ShowEditorHighlightsToggleAction(private val project: Project) : ToggleAct
     "Show Editor Highlights",
     "Paint agent-edit background colors in the editor. Disable when git diff colors are sufficient",
     AllIcons.Actions.Highlighting
-) {
+), CustomComponentAction {
+
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun isSelected(e: AnActionEvent): Boolean {
@@ -170,12 +195,35 @@ class ShowEditorHighlightsToggleAction(private val project: Project) : ToggleAct
             highlighter.clearAll()
         }
     }
+
+    override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
+        return object : ActionButton(this, presentation, place, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE) {
+            override fun paintButtonLook(g: Graphics) {
+                if (isSelected) {
+                    val g2 = g.create() as Graphics2D
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                    g2.color = APPROVED_BG
+                    val arc = JBUI.scale(4)
+                    g2.fillRoundRect(2, 2, width - 4, height - 4, arc, arc)
+                    g2.dispose()
+                    val icon = presentation.icon
+                    if (icon != null) {
+                        val x = (width - icon.iconWidth) / 2
+                        val y = (height - icon.iconHeight) / 2
+                        icon.paintIcon(this, g, x, y)
+                    }
+                } else {
+                    super.paintButtonLook(g)
+                }
+            }
+        }
+    }
 }
 
 class CleanApprovedAction(private val project: Project) : DumbAwareAction(
     "Clean Approved",
     "Remove all approved rows from the list",
-    AllIcons.Actions.GC
+    AllIcons.Actions.Close
 ) {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -192,7 +240,7 @@ class CleanApprovedAction(private val project: Project) : DumbAwareAction(
 class ApproveAllAction(private val project: Project) : DumbAwareAction(
     "Approve All",
     "Approve all pending changes",
-    AllIcons.Actions.Checked
+    AllIcons.General.ArrowDown
 ) {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 

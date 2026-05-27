@@ -17,6 +17,8 @@ import com.github.catatafishen.agentbridge.settings.SidePanelPosition
 import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
+import com.intellij.openapi.actionSystem.ex.CustomComponentAction
+import com.intellij.openapi.actionSystem.impl.ActionButton
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction
 import com.intellij.openapi.actionSystem.toolbarLayout.ToolbarLayoutStrategy
 import com.intellij.openapi.application.ApplicationManager
@@ -53,6 +55,10 @@ class ChatToolWindowContent(
         private const val PREF_SIDE_PANEL_OPEN = "agentbridge.sidePanelOpen"
         private const val PREF_INPUT_PANEL_HEIGHT = "agentbridge.inputPanelHeight"
         private const val PREF_SIDE_PANEL_PROPORTION = "agentbridge.sidePanelProportion"
+
+        private val SIDE_PANEL_APPROVED_BG = JBColor(
+            Color(0, 120, 0, 90), Color(80, 200, 80, 90)
+        )
 
         private val instances = java.util.concurrent.ConcurrentHashMap<Project, ChatToolWindowContent>()
 
@@ -333,13 +339,9 @@ class ChatToolWindowContent(
             com.github.catatafishen.agentbridge.ui.review.AutoCleanOnNewPromptToggleAction(project),
             com.github.catatafishen.agentbridge.ui.review.ShowEditorHighlightsToggleAction(project),
             Separator.create(),
-            AutoScrollToggleAction(),
-            FollowAgentFilesToggleAction(),
             com.github.catatafishen.agentbridge.ui.review.AutoCommitToggleAction(project),
             SidePanelToggleAction(),
-            NativeUiToggleAction(),
             Separator.create(),
-            StatisticsAction(),
             SettingsAction()
         )
         toolWindow.setTitleActions(actions)
@@ -1125,21 +1127,34 @@ class ChatToolWindowContent(
     private fun createStatusInputChat(): JComponent {
         val chatInputSettings = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance()
 
+        val inputTogglesGroup = DefaultActionGroup().apply {
+            add(FollowAgentFilesToggleAction())
+            add(AutoScrollToggleAction())
+            add(NativeUiToggleAction())
+            add(StatisticsAction())
+        }
+        val inputTogglesToolbar = ActionManager.getInstance().createActionToolbar(
+            "AgentInputToggles", inputTogglesGroup, true
+        )
+        inputTogglesToolbar.isReservePlaceAutoPopupIcon = false
+
         val smartPasteCheckbox =
             com.intellij.ui.components.JBCheckBox("Smart Paste", chatInputSettings.isSmartPasteEnabled).apply {
                 font = font.deriveFont(10f)
                 isOpaque = false
                 border = JBUI.Borders.empty()
+                minimumSize = java.awt.Dimension(0, 0)
                 addActionListener {
                     chatInputSettings.isSmartPasteEnabled = isSelected
                 }
             }
 
         val softWrapsCheckbox =
-            com.intellij.ui.components.JBCheckBox("Soft Wraps", chatInputSettings.isSoftWrapsEnabled).apply {
+            com.intellij.ui.components.JBCheckBox("Wraps", chatInputSettings.isSoftWrapsEnabled).apply {
                 font = font.deriveFont(10f)
                 isOpaque = false
                 border = JBUI.Borders.empty()
+                minimumSize = java.awt.Dimension(0, 0)
                 addActionListener {
                     chatInputSettings.isSoftWrapsEnabled = isSelected
                     promptTextArea.editor?.settings?.isUseSoftWraps = isSelected
@@ -1163,9 +1178,14 @@ class ChatToolWindowContent(
             add(gitLabel)
             add(webLabel)
         }
+        val leftPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+            isOpaque = false
+            add(inputTogglesToolbar.component, BorderLayout.CENTER)
+        }
         val bar = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = false
             border = JBUI.Borders.empty(0, 6, 2, 6)
+            add(leftPanel, BorderLayout.WEST)
             add(rightPanel, BorderLayout.EAST)
         }
 
@@ -1696,7 +1716,7 @@ class ChatToolWindowContent(
         leftGroup.add(object : AnAction(
             "Clear and Restart",
             "Clear the conversation and start a completely fresh session",
-            AllIcons.General.Remove
+            AllIcons.Actions.Rollback
         ) {
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
             override fun update(e: AnActionEvent) {
@@ -2170,7 +2190,7 @@ class ChatToolWindowContent(
         "Side Panel",
         "Show or hide the side panel (Review, Project Files, Prompts)",
         AllIcons.Actions.PreviewDetails
-    ) {
+    ), CustomComponentAction {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun update(e: AnActionEvent) {
@@ -2217,6 +2237,29 @@ class ChatToolWindowContent(
             }
             com.intellij.ide.util.PropertiesComponent.getInstance(project)
                 .setValue(PREF_SIDE_PANEL_OPEN, state)
+        }
+
+        override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
+            return object : ActionButton(this, presentation, place, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE) {
+                override fun paintButtonLook(g: Graphics) {
+                    if (isSelected) {
+                        val g2 = g.create() as Graphics2D
+                        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                        g2.color = SIDE_PANEL_APPROVED_BG
+                        val arc = JBUI.scale(4)
+                        g2.fillRoundRect(2, 2, width - 4, height - 4, arc, arc)
+                        g2.dispose()
+                        val icon = presentation.icon
+                        if (icon != null) {
+                            val x = (width - icon.iconWidth) / 2
+                            val y = (height - icon.iconHeight) / 2
+                            icon.paintIcon(this, g, x, y)
+                        }
+                    } else {
+                        super.paintButtonLook(g)
+                    }
+                }
+            }
         }
     }
 
@@ -2318,7 +2361,7 @@ class ChatToolWindowContent(
 
     private inner class NativeUiToggleAction : ToggleAction(
         "Native UI",
-        "Switch between the native Swing chat panel and the JCEF web panel",
+        "Native UI",
         AllIcons.Actions.ToggleSoftWrap
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
@@ -2916,7 +2959,11 @@ class ChatToolWindowContent(
                             val orcRelativeIndex = parsedText.indexOf('￼', currentRelativeOffset)
                             if (orcRelativeIndex >= 0) {
                                 val absoluteOffset = offset + orcRelativeIndex
-                                editor.inlayModel.addInlineElement(absoluteOffset, true, ContextChipRenderer(parsedItems[i]))
+                                editor.inlayModel.addInlineElement(
+                                    absoluteOffset,
+                                    true,
+                                    ContextChipRenderer(parsedItems[i])
+                                )
                                 currentRelativeOffset = orcRelativeIndex + 1
                             }
                         }
