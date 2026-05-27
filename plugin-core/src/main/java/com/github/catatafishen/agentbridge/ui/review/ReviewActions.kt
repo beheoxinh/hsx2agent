@@ -25,7 +25,7 @@ private val APPROVED_BG = com.intellij.ui.JBColor(
 class AutoApproveToggleAction(private val project: Project) : ToggleAction(
     "Auto-Approve",
     "Apply agent edits without per-file approval",
-    AllIcons.Actions.Checked
+    AllIcons.Actions.GroupByFile
 ), CustomComponentAction {
 
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -223,7 +223,7 @@ class ShowEditorHighlightsToggleAction(private val project: Project) : ToggleAct
 class CleanApprovedAction(private val project: Project) : DumbAwareAction(
     "Clean Approved",
     "Remove all approved rows from the list",
-    AllIcons.Actions.Close
+    AllIcons.Actions.ShowWriteAccess
 ) {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -240,7 +240,7 @@ class CleanApprovedAction(private val project: Project) : DumbAwareAction(
 class ApproveAllAction(private val project: Project) : DumbAwareAction(
     "Approve All",
     "Approve all pending changes",
-    AllIcons.General.ArrowDown
+    AllIcons.Debugger.SmartStepInto
 ) {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
