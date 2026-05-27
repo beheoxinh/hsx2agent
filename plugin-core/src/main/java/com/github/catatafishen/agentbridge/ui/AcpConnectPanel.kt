@@ -982,7 +982,7 @@ class AcpConnectPanel(
     private fun refreshSessionCombo() {
         sessionCombo.removeAllItems()
         val sessionStore = ConversationService.getInstance(project)
-        val sessions = sessionStore.listSessions().toList()
+        val sessions = sessionStore.listSessions().filter { it.turnCount > 0 }
 
         if (sessions.isNotEmpty()) {
             sessionCombo.addItem(SessionChoice.Latest(sessions.first()))

@@ -450,7 +450,14 @@ class ChatToolWindowContent(
         // the listener when the profile changes, so reconnecting to the same profile
         // after a disconnect would leave currentAgent stale.
         conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
+        val previousSessionId = if (::promptOrchestrator.isInitialized) promptOrchestrator.currentSessionId else null
+        val newSessionId = conversationStore.getCurrentSessionId(project.basePath)
+        val sessionSwitched = previousSessionId != null && previousSessionId != newSessionId
         if (::promptOrchestrator.isInitialized) resetSessionState()
+        if (sessionSwitched) {
+            consolePanel.clear()
+            chatSessionInitialized = false
+        }
         // Stay on connect panel while spinner shows "Connecting…"
         // loadModelsAsync triggers agent.start() via getClient() — wait for it to complete
         loadModelsAsync(
@@ -494,7 +501,11 @@ class ChatToolWindowContent(
         // The potentially slow agentManager.stop() (process kill + waitFor up to 5 s)
         // runs on a pooled thread to avoid freezing the EDT — which previously caused the
         // IDE to become unresponsive after network outages, requiring a full restart.
-        resetSession()
+        agentManager.settings.setResumeSessionId(null)
+        ApplicationManager.getApplication().executeOnPooledThread {
+            agentManager.getClientIfRunning()?.clearPersistedSession()
+        }
+        resetSessionState()
         sidePanel?.clearToolCalls()
         agentManager.isConnected = false
         chatSessionInitialized = false
