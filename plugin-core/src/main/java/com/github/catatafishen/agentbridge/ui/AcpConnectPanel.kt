@@ -1529,8 +1529,11 @@ class AcpConnectPanel(
             connectSpinner.isVisible = false
             acpAutoConnectCheckbox.isSelected = agentManager.isAutoConnect
             refreshProfileCombo()
+            // refreshSessionCombo() auto-selects SessionChoice.Latest when sessions exist,
+            // and SessionChoice.None when there are none — do NOT override with None here.
+            // Previously this hardcoded None after every disconnect, causing chat history
+            // to be wiped on the next connect (applySessionChoice(None) deletes .current-session-id).
             refreshSessionCombo()
-            sessionCombo.selectedItem = SessionChoice.None
             updateProfileStatus()
         }
     }
