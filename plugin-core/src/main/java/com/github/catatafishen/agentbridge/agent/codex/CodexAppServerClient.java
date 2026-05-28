@@ -603,8 +603,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         JsonObject params = new JsonObject();
         params.addProperty(F_MODEL, model);
         params.addProperty("cwd", cwd);
-        // onRequest: server sends approval notifications when approval is needed
-        params.addProperty("approvalPolicy", "onRequest");
+        // on-request: server sends approval notifications we can decline
+        params.addProperty("approvalPolicy", "on-request");
 
         try {
             JsonObject result = sendRequest("thread/start", params).get(15, TimeUnit.SECONDS);
