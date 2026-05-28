@@ -52,6 +52,7 @@ final class ConversationSchema {
             if (currentVersion < 2) applyV2(stmt);
             if (currentVersion < 3) applyV3(stmt);
             if (currentVersion < 4) applyV4(stmt);
+            if (currentVersion < 5) applyV5(stmt);
 
             stmt.executeUpdate(
                 "INSERT INTO schema_version (version, applied_at) VALUES ("
@@ -311,5 +312,10 @@ final class ConversationSchema {
             "ALTER TABLE nudge_events ADD COLUMN source TEXT NOT NULL DEFAULT 'human'");
         stmt.execute(
             "UPDATE nudge_events SET source = 'native_tool_reprimand' WHERE nudge_id LIKE 'reprimand-%'");
+    }
+
+    private static void applyV5(@NotNull Statement stmt) throws SQLException {
+        stmt.execute(
+            "ALTER TABLE turns ADD COLUMN is_silent INTEGER NOT NULL DEFAULT 0");
     }
 }

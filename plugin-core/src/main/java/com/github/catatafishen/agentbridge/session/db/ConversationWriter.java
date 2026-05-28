@@ -242,7 +242,7 @@ public final class ConversationWriter {
             throw new IllegalArgumentException(
                 "Prompt entry has no timestamp — cannot determine turn start time: id=" + turnId);
         }
-        String storedTurnId = insertOrResolveConflict(conn, sessionId, turnId, prompt.getText(), startedAt);
+        String storedTurnId = insertOrResolveConflict(conn, sessionId, turnId, prompt.getText(), startedAt, prompt.isSilent());
         updateSessionDisplayName(conn, sessionId, prompt.getText());
         SessionCursor cursor = cursors.computeIfAbsent(sessionId, k -> new SessionCursor());
         cursor.turnId = storedTurnId;
@@ -264,14 +264,16 @@ public final class ConversationWriter {
         @NotNull String sessionId,
         @NotNull String desiredId,
         @Nullable String promptText,
-        @NotNull String startedAt
+        @NotNull String startedAt,
+        boolean isSilent
     ) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
-            "INSERT OR IGNORE INTO turns (id, session_id, prompt_text, started_at) VALUES (?, ?, ?, ?)")) {
+            "INSERT OR IGNORE INTO turns (id, session_id, prompt_text, started_at, is_silent) VALUES (?, ?, ?, ?, ?)")) {
             ps.setString(1, desiredId);
             ps.setString(2, sessionId);
             ps.setString(3, promptText);
             ps.setString(4, startedAt);
+            ps.setInt(5, isSilent ? 1 : 0);
             ps.executeUpdate();
             if (ps.getUpdateCount() > 0) {
                 return desiredId; // inserted successfully, no collision
@@ -291,11 +293,12 @@ public final class ConversationWriter {
         // Genuine cross-session collision — generate a fresh UUID
         String newId = java.util.UUID.randomUUID().toString();
         try (PreparedStatement ps2 = conn.prepareStatement(
-            "INSERT INTO turns (id, session_id, prompt_text, started_at) VALUES (?, ?, ?, ?)")) {
+            "INSERT INTO turns (id, session_id, prompt_text, started_at, is_silent) VALUES (?, ?, ?, ?, ?)")) {
             ps2.setString(1, newId);
             ps2.setString(2, sessionId);
             ps2.setString(3, promptText);
             ps2.setString(4, startedAt);
+            ps2.setInt(5, isSilent ? 1 : 0);
             ps2.executeUpdate();
         }
         return newId;

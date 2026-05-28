@@ -738,6 +738,7 @@ internal class PromptsPanel(
         val query = searchField.text.orEmpty()
         val allEntries = mergeEntries(historyEntries, chatConsole.entriesSnapshot())
         val prompts = allEntries.filterIsInstance<EntryData.Prompt>()
+            .filter { !it.isSilent }
             .sortedBy { it.timestamp }
         val filtered = filterPrompts(prompts, query)
         val turnDataMap = buildTurnDataMap(allEntries)

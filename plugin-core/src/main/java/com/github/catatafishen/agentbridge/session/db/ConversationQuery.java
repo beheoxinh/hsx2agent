@@ -361,9 +361,8 @@ public final class ConversationQuery {
             }
         }
 
-        String whereClause = whereClauses.isEmpty()
-            ? ""
-            : "WHERE " + String.join(" AND ", whereClauses);
+        whereClauses.add("COALESCE(t.is_silent, 0) = 0");
+        String whereClause = "WHERE " + String.join(" AND ", whereClauses);
 
         String limitClause;
         if (p.lastN() != null) {

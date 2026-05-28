@@ -260,13 +260,14 @@ public final class ConversationReader {
         for (String turnId : turnIds) {
             // Load prompt
             try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT prompt_text, started_at FROM turns WHERE id = ?")) {
+                "SELECT prompt_text, started_at, is_silent FROM turns WHERE id = ?")) {
                 ps.setString(1, turnId);
                 try (ResultSet rs = ps.executeQuery()) {
                     if (rs.next()) {
                         List<ContextFileRef> ctxFiles = loadContextFiles(conn, turnId);
+                        boolean silent = rs.getInt(3) != 0;
                         result.add(new EntryData.Prompt(rs.getString(1), rs.getString(2),
-                            ctxFiles.isEmpty() ? null : ctxFiles, turnId, turnId));
+                            ctxFiles.isEmpty() ? null : ctxFiles, turnId, turnId, silent));
                     }
                 }
             }
@@ -285,6 +286,7 @@ public final class ConversationReader {
                    t.cost_usd, t.duration_ms, t.tool_call_count, t.lines_added, t.lines_removed,
                    t.git_branch_at_start, t.git_branch_at_end
             FROM turns t
+            WHERE COALESCE(t.is_silent, 0) = 0
             ORDER BY t.started_at ASC
             """)) {
             try (ResultSet rs = ps.executeQuery()) {
@@ -311,15 +313,16 @@ public final class ConversationReader {
         @NotNull Connection conn, @NotNull String turnId) throws SQLException {
         List<EntryData> result = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(
-            "SELECT id, prompt_text, started_at FROM turns WHERE id = ?")) {
+            "SELECT id, prompt_text, started_at, is_silent FROM turns WHERE id = ?")) {
             ps.setString(1, turnId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     String promptText = rs.getString(2);
                     String startedAt = rs.getString(3);
+                    boolean silent = rs.getInt(4) != 0;
                     List<ContextFileRef> ctxFiles = loadContextFiles(conn, turnId);
                     result.add(new EntryData.Prompt(promptText, startedAt,
-                        ctxFiles.isEmpty() ? null : ctxFiles, turnId, turnId));
+                        ctxFiles.isEmpty() ? null : ctxFiles, turnId, turnId, silent));
                     loadEventsForTurn(conn, turnId, result);
                     addTurnStatsIfPresent(conn, turnId, result);
                 }

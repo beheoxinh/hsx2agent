@@ -137,6 +137,7 @@ public final class EntryDataJsonAdapter {
         }
         addNonEmpty(json, "id", p.getId());
         json.addProperty(KEY_ENTRY_ID, p.getEntryId());
+        if (p.isSilent()) json.addProperty("silent", true);
     }
 
     private static void serializeToolCall(@NotNull JsonObject json, EntryData.ToolCall tc) {
@@ -307,7 +308,8 @@ public final class EntryDataJsonAdapter {
             str(json, KEY_TIMESTAMP),
             contextFiles,
             str(json, "id"),
-            entryId);
+            entryId,
+            bool(json, "silent"));
     }
 
     private static EntryData.ToolCall deserializeToolCall(@NotNull JsonObject json, @NotNull String entryId) {
