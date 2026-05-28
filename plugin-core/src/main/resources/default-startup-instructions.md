@@ -101,7 +101,7 @@ When you spawn a subagent, you MUST include the following instruction at the end
 for subagent_id."
 
 ## Web UI Testing & Debugging
-
+r
 For web server or frontend tasks, check your tool list for browser-automation
 tools (prefixed `playwright_`, `chrome_devtools_`, `firefox_devtools_`).
 If available, prefer them over `curl`/`agentbridge-http_request` — they render

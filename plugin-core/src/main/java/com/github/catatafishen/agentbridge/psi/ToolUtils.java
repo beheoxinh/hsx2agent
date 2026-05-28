@@ -9,6 +9,8 @@ import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.nio.file.Path;
+
 /**
  * Shared utility methods and constants extracted from PsiBridgeService
  * for use by individual tool handler classes.
@@ -252,6 +254,41 @@ public final class ToolUtils {
             vf = LocalFileSystem.getInstance().findFileByPath(basePath + "/" + normalized);
         }
         return vf;
+    }
+
+    /**
+     * Returns {@code true} if the resolved absolute path is outside the project root.
+     * Paths that start with {@code /} are always resolved via the filesystem; relative
+     * paths are resolved against the project base directory.
+     */
+    public static boolean isOutsideProject(@NotNull Project project, @NotNull String pathStr) {
+        String normalized = pathStr.replace('\\', '/');
+        String basePath = project.getBasePath();
+        Path resolved;
+        if (normalized.startsWith("/")) {
+            resolved = Path.of(normalized);
+        } else if (basePath != null) {
+            resolved = Path.of(basePath, normalized);
+        } else {
+            return false;
+        }
+        if (basePath == null) return false;
+        Path base = Path.of(basePath.replace('\\', '/')).toAbsolutePath().normalize();
+        Path target = resolved.toAbsolutePath().normalize();
+        return !target.startsWith(base);
+    }
+
+    /**
+     * Resolves a file path to an absolute {@link Path}. Handles absolute paths
+     * directly and resolves relative paths against the project base directory.
+     * Returns {@code null} if the project has no base path and the input is relative.
+     */
+    public static @Nullable Path resolveAbsolutePath(@NotNull Project project, @NotNull String pathStr) {
+        String normalized = pathStr.replace('\\', '/');
+        if (normalized.startsWith("/")) return Path.of(normalized);
+        String basePath = project.getBasePath();
+        if (basePath == null) return null;
+        return Path.of(basePath, normalized);
     }
 
     /**

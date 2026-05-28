@@ -118,6 +118,13 @@ public class WriteFileTool extends FileTool {
         if (guardError != null) return guardError;
         boolean autoFormat = resolveAutoFormat(args);
 
+        // Files outside the project root cannot go through VFS/PSI without triggering
+        // IntelliJ's "Non-Project Files Protection" dialog, which blocks the EDT and deadlocks
+        // the MCP tool pipeline. Bypass entirely — write directly via java.nio.file.
+        if (ToolUtils.isOutsideProject(project, pathStr)) {
+            return writeOutsideProject(pathStr, args, autoFormat);
+        }
+
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         // [0] = start line, [1] = end line (1-based) to scroll/highlight after write; -1 = don't.
         int[] followRange = {-1, -1};
@@ -611,5 +618,71 @@ public class WriteFileTool extends FileTool {
         if (args.has(PARAM_AUTO_FORMAT)) return args.get(PARAM_AUTO_FORMAT).getAsBoolean();
         if (args.has(PARAM_AUTO_FORMAT_LEGACY)) return args.get(PARAM_AUTO_FORMAT_LEGACY).getAsBoolean();
         return true;
+    }
+
+    /**
+     * Handles writes to files outside the project root. Uses direct {@code java.nio.file}
+     * I/O — no VFS, PSI, or EDT interaction — to avoid IntelliJ's
+     * "Non-Project Files Protection" dialog which blocks the EDT and deadlocks MCP tools.
+     */
+    private String writeOutsideProject(String pathStr, JsonObject args, @SuppressWarnings("unused") boolean autoFormat) {
+        java.nio.file.Path resolved = ToolUtils.resolveAbsolutePath(project, pathStr);
+        if (resolved == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+
+        try {
+            if (args.has(PARAM_CONTENT)) {
+                String content = args.get(PARAM_CONTENT).getAsString();
+                java.nio.file.Files.createDirectories(resolved.getParent());
+                java.nio.file.Files.writeString(resolved, content);
+                CodeChangeTracker.recordChange(CodeChangeTracker.countLines(content), 0);
+                return "Written: " + pathStr + " (" + content.length() + " chars) [outside project — direct I/O]";
+            }
+
+            if (args.has("old_str") && args.has(PARAM_NEW_STR)) {
+                if (!java.nio.file.Files.exists(resolved))
+                    return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+                String text = java.nio.file.Files.readString(resolved);
+                String oldStr = args.get("old_str").getAsString();
+                String newStr = args.get(PARAM_NEW_STR).getAsString();
+                boolean caseSensitive = !args.has("case_sensitive") || args.get("case_sensitive").getAsBoolean();
+                boolean replaceAll = args.has("replace_all") && args.get("replace_all").getAsBoolean();
+
+                int idx = indexOf(text, oldStr, caseSensitive);
+                if (idx == -1)
+                    return "old_str not found in " + pathStr
+                        + ". Ensure the text matches exactly (check whitespace, indentation, line endings)."
+                        + closestMatchHint(text, oldStr);
+
+                if (!replaceAll) {
+                    String searchable = caseSensitive ? text : text.toLowerCase();
+                    String searchableOld = caseSensitive ? oldStr : oldStr.toLowerCase();
+                    if (searchable.indexOf(searchableOld, idx + 1) != -1)
+                        return "old_str matches multiple locations in " + pathStr
+                            + ". Make it more specific, or use replace_all: true.";
+                }
+
+                int replaced = 0;
+                StringBuilder buf = new StringBuilder(text);
+                int pos = replaceAll ? 0 : idx;
+                while ((pos = indexOf(buf.toString(), oldStr, caseSensitive)) != -1) {
+                    buf.replace(pos, pos + oldStr.length(), newStr);
+                    replaced++;
+                    if (!replaceAll) break;
+                    pos += newStr.length();
+                }
+
+                java.nio.file.Files.writeString(resolved, buf.toString());
+                CodeChangeTracker.recordChange(
+                    replaced * CodeChangeTracker.countLines(newStr),
+                    replaced * CodeChangeTracker.countLines(oldStr));
+                return "Edited: " + pathStr + " (replaced " + replaced
+                    + " occurrence(s) of " + oldStr.length() + " chars with " + newStr.length()
+                    + " chars) [outside project — direct I/O]";
+            }
+
+            return "write_file outside project requires either 'content' (full write) or 'old_str'+'new_str' (partial edit)";
+        } catch (java.io.IOException e) {
+            return ToolUtils.ERROR_PREFIX + e.getMessage();
+        }
     }
 }
