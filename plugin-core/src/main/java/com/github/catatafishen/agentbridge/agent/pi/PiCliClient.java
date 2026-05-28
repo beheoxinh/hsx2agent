@@ -145,7 +145,10 @@ public final class PiCliClient extends AbstractAgentClient {
         }
 
         String mcpUrl = mcpPort > 0 ? "http://127.0.0.1:" + mcpPort + "/mcp" : null;
-        Path bridgePath = new PiMcpBridgeGenerator(project).generate(mcpUrl, BuildInfo.getVersion());
+        List<com.github.catatafishen.agentbridge.settings.ExternalMcpServerConfig> externalServers =
+            com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project)
+                .getEnabledExternalMcpServers();
+        Path bridgePath = new PiMcpBridgeGenerator(project).generate(mcpUrl, externalServers, BuildInfo.getVersion());
 
         List<PiCustomProvidersService.Entry> customProviders =
             PiCustomProvidersService.getInstance().getProviders();

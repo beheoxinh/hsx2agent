@@ -8,7 +8,10 @@ import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -224,6 +227,25 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         }
     }
 
+    // ── External MCP servers ────────────────────────────────────────────────
+
+    public @NotNull List<ExternalMcpServerConfig> getExternalMcpServers() {
+        return myState.getExternalMcpServers();
+    }
+
+    public void setExternalMcpServers(@NotNull List<ExternalMcpServerConfig> servers) {
+        myState.setExternalMcpServers(servers);
+    }
+
+    /**
+     * Returns enabled external MCP servers. Used when generating agent configs.
+     */
+    public @NotNull List<ExternalMcpServerConfig> getEnabledExternalMcpServers() {
+        return myState.getExternalMcpServers().stream()
+            .filter(ExternalMcpServerConfig::isEnabled)
+            .collect(java.util.stream.Collectors.toList());
+    }
+
     public static final Set<String> REMOTE_GIT_TOOLS = Set.of(
         "git_push",
         "git_fetch",
@@ -386,6 +408,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private String kindEditColorKey = null;
         private String kindExecuteColorKey = null;
         private String kindSearchColorKey = null;
+        private List<ExternalMcpServerConfig> externalMcpServers = new ArrayList<>();
 
         public int getPort() {
             return port;
@@ -537,6 +560,16 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setKindSearchColorKey(@org.jetbrains.annotations.Nullable String kindSearchColorKey) {
             this.kindSearchColorKey = kindSearchColorKey;
+        }
+
+        public List<ExternalMcpServerConfig> getExternalMcpServers() {
+            if (externalMcpServers == null) externalMcpServers = new ArrayList<>();
+            return externalMcpServers;
+        }
+
+        public void setExternalMcpServers(List<ExternalMcpServerConfig> externalMcpServers) {
+            this.externalMcpServers = externalMcpServers != null
+                ? new ArrayList<>(externalMcpServers) : new ArrayList<>();
         }
 
     }
