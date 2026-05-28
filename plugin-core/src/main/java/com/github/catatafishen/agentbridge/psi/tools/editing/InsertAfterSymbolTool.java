@@ -150,7 +150,8 @@ public final class InsertAfterSymbolTool extends EditingTool {
             }
 
             PsiDocumentManager.getInstance(project).commitDocument(doc);
-            formatInline(vf);
+            // Defer formatting to avoid AWT event dispatch inside write action (crash on Wayland)
+            FileTool.queueAutoFormat(project, pathStr);
             FileDocumentManager.getInstance().saveDocument(doc);
 
             int newLineCount = (int) fContent.chars().filter(c -> c == '\n').count();

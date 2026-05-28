@@ -5,9 +5,7 @@ import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonObject;
-import com.intellij.codeInsight.actions.ReformatCodeProcessor;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -15,7 +13,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
@@ -60,15 +57,10 @@ public abstract class EditingTool extends Tool {
             FileTool.queueAutoFormat(project, vf.getPath());
             return;
         }
-        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-        if (psiFile == null) return;
-        WriteCommandAction.runWriteCommandAction(project, "Auto-Format (Symbol Edit)", null, () -> {
-            PsiDocumentManager.getInstance(project).commitAllDocuments();
-            new ReformatCodeProcessor(psiFile, false).run();
-            PsiDocumentManager.getInstance(project).commitAllDocuments();
-        });
-        // Defer import optimization to end of turn so imports added by earlier
-        // edits in the same response are not stripped before later edits use them.
+        // Defer formatting to avoid AWT event dispatch inside write action (crash on Wayland).
+        // formatInline is called from within WriteCommandAction.runWriteCommandAction (via
+        // performInsert/performReplace), and ReformatCodeProcessor dispatches AWT events which
+        // are not allowed inside write actions on Wayland.
         FileTool.queueAutoFormat(project, vf.getPath());
     }
 

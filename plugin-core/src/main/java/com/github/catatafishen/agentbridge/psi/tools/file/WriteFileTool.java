@@ -241,18 +241,38 @@ public class WriteFileTool extends FileTool {
         Path filePath = Path.of(fullPath);
         try {
             Files.createDirectories(filePath.getParent());
-            Files.writeString(filePath, content);
         } catch (IOException e) {
             resultFuture.complete("Error creating file: " + e.getMessage());
             return;
         }
-        // VFS refresh must run on EDT with write lock — dispatch even if called from background thread.
-        // EdtUtil.invokeAndWait() is safe here: it detects if already on EDT and runs directly.
+        // Use VFS write action to avoid File Cache Conflict dialog.
+        // Writing through WriteAction + getOutputStream lets IntelliJ know about changes
+        // through its own VFS, preventing the file watcher from detecting a disk change
+        // on a file that may already be known to the VFS cache.
         String finalFullPath = fullPath;
-        EdtUtil.invokeAndWait(() -> WriteAction.run(() -> {
-            LocalFileSystem.getInstance().refreshAndFindFileByPath(finalFullPath);
+        com.intellij.openapi.application.WriteAction.run(() -> {
+            VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(finalFullPath);
+            if (vf == null) {
+                try {
+                    Files.writeString(filePath, content);
+                } catch (IOException e) {
+                    resultFuture.complete("Error creating file: " + e.getMessage());
+                    return;
+                }
+                vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(finalFullPath);
+            } else {
+                try (var os = vf.getOutputStream(this)) {
+                    os.write(content.getBytes(StandardCharsets.UTF_8));
+                } catch (IOException e) {
+                    resultFuture.complete("Error writing file: " + e.getMessage());
+                    return;
+                }
+            }
+            if (vf != null) {
+                com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments();
+            }
             CodeChangeTracker.recordChange(CodeChangeTracker.countLines(content), 0);
-        }));
+        });
         notifyFileCreated(project, pathStr);
         resultFuture.complete("Created: " + pathStr);
     }
@@ -541,11 +561,10 @@ public class WriteFileTool extends FileTool {
     private void formatFileSync(VirtualFile vf) {
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return;
-        WriteCommandAction.runWriteCommandAction(project, "Pre-Format for Edit", null, () -> {
-            PsiDocumentManager.getInstance(project).commitAllDocuments();
-            new com.intellij.codeInsight.actions.ReformatCodeProcessor(psiFile, false).run();
-            PsiDocumentManager.getInstance(project).commitAllDocuments();
-        });
+        // Defer formatting to avoid AWT event dispatch inside write action (crash on Wayland).
+        // ReformatCodeProcessor dispatches AWT events which are not allowed inside write actions.
+        queueAutoFormat(project, vf.getPath());
+        PsiDocumentManager.getInstance(project).commitAllDocuments();
     }
 
     /**

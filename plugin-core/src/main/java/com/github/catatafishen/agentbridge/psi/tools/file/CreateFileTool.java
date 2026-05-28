@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.ui.renderers.WriteFileRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
 import java.nio.charset.StandardCharsets;
@@ -90,22 +91,46 @@ public final class CreateFileTool extends FileTool {
                 ". Use edit_text to modify existing files.";
         }
 
+        int lineCount = content.split("\n", -1).length;
+
+        // Use VFS write action to avoid File Cache Conflict dialog.
+        // Writing through WriteAction + getOutputStream lets IntelliJ know about changes
+        // through its own VFS, preventing the file watcher from detecting a disk change
+        // on a file that may already be known to the VFS cache.
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
         Path parentDir = filePath.getParent();
         if (parentDir != null) {
             Files.createDirectories(parentDir);
         }
-        Files.writeString(filePath, content, StandardCharsets.UTF_8);
-
-        CompletableFuture<String> resultFuture = new CompletableFuture<>();
-        int lineCount = content.split("\n", -1).length;
-        EdtUtil.invokeLater(() -> {
+        String finalFullPath = filePath.toString();
+        EdtUtil.invokeAndWait(() -> com.intellij.openapi.application.WriteAction.run(() -> {
             try {
-                LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath.toString());
+                VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(finalFullPath);
+                if (vf == null) {
+                    // File not yet in VFS — create via direct I/O then refresh
+                    try {
+                        Files.writeString(filePath, content, StandardCharsets.UTF_8);
+                    } catch (java.io.IOException e) {
+                        resultFuture.complete("Error creating file: " + e.getMessage());
+                        return;
+                    }
+                    vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(finalFullPath);
+                } else {
+                    try (var os = vf.getOutputStream(CreateFileTool.this)) {
+                        os.write(content.getBytes(StandardCharsets.UTF_8));
+                    } catch (java.io.IOException e) {
+                        resultFuture.complete("Error writing file: " + e.getMessage());
+                        return;
+                    }
+                }
+                if (vf != null) {
+                    com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments();
+                }
                 resultFuture.complete("✓ Created file: " + pathStr + " (" + content.length() + FORMAT_CHARS_SUFFIX);
             } catch (Exception e) {
                 resultFuture.complete("File created but VFS refresh failed: " + e.getMessage());
             }
-        });
+        }));
 
         String result = resultFuture.get(10, TimeUnit.SECONDS);
         CodeChangeTracker.recordChange(lineCount, 0);

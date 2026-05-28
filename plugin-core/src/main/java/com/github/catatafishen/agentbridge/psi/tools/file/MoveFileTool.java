@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.file;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.McpErrorCode;
 import com.github.catatafishen.agentbridge.psi.ToolError;
+import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
@@ -64,6 +65,12 @@ public final class MoveFileTool extends FileTool {
         String pathStr = args.get("path").getAsString();
         String destStr = args.get(PARAM_DESTINATION).getAsString();
 
+        // Files outside the project root bypass VFS/PSI to avoid IntelliJ's
+        // Non-Project Files Protection dialog (blocks EDT on Wayland).
+        if (ToolUtils.isOutsideProject(project, pathStr)) {
+            return moveFileExternal(pathStr, destStr);
+        }
+
         // Resolve files outside ReadAction so refreshAndFindFileByPath can be used as a fallback
         // when the VFS cache is stale (same fix as RenameFileTool).
         VirtualFile vf = resolveVirtualFile(pathStr);
@@ -97,6 +104,28 @@ public final class MoveFileTool extends FileTool {
                 resultFuture.complete("Error moving file: " + e.getMessage());
             }
         });
+    }
+
+    /**
+     * Moves a file outside the project root using direct file I/O.
+     */
+    private String moveFileExternal(String pathStr, String destStr) {
+        java.nio.file.Path absPath = ToolUtils.resolveAbsolutePath(project, pathStr);
+        if (absPath == null || !java.nio.file.Files.exists(absPath)) {
+            return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+        }
+        java.nio.file.Path destDir = ToolUtils.resolveAbsolutePath(project, destStr);
+        if (destDir == null) {
+            return ToolUtils.ERROR_FILE_NOT_FOUND + destStr;
+        }
+        try {
+            java.nio.file.Files.createDirectories(destDir);
+            java.nio.file.Path destPath = destDir.resolve(absPath.getFileName());
+            java.nio.file.Files.move(absPath, destPath);
+            return "Moved " + pathStr + " to " + destPath + " [outside project — direct I/O]";
+        } catch (java.io.IOException e) {
+            return "Error moving file: " + e.getMessage();
+        }
     }
 
     private PsiMoveTarget resolvePsiMoveTarget(VirtualFile vf, VirtualFile destDir) {

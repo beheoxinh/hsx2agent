@@ -76,6 +76,12 @@ public final class DeleteFileTool extends FileTool {
         String guardError = guardExternalWrite(pathStr);
         if (guardError != null) return guardError;
 
+        // Files outside the project root bypass VFS/PSI to avoid IntelliJ's
+        // Non-Project Files Protection dialog (blocks EDT on Wayland).
+        if (ToolUtils.isOutsideProject(project, pathStr)) {
+            return deleteFileExternal(pathStr);
+        }
+
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 
         ReadAction.nonBlocking(() -> {
@@ -126,5 +132,21 @@ public final class DeleteFileTool extends FileTool {
                 }
             })
         );
+    }
+
+    /**
+     * Deletes a file outside the project root using direct file I/O.
+     */
+    private String deleteFileExternal(String pathStr) {
+        java.nio.file.Path absPath = ToolUtils.resolveAbsolutePath(project, pathStr);
+        if (absPath == null) {
+            return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+        }
+        try {
+            java.nio.file.Files.deleteIfExists(absPath);
+            return "Deleted file: " + pathStr + " [outside project — direct I/O]";
+        } catch (java.io.IOException e) {
+            return "Error deleting file: " + e.getMessage();
+        }
     }
 }
