@@ -1212,6 +1212,9 @@ public final class PsiBridgeService implements Disposable {
      * @param requestUserFocus whether to grab keyboard focus and move caret
      */
     public void gentleNavigate(@NotNull VirtualFile vf, int line, int column, boolean requestUserFocus) {
+        if (!requestUserFocus && !ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
+            return;
+        }
         if (!requestUserFocus) {
             trackAgentOpenedFile(vf);
         }

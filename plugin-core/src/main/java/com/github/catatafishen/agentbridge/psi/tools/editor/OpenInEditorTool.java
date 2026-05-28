@@ -8,8 +8,6 @@ import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -95,12 +93,16 @@ public final class OpenInEditorTool extends EditorTool {
     }
 
     private String openFile(@NotNull OpenRequest request) {
+        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
+            return "Skipped opening " + request.pathStr() + " (Follow Agent is disabled). "
+                + "Enable it in Settings -> Tools -> Hsx2Agent to let the agent open files.";
+        }
+
         VirtualFile vf = resolveVirtualFile(request.pathStr());
         if (vf == null) {
             return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + request.pathStr();
         }
 
-        // Don't steal focus when the user is actively typing in the chat prompt.
         boolean effectiveFocus = request.focus() && !PsiBridgeService.isUserTypingInChat(project);
         PsiBridgeService.getInstance(project).gentleNavigate(vf, request.line(), 0, effectiveFocus);
         restartDaemonAnalysis(vf);
