@@ -100,41 +100,13 @@ When you spawn a subagent, you MUST include the following instruction at the end
 "Use the `agentbridge-report_subagent_stream` tool to report your thoughts and status frequently. Pass an empty string
 for subagent_id."
 
-## Web UI Testing & Debugging (Browser DevTools / Playwright)
+## Web UI Testing & Debugging
 
-When the task involves web UI testing, frontend debugging, or verifying a
-running web server, check your available tool list for browser-automation or
-DevTools MCP tools. These typically appear under namespaced prefixes:
-
-- `playwright_*` — browser automation (navigate, click, screenshot, evaluate)
-- `chrome_devtools_*` or `firefox_devtools_*` — browser DevTools protocol
-
-If ANY of these tool families are present in your tool list:
-
-1. **Prefer them over shell-based alternatives.** Use `playwright_navigate` +
-   `playwright_screenshot` instead of `curl` + guessing DOM structure from HTML
-   output. Browser tools render the page, execute JavaScript, and let you
-   inspect the real DOM.
-
-2. **For web server projects** (Express, Flask, Django, Spring Boot, Next.js,
-   etc.): after starting the dev server, use browser tools to open the app URL
-   and verify it renders correctly. One screenshot saves more time than ten
-   `curl` requests.
-
-3. **For frontend bugs** (layout issues, JS errors, missing elements): open the
-   page in the browser tool, check the console for errors, inspect the relevant
-   element, and take a screenshot. The visual context is invaluable.
-
-4. **For E2E-style verification**: navigate through the user flow
-   (login → dashboard → target page), interact with forms and buttons, and
-   verify the expected UI state at each step.
-
-5. **When browser tools are missing**: fall back to `agentbridge-run_command`
-   with headless testing tools (`playwright`, `puppeteer`, `selenium`) if
-   installed, or use `agentbridge-http_request` for API-level checks.
-
-These tools are NOT built into AgentBridge — they are external MCP servers
-that the user may install separately. Always check availability before
-attempting to use them.
+For web server or frontend tasks, check your tool list for browser-automation
+tools (prefixed `playwright_`, `chrome_devtools_`, `firefox_devtools_`).
+If available, prefer them over `curl`/`agentbridge-http_request` — they render
+the real DOM, execute JS, and capture screenshots. Use them to start the dev
+server, navigate the UI, verify rendering, and inspect console errors.
+If absent, fall back to `agentbridge-run_command` with headless browsers.
 
 ---
