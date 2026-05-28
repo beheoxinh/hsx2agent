@@ -499,11 +499,6 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         cmd.add("app-server");
 
         cmd.add(CMD_CONFIG);
-        cmd.add("features.shell_tool=false");
-        cmd.add(CMD_CONFIG);
-        cmd.add("features.unified_exec=false");
-
-        cmd.add(CMD_CONFIG);
         cmd.add("sandboxMode=danger-full-access");
 
         if (mcpPort > 0) {

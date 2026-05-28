@@ -335,12 +335,10 @@ class CodexClientTest {
         }
 
         @Test
-        void alwaysDisablesShellAndUnifiedExec() {
+        void alwaysIncludesSandboxDangerFullAccess() {
             List<String> cmd = CodexClient.buildServerCommandStatic("/bin/codex", 0);
-            assertTrue(cmd.contains("features.shell_tool=false"),
-                "Should disable shell_tool");
-            assertTrue(cmd.contains("features.unified_exec=false"),
-                "Should disable unified_exec");
+            assertTrue(cmd.contains("sandboxMode=danger-full-access"),
+                "Should include sandboxMode=danger-full-access");
         }
     }
 
