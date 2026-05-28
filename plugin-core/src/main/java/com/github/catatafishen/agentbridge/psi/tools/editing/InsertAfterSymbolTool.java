@@ -15,6 +15,8 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import org.jetbrains.annotations.NotNull;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -42,8 +44,8 @@ public final class InsertAfterSymbolTool extends EditingTool {
 
     @Override
     public @NotNull String description() {
-        return "Insert content after a symbol definition. PSI-aware — finds symbols by name, no line numbers needed. " +
-            "Auto-formats and optimizes imports immediately. Use for adding new methods after an existing one.";
+        return "Insert content after a symbol definition. PSI-aware — finds symbols by name, no line numbers needed. "
+            + "Auto-formats and optimizes imports immediately. Use for adding new methods after an existing one.";
     }
 
     @Override
@@ -81,13 +83,19 @@ public final class InsertAfterSymbolTool extends EditingTool {
         String content = args.get(PARAM_CONTENT).getAsString();
         Integer lineHint = args.has(PARAM_LINE) ? args.get(PARAM_LINE).getAsInt() : null;
 
+        // Files outside the project bypass VFS/PSI to avoid IntelliJ's
+        // Non-Project Files Protection dialog (blocks EDT on Wayland).
+        if (ToolUtils.isOutsideProject(project, pathStr)) {
+            return insertAfterSymbolExternal(pathStr, symbolName, content, lineHint);
+        }
+
         CompletableFuture<String> result = new CompletableFuture<>();
         int[] endLine = new int[1];
 
         EdtUtil.invokeLater(() -> performInsertAfter(pathStr, symbolName, content, lineHint, endLine, result));
 
         String resultStr = result.get(15, TimeUnit.SECONDS);
-        if (!resultStr.startsWith(ToolUtils.ERROR_PREFIX) && !resultStr.startsWith(SYMBOL_PREFIX)) {
+        if (!resultStr.startsWith(ToolUtils.ERROR_PREFIX) && !resultStr.startsWith("Symbol")) {
             int insertedLines = (int) content.chars().filter(c -> c == '\n').count() + 1;
             CodeChangeTracker.recordChange(insertedLines, 0);
             int insertStart = endLine[0] + 1;
@@ -150,6 +158,56 @@ public final class InsertAfterSymbolTool extends EditingTool {
                 + FORMATTED_SUFFIX);
         } catch (Exception e) {
             result.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
+        }
+    }
+
+    /**
+     * Handles insert_after_symbol for files outside the project root.
+     * Uses direct file I/O — no VFS, PSI, or EDT write action.
+     */
+    private String insertAfterSymbolExternal(String pathStr, String symbolName, String content, Integer lineHint) {
+        Path absPath = ToolUtils.resolveAbsolutePath(project, pathStr);
+        if (absPath == null || !Files.exists(absPath)) {
+            return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+        }
+        try {
+            String text = Files.readString(absPath);
+            String[] lines = text.split("\n", -1);
+
+            int targetLine;
+            if (lineHint != null && lineHint >= 1 && lineHint <= lines.length) {
+                targetLine = lineHint - 1;
+            } else {
+                targetLine = -1;
+                for (int i = 0; i < lines.length; i++) {
+                    if (lines[i].contains(symbolName)) {
+                        targetLine = i;
+                        break;
+                    }
+                }
+                if (targetLine < 0) {
+                    return "Symbol '" + symbolName + "' not found in " + pathStr
+                        + ". Provide a 'line' parameter for files outside the project.";
+                }
+            }
+
+            String normalizedContent = content.replace("\r\n", "\n").replace("\r", "\n");
+            if (!normalizedContent.endsWith("\n")) normalizedContent += "\n";
+
+            StringBuilder out = new StringBuilder();
+            for (int i = 0; i <= targetLine; i++)
+                out.append(lines[i]).append(i < lines.length - 1 || text.endsWith("\n") ? "\n" : "");
+            out.append(normalizedContent);
+            for (int i = targetLine + 1; i < lines.length; i++)
+                out.append(lines[i]).append(i < lines.length - 1 || text.endsWith("\n") ? "\n" : "");
+            Files.writeString(absPath, out.toString());
+
+            int insertedLines = (int) normalizedContent.chars().filter(c -> c == '\n').count();
+            CodeChangeTracker.recordChange(insertedLines, 0);
+            return "Inserted " + insertedLines + " lines after line " + (targetLine + 1)
+                + " in " + pathStr + " [outside project — direct I/O]";
+        } catch (java.io.IOException e) {
+            return ToolUtils.ERROR_PREFIX + e.getMessage();
         }
     }
 }

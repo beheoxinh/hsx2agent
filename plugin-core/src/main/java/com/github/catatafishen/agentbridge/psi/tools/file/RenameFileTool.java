@@ -3,13 +3,15 @@ package com.github.catatafishen.agentbridge.psi.tools.file;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.McpErrorCode;
 import com.github.catatafishen.agentbridge.psi.ToolError;
-
+import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -37,8 +39,8 @@ public final class RenameFileTool extends FileTool {
 
     @Override
     public @NotNull String description() {
-        return "Rename a file in place without moving it. Does NOT update import statements or references — " +
-            "use refactor(operation='rename') for reference-aware renames.";
+        return "Rename a file in place without moving it. Does NOT update import statements or references — "
+            + "use refactor(operation='rename') for reference-aware renames.";
     }
 
     @Override
@@ -54,7 +56,7 @@ public final class RenameFileTool extends FileTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("path", TYPE_STRING, "Path to the file to rename (absolute or project-relative)"),
+            Param.required("path", TYPE_STRING, "Path to the file to rename"),
             Param.required(PARAM_NEW_NAME, TYPE_STRING, "New file name (just the filename, not a full path)")
         );
     }
@@ -62,15 +64,15 @@ public final class RenameFileTool extends FileTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("path") || !args.has(PARAM_NEW_NAME))
-            return ToolError.of(McpErrorCode.MISSING_PARAM,
-                "'path' and 'new_name' parameters are required");
+            return ToolError.of(McpErrorCode.MISSING_PARAM, "'path' and 'new_name' parameters are required");
         String pathStr = args.get("path").getAsString();
         String newName = args.get(PARAM_NEW_NAME).getAsString();
 
-        // Resolve the file outside ReadAction so refreshAndFindFileByPath can be used as a fallback.
-        // findFileByPath reads from the VFS cache only; if the cache is stale (e.g. the file was just
-        // created by another tool and the file-watcher event hasn't fired yet) it returns null.
-        // refreshAndFindFileByPath forces a synchronous VFS refresh for that specific path.
+        // External files: use java.nio.file directly to avoid VFS Non-Project dialog.
+        if (ToolUtils.isOutsideProject(project, pathStr)) {
+            return renameFileExternal(pathStr, newName);
+        }
+
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) vf = refreshAndFindVirtualFile(pathStr);
         if (vf == null) return ToolError.of(McpErrorCode.FILE_NOT_FOUND, pathStr,
@@ -79,6 +81,24 @@ public final class RenameFileTool extends FileTool {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         performRenameOnEdt(vf, newName, resultFuture);
         return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Renames a file outside the project root using direct file I/O.
+     */
+    private String renameFileExternal(String pathStr, String newName) {
+        Path absPath = ToolUtils.resolveAbsolutePath(project, pathStr);
+        if (absPath == null || !Files.exists(absPath)) {
+            return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+        }
+        try {
+            Path parent = absPath.getParent();
+            Path newPath = parent != null ? parent.resolve(newName) : Path.of(newName);
+            Files.move(absPath, newPath);
+            return "Renamed " + pathStr + " to " + newPath + " [outside project — direct I/O]";
+        } catch (IOException e) {
+            return "Error renaming file: " + e.getMessage();
+        }
     }
 
     private void performRenameOnEdt(VirtualFile vf, String newName, CompletableFuture<String> resultFuture) {
