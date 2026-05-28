@@ -29,6 +29,9 @@ class PsiBridgeStartup : ProjectActivity {
         createAgentWorkspace(project)
         cleanupStaleExternalModules(project)
 
+        // Auto-resolve file cache conflict dialogs to prevent EDT blocking
+        FileConflictAutoResolver.install(project)
+
         // Force-initialize PsiBridgeService so tools are registered before any agent connects
         PsiBridgeService.getInstance(project)
 

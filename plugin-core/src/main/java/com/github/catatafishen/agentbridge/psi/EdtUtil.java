@@ -140,8 +140,16 @@ public final class EdtUtil {
      * Updates and checks the modal-first-seen timestamp.
      * Returns 0 if no modal is present (reset), or throws if the modal has been
      * blocking long enough to give up.
+     * <p>
+     * Before evaluating, attempts to auto-resolve known modal dialogs (e.g.
+     * "File Cache Conflict") so they are dismissed before the abort threshold.
      */
     private static long checkModalTimeout(long modalFirstSeenMs) {
+        // Attempt auto-resolve of known dialogs (e.g. file cache conflict) before
+        // evaluating the modal state — if we can dismiss it, reset the timer.
+        boolean resolved = FileConflictAutoResolver.tryAutoResolve();
+        if (resolved) return 0;
+
         String modalDetail = describeModalBlocker();
         ModalCheckAction action = evaluateModalState(modalFirstSeenMs, modalDetail, System.currentTimeMillis(), MODAL_FAIL_AFTER_MS);
         return switch (action) {
