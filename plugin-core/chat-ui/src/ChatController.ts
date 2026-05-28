@@ -503,6 +503,11 @@ const ChatController = {
             const fragment = document.createRange().createContextualFragment(decodeBase64(promptHtml));
             promptBubble.appendChild(fragment);
         }
+        const dispatchNote = document.createElement('span');
+        dispatchNote.className = 'subagent-dispatch-note';
+        dispatchNote.textContent = 'Delegating work to subagent workers — please wait for them to complete.';
+        dispatchNote.dataset.chipFor = 'sa-' + sectionId;
+        ctx.msg!.appendChild(dispatchNote);
         ctx.msg!.appendChild(promptBubble);
         const msg = document.createElement('chat-message');
         msg.setAttribute('type', 'agent');
@@ -520,6 +525,11 @@ const ChatController = {
         nameSpan.textContent = displayName;
         meta.appendChild(nameSpan);
         msg.appendChild(meta);
+        const workerBanner = document.createElement('div');
+        workerBanner.className = 'subagent-worker-banner';
+        workerBanner.id = 'worker-banner-' + sectionId;
+        workerBanner.textContent = 'Worker running — processing your request in parallel.';
+        msg.appendChild(workerBanner);
         const saDetails = document.createElement('turn-details');
         msg.appendChild(saDetails);
         const resultBubble = document.createElement('message-bubble');
@@ -535,10 +545,17 @@ const ChatController = {
         const el = document.getElementById('result-' + sectionId);
         if (el) {
             const resultHtml = encodedResultHtml ? decodeBase64(encodedResultHtml) : null;
-            el.innerHTML = resultHtml || (status === 'completed' ? 'Completed' : '<span style="color:var(--error)">\u2716 Failed</span>');
+            el.innerHTML = resultHtml || (status === 'completed' ? 'Completed' : '<span style="color:var(--error)">\\u2716 Failed</span>');
         }
         const chip = document.querySelector('[data-chip-for="sa-' + sectionId + '"]');
         if (chip) chip.setAttribute('status', status === 'failed' ? 'failed' : 'complete');
+
+        const note = document.querySelector('.subagent-dispatch-note[data-chip-for="sa-' + sectionId + '"]');
+        if (note) (note as HTMLElement).style.display = 'none';
+
+        const banner = document.getElementById('worker-banner-' + sectionId);
+        if (banner) banner.style.display = 'none';
+
         this._container()?.scheduleScrollIfNeeded();
     },
 

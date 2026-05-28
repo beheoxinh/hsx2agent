@@ -852,9 +852,8 @@ chat-message[type="agent"] .message-action-btn:hover::before {
     display: block;
     width: 6px;
     height: 6px;
-    background:
-        linear-gradient(45deg, transparent 40%, var(--bg, #2b2b2b) 40%, var(--bg, #2b2b2b) 60%, transparent 60%),
-        linear-gradient(-45deg, transparent 40%, var(--bg, #2b2b2b) 40%, var(--bg, #2b2b2b) 60%, transparent 60%);
+    background: linear-gradient(45deg, transparent 40%, var(--bg, #2b2b2b) 40%, var(--bg, #2b2b2b) 60%, transparent 60%),
+    linear-gradient(-45deg, transparent 40%, var(--bg, #2b2b2b) 40%, var(--bg, #2b2b2b) 60%, transparent 60%);
 }
 
 /* Denied: gray circle with horizontal line (block sign) */
@@ -883,8 +882,12 @@ chat-message[type="agent"] .message-action-btn:hover::before {
 }
 
 @keyframes pulse-ring {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.4;
+    }
 }
 
 /* Subagent chips show no indicator on success */
@@ -978,6 +981,25 @@ thinking-chip.status-thinking svg {
     color: var(--sa-color);
     font-weight: 600;
     font-size: 0.88em;
+}
+
+.subagent-dispatch-note {
+    display: block;
+    font-size: 0.88em;
+    color: var(--muted);
+    font-style: italic;
+    margin-bottom: var(--sp-2);
+}
+
+.subagent-worker-banner {
+    background: var(--sa-a06);
+    color: var(--sa-color);
+    font-size: 0.85em;
+    padding: var(--sp-2) var(--sp-4);
+    border-radius: var(--r-sm);
+    margin: var(--sp-2) 0 var(--sp-4) 0;
+    display: inline-block;
+    border-left: 2px solid var(--sa-color);
 }
 
 .subagent-result {
