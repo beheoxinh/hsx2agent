@@ -522,10 +522,9 @@ class ChatToolWindowContent(
         // The potentially slow agentManager.stop() (process kill + waitFor up to 5 s)
         // runs on a pooled thread to avoid freezing the EDT — which previously caused the
         // IDE to become unresponsive after network outages, requiring a full restart.
-        agentManager.settings.setResumeSessionId(null)
-        ApplicationManager.getApplication().executeOnPooledThread {
-            agentManager.getClientIfRunning()?.clearPersistedSession()
-        }
+        // Keep resumeSessionId and persisted session files intact so the next connect can
+        // resume the same session via session/load. Only resetSession() (user-initiated
+        // "New Conversation") should wipe these — a disconnect is not a session reset.
         resetSessionState()
         sidePanel?.clearToolCalls()
         agentManager.isConnected = false
@@ -549,8 +548,17 @@ class ChatToolWindowContent(
         restartSessionGroup?.updateIconForDisconnect()
         notifyWebServerDisconnected()
 
-        // Stop the agent process off-EDT to avoid blocking the UI thread.
+        // Export the current session to the CLI's native format so the next connect can
+        // resume via session/load. Must complete before agentManager.stop() kills the process.
+        val profileId = agentManager.activeProfileId
         ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val sessionSwitch = SessionSwitchService.getInstance(project)
+                sessionSwitch.exportForRestart(profileId)
+                sessionSwitch.awaitPendingExport(5_000)
+            } catch (e: Exception) {
+                LOG.warn("Failed to export session for restart during disconnect", e)
+            }
             try {
                 agentManager.stop()
             } catch (e: Exception) {

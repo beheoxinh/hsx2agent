@@ -392,8 +392,13 @@ public abstract class AcpClient extends AbstractAgentClient {
             currentSessionId = response.sessionId();
             processSessionResponse(response);
 
-            // Turn off legacy history injection on fresh session creation to save tokens
-            ActiveAgentManager.setInjectConversationHistory(project, false);
+            // Only disable injection when this is a genuinely fresh start (no resume was
+            // attempted). When we fall through from a failed session/load, the injection
+            // fallback was already enabled by clearResumeAndEnableInjectionFallback() —
+            // don't override that here or the agent loses all conversation context.
+            if (requestedResumeId == null) {
+                ActiveAgentManager.setInjectConversationHistory(project, false);
+            }
 
             onSessionCreated(currentSessionId);
             persistResumeSessionId(currentSessionId);
@@ -520,8 +525,8 @@ public abstract class AcpClient extends AbstractAgentClient {
         for (NewSessionResponse.SessionConfigOption opt : options) {
             List<AbstractAgentClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
                 : opt.values().stream()
-                  .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
-                  .toList();
+                .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
+                .toList();
             String optId = opt.id() != null ? opt.id() : "";
             String label = opt.label() != null ? opt.label() : optId;
             result.add(new AbstractAgentClient.AgentConfigOption(optId, label, opt.description(), vals, opt.selectedValueId()));
