@@ -1190,27 +1190,6 @@ public final class PsiBridgeService implements Disposable {
         }
     }
 
-    /**
-     * Navigates to a file and line in a non-disruptive way when following an agent.
-     *
-     * <p>If {@code requestUserFocus} is false (automated "Follow Agent"):
-     * <ul>
-     *   <li>If the file is already the active editor: only scroll the line into view,
-     *       do NOT move the caret. This prevents interrupting the user while typing.</li>
-     *   <li>If the file is open but in a background tab: open/switch to it without
-     *       stealing keyboard focus.</li>
-     * </ul>
-     *
-     * <p>If {@code requestUserFocus} is true (user clicked a link):
-     * <ul>
-     *   <li>Performs standard navigation that moves the caret and grabs focus.</li>
-     * </ul>
-     *
-     * @param vf               the file to navigate to
-     * @param line             1-based line number
-     * @param column           0-based column number
-     * @param requestUserFocus whether to grab keyboard focus and move caret
-     */
     public void gentleNavigate(@NotNull VirtualFile vf, int line, int column, boolean requestUserFocus) {
         if (!requestUserFocus && !ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
             return;
@@ -1231,7 +1210,6 @@ public final class PsiBridgeService implements Disposable {
                     Editor editor = fem.getSelectedTextEditor();
 
                     // CASE 1: The file is already the active editor.
-                    // To be non-disruptive, we ONLY scroll. We do NOT move the caret.
                     if (editor != null && vf.equals(editor.getVirtualFile())) {
                         LogicalPosition pos = new LogicalPosition(logicalLine, logicalColumn);
                         editor.getScrollingModel().scrollTo(pos, ScrollType.MAKE_VISIBLE);
@@ -1239,7 +1217,6 @@ public final class PsiBridgeService implements Disposable {
                     }
 
                     // CASE 2: The file is open but in a background tab, or not open at all.
-                    // We open it with focus=false.
                     fem.openTextEditor(descriptor, false);
                 } else {
                     // CASE 3: User-initiated or explicit focus request.
@@ -1251,22 +1228,39 @@ public final class PsiBridgeService implements Disposable {
         });
     }
 
-    private final Set<VirtualFile> agentOpenedFiles = ConcurrentHashMap.newKeySet();
+    private static final int MAX_AGENT_OPENED_TABS = 5;
+    private final java.util.LinkedList<VirtualFile> agentOpenedFiles = new java.util.LinkedList<>();
 
-    public void trackAgentOpenedFile(@NotNull VirtualFile vf) {
-        agentOpenedFiles.add(vf);
+    public synchronized void trackAgentOpenedFile(@NotNull VirtualFile vf) {
+        if (agentOpenedFiles.contains(vf)) {
+            agentOpenedFiles.remove(vf);
+            agentOpenedFiles.addLast(vf);
+            return;
+        }
+        if (agentOpenedFiles.size() >= MAX_AGENT_OPENED_TABS) {
+            VirtualFile oldest = agentOpenedFiles.removeFirst();
+            ApplicationManager.getApplication().invokeLater(() -> {
+                if (!project.isDisposed() && oldest.isValid()) {
+                    FileEditorManager fem = FileEditorManager.getInstance(project);
+                    if (fem.isFileOpen(oldest)) fem.closeFile(oldest);
+                }
+            });
+        }
+        agentOpenedFiles.addLast(vf);
     }
 
     public void closeAgentOpenedFiles() {
+        List<VirtualFile> toClose;
+        synchronized (this) {
+            toClose = new java.util.ArrayList<>(agentOpenedFiles);
+            agentOpenedFiles.clear();
+        }
         ApplicationManager.getApplication().invokeLater(() -> {
             if (project.isDisposed()) return;
             FileEditorManager fem = FileEditorManager.getInstance(project);
-            for (VirtualFile vf : agentOpenedFiles) {
-                if (vf.isValid() && fem.isFileOpen(vf)) {
-                    fem.closeFile(vf);
-                }
+            for (VirtualFile vf : toClose) {
+                if (vf.isValid() && fem.isFileOpen(vf)) fem.closeFile(vf);
             }
-            agentOpenedFiles.clear();
         });
     }
 

@@ -3,12 +3,10 @@ package com.github.catatafishen.agentbridge.psi.tools.git;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.McpErrorCode;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
-import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolError;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
-import com.github.catatafishen.agentbridge.services.AgentTabTracker;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.ui.renderers.GitOperationRenderer;
 import com.intellij.openapi.application.ApplicationManager;
@@ -592,12 +590,9 @@ public abstract class GitTool extends Tool {
     // ── VCS Log follow-along ─────────────────────────────────
 
     /**
-     * After a successful commit, open the Git Log tab and navigate to HEAD of {@code repoRoot}.
+     * After a successful commit, navigate to HEAD of {@code repoRoot} in the VCS Log tab.
      * Reads HEAD from the supplied repo root (not the project base) so multi-repo commits
      * navigate to the correct commit. See {@code docs/bugs/COMMIT-NOT-FOUND-IN-LOG-BUG.md}.
-     *
-     * <p>Uses {@code tw.show()} instead of {@code tw.activate()} when the chat prompt has focus,
-     * preventing keystroke leaks to the VCS tool window.
      *
      * @param repoRoot absolute path of the repository the commit was made in
      */
@@ -609,26 +604,8 @@ public abstract class GitTool extends Tool {
                 String fullHash = runGitIn(repoRoot, REV_PARSE, "HEAD").trim();
                 if (fullHash.length() != 40) return;
 
-                // Build the VCS tool window callback separately so it runs only AFTER the
-                // graph is confirmed fresh. tw.activate(null) on a stale graph triggers
-                // IntelliJ 2025.3's "highlight current revision" which tries to navigate to
-                // the new commit before it is in the visible PermanentGraph, emitting the
-                // "commit not found" bubble. See COMMIT-NOT-FOUND-IN-LOG-BUG.md § Cause 5.
-                Runnable openVcsTw = () -> {
-                    var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
-                    var tw = twm.getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
-                    if (tw != null) {
-                        AgentTabTracker.getInstance(project).trackToolWindowIfHidden(com.intellij.openapi.wm.ToolWindowId.VCS);
-                        if (PsiBridgeService.isChatToolWindowActive(project)) {
-                            tw.show();
-                        } else {
-                            tw.activate(null);
-                        }
-                    }
-                };
-
                 EdtUtil.invokeLater(() ->
-                    PlatformApiCompat.showRevisionInLogAfterRefresh(project, fullHash, repoRoot, openVcsTw));
+                    PlatformApiCompat.showRevisionInLogAfterRefresh(project, fullHash, repoRoot));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } catch (Exception ignored) {
@@ -652,19 +629,7 @@ public abstract class GitTool extends Tool {
         if (hash == null) return;
         EdtUtil.invokeLater(() -> {
             try {
-                Runnable preNav = () -> {
-                    var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
-                    var tw = twm.getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
-                    if (tw != null) {
-                        AgentTabTracker.getInstance(project).trackToolWindowIfHidden(com.intellij.openapi.wm.ToolWindowId.VCS);
-                        if (!PsiBridgeService.isChatToolWindowActive(project)) {
-                            tw.activate(null);
-                        } else {
-                            tw.show();
-                        }
-                    }
-                };
-                PlatformApiCompat.showRevisionInLogAfterRefresh(project, hash, repoRoot, preNav);
+                PlatformApiCompat.showRevisionInLogAfterRefresh(project, hash, repoRoot);
             } catch (Exception ignored) {
                 // best-effort UI follow-along
             }
