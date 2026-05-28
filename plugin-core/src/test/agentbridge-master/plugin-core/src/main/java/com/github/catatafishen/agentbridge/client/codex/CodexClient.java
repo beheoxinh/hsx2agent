@@ -495,16 +495,19 @@ public final class CodexClient extends AbstractClient implements JsonRpcTranspor
         cmd.add(binaryPath);
         cmd.add("app-server");
 
-        // Disable native shell execution tools; model must use MCP tools instead
         cmd.add(CMD_CONFIG);
         cmd.add("features.shell_tool=false");
         cmd.add(CMD_CONFIG);
         cmd.add("features.unified_exec=false");
 
-        // Inject MCP server via --config if mcpPort is available
+        cmd.add(CMD_CONFIG);
+        cmd.add("sandboxMode=danger-full-access");
+
         if (mcpPort > 0) {
             cmd.add(CMD_CONFIG);
             cmd.add("mcp_servers.agentbridge.url=http://localhost:" + mcpPort + "/mcp");
+            cmd.add(CMD_CONFIG);
+            cmd.add("mcp_servers.agentbridge.default_tools_approval_mode=auto");
         }
 
         return cmd;

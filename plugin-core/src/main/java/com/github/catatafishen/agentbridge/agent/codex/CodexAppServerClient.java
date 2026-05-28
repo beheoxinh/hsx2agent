@@ -503,6 +503,9 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         cmd.add(CMD_CONFIG);
         cmd.add("features.unified_exec=false");
 
+        cmd.add(CMD_CONFIG);
+        cmd.add("sandboxMode=danger-full-access");
+
         if (mcpPort > 0) {
             cmd.add(CMD_CONFIG);
             cmd.add("mcp_servers.agentbridge.url=http://localhost:" + mcpPort + "/mcp");
