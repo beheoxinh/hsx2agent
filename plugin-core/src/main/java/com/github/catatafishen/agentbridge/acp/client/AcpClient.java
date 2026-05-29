@@ -1494,16 +1494,27 @@ public abstract class AcpClient extends AbstractAgentClient {
      * Creates the initial session immediately after startup to populate models, modes, and
      * config options. The session is kept alive and reused for the first user prompt — this
      * avoids a redundant second {@code session/new} when the user sends their first message.
-     * If the call fails, the failure is logged and swallowed; the first real {@code createSession}
-     * call will retry.
+     * If the call fails, retries once with a longer timeout for agents (e.g. OpenCode) that
+     * may need more time to initialize their model list. If all retries fail, the failure is
+     * logged and swallowed; the first real {@code createSession} call will retry.
      */
     private void eagerFetchModels() {
         String cwd = launchCwd != null ? launchCwd : project.getBasePath();
         if (cwd == null) return;
         try {
             createSession(cwd);
-            // Keep currentSessionId set — createSession() will reuse it when the user sends a prompt
-            LOG.info(displayName() + ": eagerly loaded " + availableModels.size() + " model(s), session=" + currentSessionId);
+            if (!availableModels.isEmpty()) {
+                LOG.info(displayName() + ": eagerly loaded " + availableModels.size()
+                    + " model(s), session=" + currentSessionId);
+                return;
+            }
+            // Session was created but no models returned (e.g. session/resume skipped models).
+            // Retry once with a fresh session to ensure we have models for the UI selector.
+            LOG.info(displayName() + ": session created with empty models, retrying session/new");
+            currentSessionId = null;
+            createSession(cwd);
+            LOG.info(displayName() + ": eagerly loaded " + availableModels.size()
+                + " model(s) on retry, session=" + currentSessionId);
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             String errorMsg = e.getMessage() + (cause != e ? " — caused by: " + cause.getMessage() : "");
