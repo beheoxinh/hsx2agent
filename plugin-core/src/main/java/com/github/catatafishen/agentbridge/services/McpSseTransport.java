@@ -32,7 +32,7 @@ final class McpSseTransport {
 
     private static final Logger LOG = Logger.getInstance(McpSseTransport.class);
     private static final long KEEP_ALIVE_INTERVAL_SECONDS = 30;
-    private static final int MAX_SSE_SESSIONS = 10;
+    private static final int MAX_SSE_SESSIONS = 100;
     private static final String CONTENT_TYPE = "Content-Type";
     private static final String APPLICATION_JSON = "application/json";
 
@@ -171,35 +171,35 @@ final class McpSseTransport {
 
         String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
 
-        try {
-            String response = protocolHandler.handleMessage(body);
+        // Acknowledge the POST request immediately (MCP SSE spec requirement)
+        exchange.sendResponseHeaders(202, -1);
+        exchange.close();
 
-            // Acknowledge the POST request
-            exchange.sendResponseHeaders(202, -1);
-            exchange.close();
-
-            // Send the response through the SSE stream (if not a notification)
-            if (response != null) {
-                session.sendEvent("message", response);
-            }
-        } catch (IOException e) {
-            LOG.warn("SSE send failed for session " + sessionId, e);
-            removeSession(sessionId);
-            sendJsonError(exchange, 500, "SSE stream error: " + e.getMessage());
-        } catch (Exception e) {
-            LOG.warn("MCP request error in SSE session " + sessionId, e);
-            exchange.sendResponseHeaders(202, -1);
-            exchange.close();
-            // Try to send error through SSE stream
+        // Process the message asynchronously so the POST client doesn't time out
+        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
-                String errJson = McpHttpServer.buildJsonRpcErrorResponse(-32603,
-                    "Internal error: " + e.getMessage());
-                session.sendEvent("message", errJson);
-            } catch (IOException ioEx) {
-                LOG.warn("Failed to send error via SSE", ioEx);
+                String response = protocolHandler.handleMessage(body);
+
+                // Send the response through the SSE stream (if not a notification)
+                if (response != null) {
+                    session.sendEvent("message", response);
+                }
+            } catch (IOException e) {
+                LOG.warn("SSE send failed for session " + sessionId, e);
                 removeSession(sessionId);
+            } catch (Exception e) {
+                LOG.warn("MCP request error in SSE session " + sessionId, e);
+                // Try to send error through SSE stream
+                try {
+                    String errJson = McpHttpServer.buildJsonRpcErrorResponse(-32603,
+                        "Internal error: " + e.getMessage());
+                    session.sendEvent("message", errJson);
+                } catch (IOException ioEx) {
+                    LOG.warn("Failed to send error via SSE", ioEx);
+                    removeSession(sessionId);
+                }
             }
-        }
+        });
     }
 
     private void removeSession(String sessionId) {
@@ -217,6 +217,9 @@ final class McpSseTransport {
                 session.sendKeepAlive();
             } catch (IOException e) {
                 LOG.info("SSE session disconnected during keepalive: " + entry.getKey());
+                removeSession(entry.getKey());
+            } catch (Exception e) {
+                LOG.warn("Unexpected error during SSE keepalive for session: " + entry.getKey(), e);
                 removeSession(entry.getKey());
             }
         }

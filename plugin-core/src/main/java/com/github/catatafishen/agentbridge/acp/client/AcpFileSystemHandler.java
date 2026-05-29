@@ -47,7 +47,7 @@ final class AcpFileSystemHandler {
                 throw new IllegalArgumentException("File not found: " + absolutePath);
             }
 
-            Document doc = FileDocumentManager.getInstance().getDocument(vf);
+            Document doc = FileDocumentManager.getInstance().getCachedDocument(vf);
             if (doc != null) {
                 holder[0] = doc.getText();
             } else {

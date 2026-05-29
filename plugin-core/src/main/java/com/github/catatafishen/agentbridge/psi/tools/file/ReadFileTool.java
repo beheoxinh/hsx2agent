@@ -119,7 +119,9 @@ public class ReadFileTool extends FileTool {
     }
 
     private String readFileContent(VirtualFile vf) {
-        Document doc = FileDocumentManager.getInstance().getDocument(vf);
+        // Use getCachedDocument to avoid creating a new Document from a non-EDT thread.
+        // getDocument(vf) creates documents on demand, which requires EDT in IntelliJ 2026.1+.
+        Document doc = FileDocumentManager.getInstance().getCachedDocument(vf);
         if (doc != null) {
             return doc.getText();
         }

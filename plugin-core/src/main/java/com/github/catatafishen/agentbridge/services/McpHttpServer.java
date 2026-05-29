@@ -97,11 +97,11 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             }
 
             // Bounded thread pool: SSE mode blocks one thread per connection, streamable HTTP
-            // uses short-lived requests. Cap at 20 to prevent thread exhaustion from reconnection storms.
-            // Uses a small queue (50) to absorb bursts; tasks rejected beyond capacity get auto-500'd by HttpServer.
+            // uses short-lived requests. Cap at 150 to prevent thread exhaustion from reconnection storms.
+            // Uses a small queue (100) to absorb bursts; tasks rejected beyond capacity get auto-500'd by HttpServer.
             requestExecutor = new java.util.concurrent.ThreadPoolExecutor(
-                2, 20, 60, java.util.concurrent.TimeUnit.SECONDS,
-                new java.util.concurrent.LinkedBlockingQueue<>(50),
+                2, 150, 60, java.util.concurrent.TimeUnit.SECONDS,
+                new java.util.concurrent.LinkedBlockingQueue<>(100),
                 r -> {
                     Thread t = new Thread(r, "mcp-http");
                     t.setDaemon(true);
