@@ -8,11 +8,22 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import java.awt.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Automatically resolves the "File Cache Conflict" dialog by selecting
- * "Load File System Changes" (reload file from disk), preventing the dialog
- * from blocking the EDT and hanging MCP tools.
+ * Automatically resolves the "File Cache Conflict" dialog, preventing it from
+ * blocking the EDT and hanging MCP tools.
+ * <p>
+ * Resolution strategy:
+ * <ul>
+ *   <li>If an agent tool wrote a file recently (within {@link #AGENT_WRITE_WINDOW_MS}),
+ *       selects <b>"Keep Memory Changes"</b> to preserve the agent's in-memory edits.
+ *       Loading from disk during or shortly after an agent turn would revert the agent's
+ *       work — the disk version may be stale because deferred auto-format modifies the
+ *       document without immediately saving.</li>
+ *   <li>Otherwise, selects <b>"Load File System Changes"</b> to pick up genuine external
+ *       modifications (user edits from a terminal, git operations, etc.).</li>
+ * </ul>
  * <p>
  * A background poller installed via {@link #install(Project)} scans every 2 seconds.
  * Additionally, {@link #tryAutoResolve()} can be called from any context (e.g. the
@@ -43,6 +54,15 @@ public final class FileConflictAutoResolver {
     };
 
     /**
+     * Button text fragments that indicate "keep the in-memory version".
+     */
+    private static final String[] KEEP_BUTTON_FRAGMENTS = {
+        "Keep Memory Changes",
+        "Keep Memory",
+        "Keep",
+    };
+
+    /**
      * Polling interval for scanning open windows.
      */
     private static final long POLL_INTERVAL_MS = 500;
@@ -52,9 +72,32 @@ public final class FileConflictAutoResolver {
      */
     private static final int SCAN_INTERVAL_POLLS = 4;
 
+    /**
+     * Window (ms) after the last agent write during which we prefer keeping
+     * the in-memory version over loading from disk. Covers the deferred
+     * auto-format gap where documents are dirty but not yet saved.
+     */
+    private static final long AGENT_WRITE_WINDOW_MS = 30_000;
+
     private static final AtomicBoolean INSTALLED = new AtomicBoolean(false);
 
+    /**
+     * Timestamp of the most recent agent tool write. Updated by
+     * {@link #recordAgentWrite()} — called from file-writing tools after
+     * successfully modifying a document.
+     */
+    private static final AtomicLong lastAgentWriteMs = new AtomicLong();
+
     private FileConflictAutoResolver() {
+    }
+
+    /**
+     * Record that an agent tool just wrote a file. Shifts the conflict
+     * resolution strategy towards keeping in-memory content for the next
+     * {@link #AGENT_WRITE_WINDOW_MS} milliseconds.
+     */
+    public static void recordAgentWrite() {
+        lastAgentWriteMs.set(System.currentTimeMillis());
     }
 
     /**
@@ -123,7 +166,21 @@ public final class FileConflictAutoResolver {
         }
     }
 
+    private static boolean isAgentWriteRecent() {
+        return System.currentTimeMillis() - lastAgentWriteMs.get() < AGENT_WRITE_WINDOW_MS;
+    }
+
     private static void doResolve(Window window) {
+        if (isAgentWriteRecent()) {
+            AbstractButton keepButton = findKeepButton(window);
+            if (keepButton != null) {
+                LOG.info("Agent wrote files recently — keeping memory changes instead of loading from disk");
+                SwingUtilities.invokeLater(keepButton::doClick);
+                return;
+            }
+            LOG.warn("Agent wrote files recently but no 'Keep Memory' button found — falling back to load from disk");
+        }
+
         AbstractButton loadButton = findLoadButton(window);
         if (loadButton != null) {
             SwingUtilities.invokeLater(loadButton::doClick);
@@ -171,6 +228,15 @@ public final class FileConflictAutoResolver {
     private static AbstractButton findLoadButton(Window window) {
         if (!(window instanceof JDialog)) return null;
         return findButtonByText(window, LOAD_BUTTON_FRAGMENTS);
+    }
+
+    /**
+     * Find the "Keep Memory Changes" button in the dialog component tree.
+     */
+    @Nullable
+    private static AbstractButton findKeepButton(Window window) {
+        if (!(window instanceof JDialog)) return null;
+        return findButtonByText(window, KEEP_BUTTON_FRAGMENTS);
     }
 
     /**

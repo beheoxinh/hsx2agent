@@ -101,6 +101,7 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
             FileTool.followFileIfEnabled(project, pathStr, lineRange[0], lineRange[0] + newLineCount - 1,
                 FileTool.HIGHLIGHT_EDIT, "replacing " + symbolType[0] + " " + symbolName);
             FileAccessTracker.recordWrite(project, pathStr);
+            com.github.catatafishen.agentbridge.psi.FileConflictAutoResolver.recordAgentWrite();
         }
         return resultStr;
     }

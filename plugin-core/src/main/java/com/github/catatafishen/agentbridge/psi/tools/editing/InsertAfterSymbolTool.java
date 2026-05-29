@@ -102,6 +102,7 @@ public final class InsertAfterSymbolTool extends EditingTool {
             FileTool.followFileIfEnabled(project, pathStr, insertStart, insertStart + insertedLines - 1,
                 FileTool.HIGHLIGHT_EDIT, "inserting after " + symbolName);
             FileAccessTracker.recordWrite(project, pathStr);
+            com.github.catatafishen.agentbridge.psi.FileConflictAutoResolver.recordAgentWrite();
         }
         return resultStr;
     }

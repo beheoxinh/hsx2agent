@@ -142,6 +142,7 @@ public class WriteFileTool extends FileTool {
                 followFileIfEnabled(project, pathStr, followRange[0], followRange[1],
                     HIGHLIGHT_EDIT, agentLabel(project) + " is editing");
                 FileAccessTracker.recordWrite(project, pathStr);
+                com.github.catatafishen.agentbridge.psi.FileConflictAutoResolver.recordAgentWrite();
                 return result + getGitFileStatus(project, pathStr);
             }
         }
@@ -175,6 +176,7 @@ public class WriteFileTool extends FileTool {
             followFileIfEnabled(project, pathStr, followRange[0], followRange[1],
                 HIGHLIGHT_EDIT, agentLabel(project) + " is editing");
             FileAccessTracker.recordWrite(project, pathStr);
+            com.github.catatafishen.agentbridge.psi.FileConflictAutoResolver.recordAgentWrite();
             return result + getGitFileStatus(project, pathStr);
         } catch (TimeoutException e) {
             cancelled.set(true);

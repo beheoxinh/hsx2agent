@@ -137,6 +137,7 @@ public final class CreateFileTool extends FileTool {
         notifyFileCreated(project, pathStr);
         followFileIfEnabled(project, pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel(project) + " created");
         FileAccessTracker.recordWrite(project, pathStr);
+        com.github.catatafishen.agentbridge.psi.FileConflictAutoResolver.recordAgentWrite();
         return result;
     }
 }

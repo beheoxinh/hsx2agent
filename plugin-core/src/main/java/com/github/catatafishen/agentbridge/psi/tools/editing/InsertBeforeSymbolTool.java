@@ -101,6 +101,7 @@ public final class InsertBeforeSymbolTool extends EditingTool {
             FileTool.followFileIfEnabled(project, pathStr, anchorLine[0], anchorLine[0] + insertedLines - 1,
                 FileTool.HIGHLIGHT_EDIT, "inserting before " + symbolName);
             FileAccessTracker.recordWrite(project, pathStr);
+            com.github.catatafishen.agentbridge.psi.FileConflictAutoResolver.recordAgentWrite();
         }
         return resultStr;
     }

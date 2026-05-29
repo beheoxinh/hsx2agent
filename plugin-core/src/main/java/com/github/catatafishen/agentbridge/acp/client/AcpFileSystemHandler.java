@@ -127,6 +127,7 @@ final class AcpFileSystemHandler {
             }
         });
 
+        com.github.catatafishen.agentbridge.psi.FileConflictAutoResolver.recordAgentWrite();
         LOG.info("Wrote " + content.length() + " chars to " + absolutePath);
     }
 
