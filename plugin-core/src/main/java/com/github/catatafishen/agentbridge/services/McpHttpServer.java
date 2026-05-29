@@ -267,19 +267,40 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             if (settings.isDebugLoggingEnabled()) {
                 LOG.info("[MCP] <<< " + truncateForLog(body));
             }
-            String response = protocolHandler.handleMessage(body);
 
-            if (response == null) {
-                // Notification — no response needed
+            com.google.gson.JsonObject reqJson = com.google.gson.JsonParser.parseString(body).getAsJsonObject();
+            boolean isNotification = !reqJson.has("id");
+
+            if (isNotification) {
+                protocolHandler.handleMessage(body);
                 exchange.sendResponseHeaders(202, -1);
             } else {
-                if (settings.isDebugLoggingEnabled()) {
-                    LOG.info("[MCP] >>> " + truncateForLog(response));
-                }
-                byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
-                exchange.sendResponseHeaders(200, bytes.length);
-                exchange.getResponseBody().write(bytes);
+                exchange.sendResponseHeaders(200, 0); // 0 means chunked transfer encoding
+                java.io.OutputStream os = exchange.getResponseBody();
+
+                java.util.concurrent.Future<String> future = com.intellij.openapi.application.ApplicationManager.getApplication()
+                    .executeOnPooledThread(() -> protocolHandler.handleMessage(body));
+
+                String response = null;
+                while (true) {
+                    try {
+                        response = future.get(10, java.util.concurrent.TimeUnit.SECONDS);
+                        break;
+                    } catch (java.util.concurrent.TimeoutException te) {
+                        // Send a space character to keep the HTTP connection alive while waiting for long tools
+                        os.write(' ');
+                        os.flush();
+                    }
+                }
+
+                if (response != null) {
+                    if (settings.isDebugLoggingEnabled()) {
+                        LOG.info("[MCP] >>> " + truncateForLog(response));
+                    }
+                    os.write(response.getBytes(StandardCharsets.UTF_8));
+                }
+                os.flush();
             }
         } catch (Exception e) {
             LOG.warn("MCP request error", e);
