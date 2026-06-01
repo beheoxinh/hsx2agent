@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.navigation;
 
+import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentTabTracker;
@@ -209,9 +210,8 @@ public final class SearchTextTool extends NavigationTool {
         List<MatchPosition> snapshot = List.copyOf(positions);
         ApplicationManager.getApplication().invokeLater(() -> {
             // This invokeLater fires after the tool call returns and FocusGuard is uninstalled.
-            // Only suppress opening the Find window when the user is actively typing — that is,
-            // chat is focused, the input is non-empty, and it changed within the last 10 seconds.
-            // When the input is idle or empty, showing the Find window is useful follow-along.
+            // Open the Find window only when follow-agent is enabled AND the user isn't typing.
+            if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
             if (com.github.catatafishen.agentbridge.psi.PsiBridgeService.isUserTypingInChat(project)) return;
             Usage[] usages = snapshot.stream()
                 .filter(pos -> pos.psiFile() != null)

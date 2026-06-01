@@ -190,6 +190,12 @@ public final class GetHighlightsTool extends QualityTool {
         if (alreadyOpen) return;
 
         boolean followAgent = ToolLayerSettings.getInstance(project).getFollowAgentFiles();
+        if (!followAgent) {
+            // When follow-agent is disabled, skip the file-open entirely to avoid
+            // flashing a stale editor tab. Highlights will reflect whatever daemon
+            // pass has already completed (may be empty).
+            return;
+        }
 
         // Subscribe BEFORE opening so we don't miss the daemon pass
         var latch = new java.util.concurrent.CountDownLatch(1);
@@ -233,7 +239,10 @@ public final class GetHighlightsTool extends QualityTool {
             disconnect.run();
             // Close the file again if we opened it and follow-agent mode is off,
             // to avoid leaving stale editor tabs from silent background analysis.
-            if (!followAgent) {
+            // Note: ensureDaemonAnalyzed already returns early when followAgent is false,
+            // so this branch is only reached when followAgent was true at the time of
+            // opening but was toggled off during the daemon wait.
+            if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
                 EdtUtil.invokeLater(() ->
                     com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
                         .closeFile(vf));
