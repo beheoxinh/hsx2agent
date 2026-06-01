@@ -87,7 +87,8 @@ public final class ConversationService implements Disposable {
         @NotNull String name,
         long createdAt,
         long updatedAt,
-        int turnCount) {
+        int turnCount,
+        @NotNull String lastMessage) {
     }
 
     /**
@@ -213,7 +214,8 @@ public final class ConversationService implements Disposable {
                 sr.displayName(),
                 parseIsoToEpochMillis(sr.startedAt()),
                 parseIsoToEpochMillis(sr.lastActivity()),
-                sr.turnCount()
+                sr.turnCount(),
+                sr.lastUserMessage()
             ));
         }
         return result;

@@ -375,7 +375,7 @@ class BackfillMinerTest {
     // --- Helpers ---
 
     private static ConversationService.SessionRecord session(String id, String agent, String name) {
-        return new ConversationService.SessionRecord(id, agent, name, 0L, 0L, 0);
+        return new ConversationService.SessionRecord(id, agent, name, 0L, 0L, 0, "");
     }
 
     private static EntryData prompt(String text) {

@@ -53,7 +53,8 @@ public final class ConversationReader {
         @NotNull String displayName,
         @NotNull String startedAt,
         @NotNull String lastActivity,
-        int turnCount
+        int turnCount,
+        @NotNull String lastUserMessage
     ) {
     }
 
@@ -75,7 +76,10 @@ public final class ConversationReader {
             try (PreparedStatement ps = conn.prepareStatement("""
                 SELECT s.id, s.agent_name, COALESCE(s.display_name, ''), s.started_at,
                        COALESCE(s.ended_at, s.started_at) AS last_activity,
-                       (SELECT COUNT(*) FROM turns WHERE session_id = s.id) AS turn_count
+                       (SELECT COUNT(*) FROM turns WHERE session_id = s.id) AS turn_count,
+                       COALESCE((SELECT t.prompt_text FROM turns t
+                                 WHERE t.session_id = s.id
+                                 ORDER BY t.started_at DESC LIMIT 1), '') AS last_message
                 FROM sessions s
                 ORDER BY last_activity DESC
                 """)) {
@@ -88,7 +92,8 @@ public final class ConversationReader {
                         rs.getString(3),
                         rs.getString(4),
                         rs.getString(5),
-                        rs.getInt(6)
+                        rs.getInt(6),
+                        rs.getString(7)
                     ));
                 }
                 return result;

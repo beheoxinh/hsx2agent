@@ -78,7 +78,12 @@ class AcpConnectPanel(
         companion object {
             private fun formatSession(record: ConversationService.SessionRecord): String {
                 val date = SESSION_DATE_FORMAT.format(Date(record.updatedAt))
-                val label = record.name.ifEmpty { record.agent }
+                val msg = record.lastMessage.trim().replace('\n', ' ')
+                val label = if (msg.isNotEmpty()) {
+                    if (msg.length > 60) msg.take(57) + "..." else msg
+                } else {
+                    record.name.ifEmpty { record.agent }
+                }
                 val base = "$date — $label"
                 return if (record.turnCount > 0) "$base (${record.turnCount} turns)" else base
             }
@@ -947,7 +952,9 @@ class AcpConnectPanel(
         panel.add(Box.createVerticalStrut(JBUI.scale(4)))
 
         sessionCombo.renderer = SimpleListCellRenderer.create { label, value, _ ->
-            label.text = value?.displayText ?: ""
+            val text = value?.displayText ?: ""
+            label.text = text
+            label.toolTipText = text
         }
         sessionCombo.alignmentX = LEFT_ALIGNMENT
         sessionCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
@@ -970,8 +977,8 @@ class AcpConnectPanel(
             verticalScrollBarPolicy = JBScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
             alignmentX = LEFT_ALIGNMENT
             val rowHeight = JBUI.scale(24)
-            maximumSize = Dimension(JBUI.scale(500), rowHeight * 10)
-            preferredSize = Dimension(JBUI.scale(500), rowHeight * 3)
+            maximumSize = Dimension(Int.MAX_VALUE, rowHeight * 10)
+            preferredSize = Dimension(0, rowHeight * 3)
         }
         panel.add(recentScroll)
 
@@ -1016,11 +1023,26 @@ class AcpConnectPanel(
         }
 
         val date = SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date(record.updatedAt))
-        val name = record.name.ifEmpty { record.agent }
-        val shortName = if (name.length > 40) name.take(37) + "..." else name
+        val msg = record.lastMessage.trim().replace('\n', ' ')
+        val name = if (msg.isNotEmpty()) msg else record.name.ifEmpty { record.agent }
         val turns = if (record.turnCount > 0) " (${record.turnCount})" else ""
+        val fullText = "$date — $name$turns"
 
-        val item = JBLabel("$date \u2014 $shortName$turns").apply {
+        val item = object : JBLabel() {
+            override fun getPreferredSize(): Dimension {
+                val pref = super.getPreferredSize()
+                val parentWidth = parent?.width ?: 0
+                return if (parentWidth > 0) Dimension(parentWidth, pref.height) else pref
+            }
+
+            override fun getMaximumSize(): Dimension {
+                val max = super.getMaximumSize()
+                val parentWidth = parent?.width ?: 0
+                return if (parentWidth > 0) Dimension(parentWidth, max.height) else max
+            }
+        }.apply {
+            text = fullText
+            toolTipText = fullText
             font = JBUI.Fonts.smallFont()
             foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
