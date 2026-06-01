@@ -447,37 +447,61 @@ class PromptOrchestrator(
         return blocks
     }
 
-    /**
-     * Fallback for agents that do not accept ACP `Resource` content blocks (see
-     * [com.github.catatafishen.agentbridge.services.AgentProfile.isSendResourceReferences]).
-     * Inlines text attachments into the prompt; drops image/binary attachments with a
-     * console note since base64 image blocks are not supported by these agents either.
-     */
     private fun buildPromptBlocksAsTextFallback(
         prompt: String,
         attachments: List<PromptAttachment>,
     ): List<ContentBlock> {
-        val textRefs = attachments.filterIsInstance<PromptAttachment.TextRef>()
-        val skipped = attachments.size - textRefs.size
-        if (skipped > 0) {
+        val blocks = mutableListOf<ContentBlock>()
+        val inlineParts = mutableListOf(prompt)
+
+        var droppedCount = 0
+
+        for (attachment in attachments) {
+            when (attachment) {
+                is PromptAttachment.TextRef -> {
+                    inlineParts.add("--- Context: ${attachment.uri} ---")
+                    inlineParts.add(attachment.text)
+                }
+
+                is PromptAttachment.ImageRef -> {
+                    // Image attachments use base64 content blocks, not resource references.
+                    // Send them as-is — supported by all ACP agents.
+                    flushInlineText(blocks, inlineParts)
+                    blocks.add(ContentBlock.Image(attachment.base64Data, attachment.mimeType))
+                }
+
+                is PromptAttachment.BinaryRef -> {
+                    // Binary attachments require Resource content blocks
+                    // which this agent does not support.
+                    droppedCount++
+                }
+            }
+        }
+
+        flushInlineText(blocks, inlineParts)
+
+        if (droppedCount > 0) {
             val agentName = agentManager.activeProfile.displayName
             ApplicationManager.getApplication().invokeLater {
                 consolePanel().addErrorEntry(
-                    "\u26a0 $agentName does not support image or binary attachments — " +
-                        "$skipped attachment(s) were not sent."
+                    "⚠ $agentName does not support binary attachments — " +
+                        "$droppedCount attachment(s) were not sent."
                 )
             }
         }
-        val promptWithContext = buildString {
-            append(prompt)
-            if (textRefs.isNotEmpty()) append("\n\n")
-            for ((index, ref) in textRefs.withIndex()) {
-                if (index > 0) append("\n\n")
-                append("--- Context: ${ref.uri} ---\n")
-                append(ref.text)
-            }
+
+        return blocks
+    }
+
+    private fun flushInlineText(
+        blocks: MutableList<ContentBlock>,
+        inlineParts: MutableList<String>,
+    ) {
+        val joined = inlineParts.joinToString("\n\n").trim()
+        if (joined.isNotEmpty()) {
+            blocks.add(ContentBlock.Text(joined))
         }
-        return listOf(ContentBlock.Text(promptWithContext))
+        inlineParts.clear()
     }
 
     /**
