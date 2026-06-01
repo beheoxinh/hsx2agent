@@ -970,8 +970,8 @@ class AcpConnectPanel(
             verticalScrollBarPolicy = JBScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
             alignmentX = LEFT_ALIGNMENT
             val rowHeight = JBUI.scale(24)
-            maximumSize = Dimension(Int.MAX_VALUE, rowHeight * 3)
-            preferredSize = Dimension(0, rowHeight * 3)
+            maximumSize = Dimension(JBUI.scale(500), rowHeight * 10)
+            preferredSize = Dimension(JBUI.scale(500), rowHeight * 3)
         }
         panel.add(recentScroll)
 
@@ -982,7 +982,7 @@ class AcpConnectPanel(
     private fun refreshSessionCombo() {
         sessionCombo.removeAllItems()
         val sessionStore = ConversationService.getInstance(project)
-        val sessions = sessionStore.listSessions().filter { it.turnCount > 0 }
+        val sessions = sessionStore.listSessions().filter { it.turnCount > 0 }.take(10)
 
         if (sessions.isNotEmpty()) {
             sessionCombo.addItem(SessionChoice.Latest(sessions.first()))
@@ -994,7 +994,7 @@ class AcpConnectPanel(
 
         // Populate recent list
         recentSessionsPanel.removeAll()
-        val recentCount = minOf(sessions.size, 6)
+        val recentCount = sessions.size
         for (i in 0 until recentCount) {
             val record = sessions[i]
             val choice = if (i == 0) SessionChoice.Latest(record) else SessionChoice.Older(record)
