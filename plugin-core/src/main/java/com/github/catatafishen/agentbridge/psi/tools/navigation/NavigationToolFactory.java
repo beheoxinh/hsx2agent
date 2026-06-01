@@ -27,6 +27,9 @@ public final class NavigationToolFactory {
             tools.add(new GetClassOutlineTool(project));
         }
         tools.add(new ListDirectoryTreeTool(project));
+        tools.add(new BuildContextTool(project));
+        tools.add(new ImpactAnalysisTool(project));
+        tools.add(new TraceCallPathTool(project));
         return tools;
     }
 }
