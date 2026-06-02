@@ -1511,9 +1511,12 @@ public abstract class AcpClient extends AbstractAgentClient {
                 return;
             }
             // Session was created but no models returned (e.g. session/resume skipped models).
-            // Retry once with a fresh session to ensure we have models for the UI selector.
+            // Retry once with a fresh session/new to ensure we have models for the UI selector.
+            // Must also clear the persisted resume session ID — otherwise createSession will
+            // try session/resume which (on OpenCode) returns a bI-type response without models.
             LOG.info(displayName() + ": session created with empty models, retrying session/new");
             currentSessionId = null;
+            persistResumeSessionId(null);
             createSession(cwd);
             LOG.info(displayName() + ": eagerly loaded " + availableModels.size()
                 + " model(s) on retry, session=" + currentSessionId);
