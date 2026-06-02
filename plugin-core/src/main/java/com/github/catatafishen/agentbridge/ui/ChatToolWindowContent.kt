@@ -3741,9 +3741,19 @@ class ChatToolWindowContent(
             try {
                 val models = agentManager.client.getAvailableModels()
                 if (models.isNotEmpty()) return models
-                // Agent returned empty model list (e.g. session/resume didn't include models,
-                // or agent process is still initializing). Retry instead of returning empty.
-                lastError = RuntimeException("Agent returned empty model list")
+                // Models empty — force a new session via session/new so the model list
+                // is populated. Without this, re-reading getAvailableModels() just returns
+                // the same empty snapshot from the stale session/resume response.
+                if (attempt < 3) {
+                    LOG.info("Models empty on attempt $attempt, forcing fresh session/new")
+                    val cwd = project.basePath
+                    if (cwd != null) {
+                        agentManager.client.dropCurrentSession()
+                        agentManager.client.createSession(cwd)
+                    }
+                } else {
+                    lastError = RuntimeException("Agent returned empty model list")
+                }
             } catch (e: Exception) {
                 lastError = e
                 if (authService.isAuthenticationError(e.message ?: "") || isCLINotFoundError(e)) break
