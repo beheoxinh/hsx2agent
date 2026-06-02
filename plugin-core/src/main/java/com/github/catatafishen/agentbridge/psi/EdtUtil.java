@@ -198,12 +198,48 @@ public final class EdtUtil {
      * rather than scanning {@code Window.getWindows()}, so it covers heavyweight and
      * lightweight popups consistently and avoids false positives from notifications
      * or transient UI.
+     * <p>
+     * Thread-safe: when called from a background thread, first tries a lightweight EDT
+     * dispatch. If the EDT is blocked by a modal (so the dispatch times out), falls back
+     * to direct AWT reads and swallows any EDT-access assertions — the result is best-effort
+     * diagnostics.
      *
      * @return e.g. {@code " Modal dialog blocking: 'Settings'"} or
      * {@code " Popup blocking the EDT (e.g. an import-class chooser opened by a quick-fix)."}
-     * or empty string if nothing is blocking
+     * or empty string if nothing is blocking or the EDT is unreachable
      */
     public static String describeModalBlocker() {
+        if (ApplicationManager.getApplication().isDispatchThread()) {
+            return describeModalBlockerSync();
+        }
+        // First try a lightweight EDT dispatch. If EDT is busy with the very modal
+        // we're trying to detect, this will time out silently after 2s.
+        CompletableFuture<String> future = new CompletableFuture<>();
+        ApplicationManager.getApplication().invokeLater(() -> future.complete(describeModalBlockerSync()));
+        try {
+            return future.get(2, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            // EDT was unreachable (blocked by modal). Fall back to direct AWT reads.
+            // This may trigger strict EDT assertions in some IDE versions, but is
+            // acceptable for a best-effort diagnostic path.
+            return describeModalBlockerFallback();
+        }
+    }
+
+    /**
+     * Best-effort fallback: reads AWT state directly from the current thread.
+     * May trigger "Access is allowed from EDT only" warnings in strict IDE builds,
+     * but provides usable diagnostics when the EDT is genuinely blocked.
+     */
+    private static String describeModalBlockerFallback() {
+        try {
+            return describeModalBlockerSync();
+        } catch (Exception | LinkageError e) {
+            return "";
+        }
+    }
+
+    private static String describeModalBlockerSync() {
         StringBuilder sb = new StringBuilder();
         appendVisibleModalDialogs(sb);
         if (isJbPopupActive()) {
