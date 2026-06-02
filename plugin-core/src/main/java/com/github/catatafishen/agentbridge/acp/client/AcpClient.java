@@ -1779,7 +1779,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (!toolId.isEmpty() && isToolBlocked(protocolTitle, toolId)) {
             chosenOption = handleBlockedTool(toolId, toolCallId, params);
         } else if (isBuiltInTool(protocolTitle)) {
-            if (isAutoDenyEnabled() && shouldAutoDenyBuiltInTool(toolId)) {
+            if (isAutoDenyEnabled() && shouldDenyBuiltInTool(toolId)) {
                 chosenOption = handleAutoDeniedBuiltInTool(toolId, toolCallId, params);
             } else {
                 LOG.warn(displayName() + ": auto-approving built-in tool '" + toolId
@@ -1937,6 +1937,19 @@ public abstract class AcpClient extends AbstractAgentClient {
             return false;
         }
         return !toolId.contains("/") && !toolId.contains("@") && !isAllowedBuiltInTool(toolId);
+    }
+
+    /**
+     * Whether a built-in tool should be auto-denied at permission time.
+     * <p>
+     * The default delegates to {@link #shouldAutoDenyBuiltInTool}, which denies any tool
+     * that is not MCP-prefixed and not in {@link #ALLOWED_BUILT_IN_TOOLS}.
+     * Subclasses may override to narrow the deny set — e.g. only deny tools explicitly
+     * listed in the client's native deny list, allowing other native tools through to
+     * the agent's own permission system.
+     */
+    protected boolean shouldDenyBuiltInTool(@NotNull String toolId) {
+        return shouldAutoDenyBuiltInTool(toolId);
     }
 
     private static boolean isMcpResourceTool(@NotNull String toolId) {

@@ -281,6 +281,19 @@ public final class OpenCodeClient extends AcpClient {
         return false;
     }
 
+    /**
+     * Only deny tools explicitly listed in {@link #NATIVE_TOOLS_TO_DENY}.
+     * <p>
+     * The base implementation denies any built-in tool not in {@code ALLOWED_BUILT_IN_TOOLS},
+     * which is too aggressive for OpenCode — it blocks internal tools like {@code doom_loop}
+     * that OpenCode allows. By narrowing to the explicit deny list, OpenCode's own permission
+     * system handles the rest.
+     */
+    @Override
+    protected boolean shouldDenyBuiltInTool(@NotNull String toolId) {
+        return NATIVE_TOOLS_TO_DENY.contains(toolId.toLowerCase());
+    }
+
     @Override
     protected String loadSession(String cwd, String sessionId) throws InterruptedException, ExecutionException, TimeoutException {
         String result = sendLoadSessionRequest("session/resume", cwd, sessionId);
