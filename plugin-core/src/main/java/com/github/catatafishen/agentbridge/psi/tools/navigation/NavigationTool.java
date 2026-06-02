@@ -225,17 +225,22 @@ public abstract class NavigationTool extends Tool {
     private String outlineLabel(PsiNamedElement element) {
         String name = element.getName();
         StringBuilder label = new StringBuilder(name == null ? "<anonymous>" : name);
-        if (element instanceof PsiMethod method) {
-            appendMethodSignature(label, method);
-        } else if (element instanceof PsiField field) {
-            label.append(": ").append(field.getType().getPresentableText());
-        } else if (element instanceof PsiClass psiClass) {
-            String qualifiedName = psiClass.getQualifiedName();
-            if (qualifiedName != null && !qualifiedName.equals(name)) {
-                label.append(" [").append(qualifiedName).append(']');
+        try {
+            if (element instanceof PsiMethod method) {
+                appendMethodSignature(label, method);
+            } else if (element instanceof PsiField field) {
+                label.append(": ").append(field.getType().getPresentableText());
+            } else if (element instanceof PsiClass psiClass) {
+                String qualifiedName = psiClass.getQualifiedName();
+                if (qualifiedName != null && !qualifiedName.equals(name)) {
+                    label.append(" [").append(qualifiedName).append(']');
+                }
             }
+            return prefixModifiers(element, label.toString());
+        } catch (NoClassDefFoundError e) {
+            // Java plugin not available — skip Java-specific PSI enrichment
+            return label.toString();
         }
-        return prefixModifiers(element, label.toString());
     }
 
     private static void appendMethodSignature(StringBuilder label, PsiMethod method) {
