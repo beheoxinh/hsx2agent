@@ -362,10 +362,12 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     @Override
     public final synchronized String createSession(String cwd) throws AgentSessionException {
-        // Reuse the existing session if we already have one for the same working directory.
-        // eagerFetchModels() creates a session at startup — avoid a redundant second session/new.
-        if (currentSessionId != null && cwd != null && cwd.equals(launchCwd)) {
-            LOG.info(displayName() + ": reusing existing session " + currentSessionId);
+        // Reuse the existing session if we already have one for the same working directory
+        // AND we already have models loaded (from a successful session/new response).
+        // If models are empty, force a fresh session/new so the UI selector gets populated.
+        // This handles the case where eagerFetchModels() used session/resume (no models).
+        if (currentSessionId != null && cwd != null && cwd.equals(launchCwd) && !availableModels.isEmpty()) {
+            LOG.info(displayName() + ": reusing existing session " + currentSessionId + " with " + availableModels.size() + " model(s)");
             return currentSessionId;
         }
         try {
