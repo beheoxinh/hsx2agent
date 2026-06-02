@@ -392,11 +392,17 @@ class AcpConnectPanel(
                 selected: Boolean,
                 hasFocus: Boolean
             ) {
-                text = value?.displayText ?: ""
+                val text = value?.displayText ?: ""
+                this.text = if (text.length > 55) text.take(52) + "..." else text
+                toolTipText = text
             }
         }
-        sessionCombo.alignmentX = LEFT_ALIGNMENT
-        sessionCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
+        sessionCombo.apply {
+            alignmentX = LEFT_ALIGNMENT
+            minimumSize = Dimension(JBUI.scale(120), JBUI.scale(32))
+            preferredSize = Dimension(JBUI.scale(320), JBUI.scale(32))
+            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
+        }
         panel.add(sessionCombo)
         return panel
     }
