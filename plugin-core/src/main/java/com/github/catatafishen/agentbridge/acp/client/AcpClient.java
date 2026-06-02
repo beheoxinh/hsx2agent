@@ -929,7 +929,7 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     @Override
     public final List<Model> getAvailableModels() {
-        return Collections.unmodifiableList(availableModels);
+        return List.copyOf(availableModels);
     }
 
     @Override
@@ -939,7 +939,7 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     @Override
     public final List<AbstractAgentClient.AgentMode> getAvailableModes() {
-        return Collections.unmodifiableList(availableModes);
+        return List.copyOf(availableModes);
     }
 
     @Override
@@ -964,7 +964,7 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     @Override
     public final List<AbstractAgentClient.AgentConfigOption> getAvailableConfigOptions() {
-        return Collections.unmodifiableList(availableConfigOptions);
+        return List.copyOf(availableConfigOptions);
     }
 
     /**
@@ -1005,10 +1005,12 @@ public abstract class AcpClient extends AbstractAgentClient {
     @Override
     @NotNull
     public final List<SessionOption> listSessionOptions() {
-        Set<String> sessionModelIds = availableModels.isEmpty()
+        List<Model> modelSnapshot = List.copyOf(availableModels);
+        List<AbstractAgentClient.AgentConfigOption> configSnapshot = List.copyOf(availableConfigOptions);
+        Set<String> sessionModelIds = modelSnapshot.isEmpty()
             ? Collections.emptySet()
-            : availableModels.stream().map(Model::id).collect(Collectors.toSet());
-        return filterSessionOptionsStatic(availableConfigOptions, sessionModelIds);
+            : modelSnapshot.stream().map(Model::id).collect(Collectors.toSet());
+        return filterSessionOptionsStatic(configSnapshot, sessionModelIds);
     }
 
     /**

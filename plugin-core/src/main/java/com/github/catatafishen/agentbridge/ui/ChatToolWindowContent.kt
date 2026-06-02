@@ -2634,27 +2634,36 @@ class ChatToolWindowContent(
      */
     private fun restartWithNewAgent(slug: String) {
         agentManager.settings.setSelectedAgent(slug)
-        // Stop the running process (the persisted slug will be applied on the next start()
-        // call via ActiveAgentManager.start() reading getSettings().getSelectedAgent()).
+        resetSessionKeepingHistory()
+        // Stop then reload on a pooled thread so stop() completes before loadModelsAsync
+        // tries to start the new agent. Without this, the concurrent stop() clears the
+        // model list while fetchModelsWithRetry is reading it.
+        val generation = ++modelLoadGeneration
+        modelsStatusText = MSG_LOADING
+        loadedModels = emptyList()
+        selectedModelIndex = -1
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 agentManager.stop()
             } catch (ex: Exception) {
                 LOG.warn("Error stopping agent during agent switch", ex)
             }
-        }
-        resetSessionKeepingHistory()
-        loadModelsAsync(
-            onSuccess = { models ->
-                loadedModels = models
-                buildAndShowChatPanel()
-                restoreModelSelection(models)
-                statusBanner?.showInfo("Switched to agent: $slug")
-            },
-            onFailure = { error ->
-                statusBanner?.showError(error.message ?: "Failed to restart with agent $slug")
+            if (modelLoadGeneration != generation) return@executeOnPooledThread
+            ApplicationManager.getApplication().invokeLater {
+                if (modelLoadGeneration != generation) return@invokeLater
+                loadModelsAsync(
+                    onSuccess = { models ->
+                        loadedModels = models
+                        buildAndShowChatPanel()
+                        restoreModelSelection(models)
+                        statusBanner?.showInfo("Switched to agent: $slug")
+                    },
+                    onFailure = { error ->
+                        statusBanner?.showError(error.message ?: "Failed to restart with agent $slug")
+                    }
+                )
             }
-        )
+        }
     }
 
     private fun createResponsePanel(): JComponent {
@@ -3730,7 +3739,11 @@ class ChatToolWindowContent(
                 if (modelLoadGeneration != startGeneration) return emptyList()
             }
             try {
-                return agentManager.client.getAvailableModels()
+                val models = agentManager.client.getAvailableModels()
+                if (models.isNotEmpty()) return models
+                // Agent returned empty model list (e.g. session/resume didn't include models,
+                // or agent process is still initializing). Retry instead of returning empty.
+                lastError = RuntimeException("Agent returned empty model list")
             } catch (e: Exception) {
                 lastError = e
                 if (authService.isAuthenticationError(e.message ?: "") || isCLINotFoundError(e)) break
