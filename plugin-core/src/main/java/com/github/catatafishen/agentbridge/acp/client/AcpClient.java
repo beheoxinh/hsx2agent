@@ -471,6 +471,11 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (response.models() != null) {
             availableModels.clear();
             availableModels.addAll(response.models());
+        } else if (response.configOptions() != null) {
+            // OpenCode embeds models inside configOptions as a "model" select option
+            // instead of using the standard ACP "models" field. Extract them so the
+            // model selector can be populated.
+            extractModelsFromConfigOptions(response.configOptions());
         }
 
         if (response.currentModelId() != null) {
@@ -483,6 +488,35 @@ public abstract class AcpClient extends AbstractAgentClient {
 
         if (response.configOptions() != null) {
             updateConfigOptions(response);
+        }
+    }
+
+    /**
+     * Extracts models from configOptions when the agent (e.g. OpenCode) embeds model
+     * selection as a "model" config option instead of the standard ACP "models" field.
+     */
+    private void extractModelsFromConfigOptions(List<NewSessionResponse.SessionConfigOption> configOptions) {
+        for (NewSessionResponse.SessionConfigOption opt : configOptions) {
+            if (!"model".equals(opt.id())) continue;
+            if (opt.values() == null || opt.values().isEmpty()) continue;
+
+            List<Model> extracted = new ArrayList<>();
+            for (NewSessionResponse.SessionConfigOptionValue val : opt.values()) {
+                extracted.add(new Model(val.id(), val.label(), null, null));
+            }
+            availableModels.clear();
+            availableModels.addAll(extracted);
+
+            // OpenCode puts the active model in configOptions.selectedValueId, not in
+            // the top-level currentModelId. Set it here so the UI can pre-select the
+            // right model.
+            if (currentModelId == null && opt.selectedValueId() != null) {
+                currentModelId = opt.selectedValueId();
+            }
+
+            LOG.info(displayName() + ": extracted " + extracted.size()
+                + " model(s) from configOptions (model select), current=" + currentModelId);
+            return;
         }
     }
 
