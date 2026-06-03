@@ -14,6 +14,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiErrorElement;
@@ -208,6 +209,7 @@ public class WriteFileTool extends FileTool {
                 notifyEditComplete();
             }
             FileDocumentManager.getInstance().saveDocument(doc);
+            refreshVfsAfterWrite(vf);
             int[] diff = CodeChangeTracker.diffLines(oldContent, newContent);
             CodeChangeTracker.recordChange(diff[0], diff[1]);
             String syntaxWarning = checkSyntaxErrors(doc, pathStr);
@@ -222,6 +224,7 @@ public class WriteFileTool extends FileTool {
                     resultFuture.complete("Error writing: " + e.getMessage());
                 }
             });
+            refreshVfsAfterWrite(vf);
             CodeChangeTracker.recordChange(CodeChangeTracker.countLines(newContent), 0);
             resultFuture.complete("Written: " + pathStr);
         }
@@ -345,6 +348,7 @@ public class WriteFileTool extends FileTool {
             notifyEditComplete();
         }
         FileDocumentManager.getInstance().saveDocument(doc);
+        refreshVfsAfterWrite(vf);
         CodeChangeTracker.recordChange(CodeChangeTracker.countLines(normalizedNew), CodeChangeTracker.countLines(normalizedOld));
         String syntaxWarning = checkSyntaxErrors(doc, pathStr);
         if (autoFormat && syntaxWarning.isEmpty()) queueAutoFormat(project, pathStr);
@@ -413,6 +417,7 @@ public class WriteFileTool extends FileTool {
             notifyEditComplete();
         }
         FileDocumentManager.getInstance().saveDocument(doc);
+        refreshVfsAfterWrite(vf);
         CodeChangeTracker.recordChange(CodeChangeTracker.countLines(fNew), replacedLines);
         String syntaxWarning = checkSyntaxErrors(doc, pathStr);
         if (autoFormat && syntaxWarning.isEmpty()) queueAutoFormat(project, pathStr);
@@ -511,6 +516,7 @@ public class WriteFileTool extends FileTool {
             notifyEditComplete();
         }
         FileDocumentManager.getInstance().saveDocument(doc);
+        refreshVfsAfterWrite(vf);
         CodeChangeTracker.recordChange(
             positions.size() * CodeChangeTracker.countLines(normalizedNew),
             positions.size() * CodeChangeTracker.countLines(normalizedOld));
@@ -705,5 +711,16 @@ public class WriteFileTool extends FileTool {
         } catch (java.io.IOException e) {
             return ToolUtils.ERROR_PREFIX + e.getMessage();
         }
+    }
+
+    /**
+     * Commits PSI documents and marks the file as dirty so IntelliJ's VFS
+     * and file watcher pick up the change immediately. Without this, the
+     * editor buffer, VFS cache, and disk can stay out of sync — subsequent
+     * writes (e.g. from external tools) see stale content.
+     */
+    private void refreshVfsAfterWrite(@NotNull VirtualFile vf) {
+        PsiDocumentManager.getInstance(project).commitAllDocuments();
+        VfsUtil.markDirtyAndRefresh(false, true, true, vf);
     }
 }

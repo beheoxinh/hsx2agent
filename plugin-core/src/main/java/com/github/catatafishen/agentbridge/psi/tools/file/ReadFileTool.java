@@ -8,6 +8,7 @@ import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
@@ -16,9 +17,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
 
-/**
- * Reads a file via IntelliJ's editor buffer.
- */
 @SuppressWarnings("java:S112")
 public class ReadFileTool extends FileTool {
 
@@ -79,7 +77,6 @@ public class ReadFileTool extends FileTool {
         int startLine = args.has(PARAM_START_LINE) ? args.get(PARAM_START_LINE).getAsInt() : -1;
         int endLine = args.has(PARAM_END_LINE) ? args.get(PARAM_END_LINE).getAsInt() : -1;
 
-        // Use a separate container to capture the actual line range for highlighting
         int[] effectiveRange = new int[]{startLine, endLine};
 
         String result = ReadAction.nonBlocking(() -> {
@@ -102,8 +99,6 @@ public class ReadFileTool extends FileTool {
                 return extractLineRange(content, startLine, endLine);
             }
 
-            // If no range specified, we highlight the whole file (or the read portion)
-            // Splitting by \n to count lines accurately
             String[] lines = content.split("\n", -1);
             effectiveRange[0] = 1;
             effectiveRange[1] = Math.min(lines.length, MAX_READ_LINES);
@@ -119,8 +114,12 @@ public class ReadFileTool extends FileTool {
     }
 
     private String readFileContent(VirtualFile vf) {
-        // Use getCachedDocument to avoid creating a new Document from a non-EDT thread.
-        // getDocument(vf) creates documents on demand, which requires EDT in IntelliJ 2026.1+.
+        // Lightweight VFS refresh: sync with disk so external edits (git, shell)
+        // are visible. Uses refreshAndFindFileByPath which returns the same or
+        // updated VirtualFile handle.
+        String path = vf.getPath();
+        VirtualFile refreshed = LocalFileSystem.getInstance().refreshAndFindFileByPath(path);
+        if (refreshed != null) vf = refreshed;
         Document doc = FileDocumentManager.getInstance().getCachedDocument(vf);
         if (doc != null) {
             return doc.getText();
@@ -149,7 +148,7 @@ public class ReadFileTool extends FileTool {
         return null;
     }
 
-    @SuppressWarnings({"javabugs:S6416"}) // Math.min guarantees end <= lines.length, no IAE possible
+    @SuppressWarnings({"javabugs:S6416"})
     static String applyReadHintAndTruncate(String content, String hint) {
         String[] lines = content.split("\n", -1);
         int totalLines = lines.length;
@@ -164,8 +163,7 @@ public class ReadFileTool extends FileTool {
         }
 
         if (totalLines > MAX_READ_LINES) {
-            int end = Math.min(MAX_READ_LINES, lines.length);
-            String truncated = String.join("\n", Arrays.copyOf(lines, end));
+            String truncated = String.join("\n", Arrays.copyOf(lines, MAX_READ_LINES));
             sb.append("[Showing first ").append(MAX_READ_LINES)
                 .append(" lines. Use start_line/end_line to read specific sections.]\n");
             sb.append(truncated);
@@ -178,9 +176,20 @@ public class ReadFileTool extends FileTool {
 
     static String extractLineRange(String content, int startLine, int endLine) {
         String[] lines = content.split("\n", -1);
+        int totalLines = lines.length;
         int from = Math.max(0, (startLine > 0 ? startLine - 1 : 0));
         int to = Math.min(lines.length, (endLine > 0 ? endLine : lines.length));
+        int rangeLines = to - from;
         StringBuilder sb = new StringBuilder();
+        if (totalLines > MAX_READ_LINES) {
+            sb.append("[").append(totalLines).append(" lines total]\n");
+        }
+        if (rangeLines > MAX_READ_LINES) {
+            to = from + MAX_READ_LINES;
+            sb.append("[Showing lines ").append(from + 1).append("-").append(to)
+                .append(" of ").append(totalLines)
+                .append(". Use start_line/end_line to read specific sections.]\n");
+        }
         for (int i = from; i < to; i++) {
             sb.append(i + 1).append(": ").append(lines[i]).append("\n");
         }

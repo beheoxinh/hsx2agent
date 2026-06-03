@@ -921,7 +921,7 @@ public final class ToolUtils {
                 + "git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset.";
             case "cat" ->
                 "Error: cat/head/tail/less/more are not allowed via " + toolName + " (reads stale disk files). "
-                    + "Use intellij_read_file to read live editor buffers instead.";
+                    + "Use read_file to read live editor buffers instead.";
             case "sed" -> "Error: sed is not allowed via " + toolName + " (bypasses IntelliJ editor buffers). "
                 + "Use edit_text with old_str/new_str for file editing instead.";
             case "grep" -> "Error: grep/rg on project source files is not allowed via " + toolName + " (searches "

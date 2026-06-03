@@ -23,7 +23,10 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiDocumentManager;
 import com.intellij.util.messages.Topic;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -435,6 +438,15 @@ public final class PsiBridgeService implements Disposable {
             }
             outputSize = result.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
             tracker.mcpComplete(callRecord.getRecordId(), result, !result.startsWith("Error"));
+
+            // Safety net: after any successful non-read-only tool, sync VFS so the
+            // editor, file tree, and subsequent reads see up-to-date content.
+            // Tools that do their own VFS refresh (WriteFileTool, RunCommandTool, GitTool)
+            // make this a no-op; tools that don't (RunInTerminalTool, etc.) get covered.
+            if (!result.startsWith("Error") && !req.def().isReadOnly()) {
+                scheduleVfsRefresh();
+            }
+
             return result;
         } catch (com.intellij.openapi.progress.ProcessCanceledException e) {
             // The instanceof + early-return pattern is intentional: splitting into a separate
@@ -1267,5 +1279,23 @@ public final class PsiBridgeService implements Disposable {
     @Override
     public void dispose() {
         // Nothing to dispose — tool handlers are stateless, lifecycle managed by IntelliJ
+    }
+
+    /**
+     * Asynchronously refreshes the project VFS root so the editor, file tree,
+     * and subsequent read operations see any files changed by the tool on disk.
+     * Called as a safety net after non-read-only tool executions.
+     */
+    private void scheduleVfsRefresh() {
+        String basePath = project.getBasePath();
+        if (basePath == null) return;
+        EdtUtil.invokeLater(() -> {
+            if (project.isDisposed()) return;
+            VirtualFile root = LocalFileSystem.getInstance().findFileByPath(basePath);
+            if (root != null) {
+                VfsUtil.markDirtyAndRefresh(false, true, true, root);
+                PsiDocumentManager.getInstance(project).commitAllDocuments();
+            }
+        });
     }
 }

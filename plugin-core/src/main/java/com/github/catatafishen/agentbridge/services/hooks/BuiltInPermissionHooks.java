@@ -17,25 +17,25 @@ public final class BuiltInPermissionHooks {
 
     private static final String GIT_DENY =
         "git commands are not allowed via %s (causes IntelliJ buffer desync). " +
-        "Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, " +
-        "git_stage, git_unstage, git_branch, git_stash, git_show, git_blame, git_push, " +
-        "git_remote, git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset.";
+            "Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, " +
+            "git_stage, git_unstage, git_branch, git_stash, git_show, git_blame, git_push, " +
+            "git_remote, git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset.";
 
     private static final String CAT_DENY =
         "cat/head/tail/less/more are not allowed via run_command (reads stale disk files). " +
-        "Use read_file to read live editor buffers instead.";
+            "Use read_file to read live editor buffers instead.";
 
     private static final String SED_DENY =
         "sed is not allowed via %s (bypasses IntelliJ editor buffers). " +
-        "Use edit_text with old_str/new_str for file editing instead.";
+            "Use edit_text with old_str/new_str for file editing instead.";
 
     private static final String FIND_DENY =
         "find commands are not allowed via run_command. " +
-        "Use list_project_files or list_directory_tree to find files instead.";
+            "Use list_project_files or list_directory_tree to find files instead.";
 
     private static final String GRADLE_DENY =
         "Gradle compile tasks are not allowed via run_command. " +
-        "Use build_project to compile via IntelliJ incremental compiler instead.";
+            "Use build_project to compile via IntelliJ incremental compiler instead.";
 
     private BuiltInPermissionHooks() {
     }
@@ -72,6 +72,7 @@ public final class BuiltInPermissionHooks {
         String lower = command.toLowerCase(Locale.ROOT);
 
         if (isGitCommand(lower)) return String.format(GIT_DENY, "run_in_terminal");
+        if (isCatLike(lower)) return CAT_DENY;
         if (isSed(lower)) return String.format(SED_DENY, "run_in_terminal");
 
         return null;

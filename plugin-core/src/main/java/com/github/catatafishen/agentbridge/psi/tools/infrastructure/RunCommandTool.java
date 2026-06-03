@@ -10,6 +10,10 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VfsUtil;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiDocumentManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -92,6 +96,9 @@ public final class RunCommandTool extends InfrastructureTool {
         if ("grep".equals(abuseType)) {
             return ToolUtils.getCommandAbuseMessage("grep");
         }
+        if (abuseType != null) {
+            return ToolUtils.getCommandAbuseMessage(abuseType);
+        }
 
         EdtUtil.invokeAndWait(() ->
             com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments());
@@ -106,6 +113,14 @@ public final class RunCommandTool extends InfrastructureTool {
 
         GeneralCommandLine cmd = buildCommandLine(command, basePath);
         ProcessResult result = executeInRunPanel(cmd, tabTitle, timeoutSec);
+
+        EdtUtil.invokeAndWait(() -> {
+            VirtualFile root = LocalFileSystem.getInstance().findFileByPath(basePath);
+            if (root != null) {
+                VfsUtil.markDirtyAndRefresh(false, true, true, root);
+                PsiDocumentManager.getInstance(project).commitAllDocuments();
+            }
+        });
 
         return formatExecuteOutput(result, args, maxChars, offset, timeoutSec);
     }
