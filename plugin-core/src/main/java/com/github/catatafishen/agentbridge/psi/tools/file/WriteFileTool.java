@@ -71,8 +71,8 @@ public class WriteFileTool extends FileTool {
     @Override
     public @NotNull String description() {
         return "Write full file content or create a new file through IntelliJ's editor buffer. "
-            + "Auto-format and import optimization is deferred until turn end "
-            + "(controlled by auto_format_and_optimize_imports param)";
+            + "Auto-format and import optimization is disabled by default — set "
+            + "auto_format_and_optimize_imports=true to enable. Formatting is deferred until turn end.";
     }
 
     @Override
@@ -96,9 +96,9 @@ public class WriteFileTool extends FileTool {
             Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file to write or create"),
             Param.required(PARAM_CONTENT, TYPE_STRING, "Full file content to write (replaces entire file). Creates the file if it doesn't exist"),
             Param.optional(PARAM_AUTO_FORMAT, TYPE_BOOLEAN,
-                "Auto-format code AND optimize imports after writing (default: true). "
-                    + "Formatting is DEFERRED until the end of the current turn or before git commit — "
-                    + "safe for multi-step edits within a single turn. "
+                "Auto-format code AND optimize imports after writing (default: false). "
+                    + "Set to true to enable — formatting is DEFERRED until the end of the current turn "
+                    + "or before git commit. "
                     + "⚠️ Import optimization REMOVES imports it considers unused — "
                     + "if you add imports in one edit and reference them in a later edit, "
                     + "set this to false or combine both changes in one edit")
@@ -644,7 +644,7 @@ public class WriteFileTool extends FileTool {
     static boolean resolveAutoFormat(JsonObject args) {
         if (args.has(PARAM_AUTO_FORMAT)) return args.get(PARAM_AUTO_FORMAT).getAsBoolean();
         if (args.has(PARAM_AUTO_FORMAT_LEGACY)) return args.get(PARAM_AUTO_FORMAT_LEGACY).getAsBoolean();
-        return true;
+        return false;
     }
 
     /**
