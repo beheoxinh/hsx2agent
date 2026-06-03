@@ -240,6 +240,39 @@ chat-container.is-scrolling #messages * {
     text-decoration: underline;
 }
 
+/* ── File reference chips ────────────────────────────── */
+.file-chip,
+a[href^="file://"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+    border: 1px solid var(--fg-a16);
+    border-radius: var(--r-sm);
+    background: var(--think-a08);
+    color: var(--link);
+    font-family: var(--code-font);
+    font-size: 0.88em;
+    text-decoration: none;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1.7;
+    vertical-align: middle;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.file-chip:hover,
+a[href^="file://"]:hover {
+    background: var(--think-a16);
+    border-color: var(--link);
+    text-decoration: none;
+}
+
+.file-chip code {
+    background: transparent;
+    padding: 0;
+}
+
 
 /* ── Agent response ──────────────────────────────────── */
 

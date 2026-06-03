@@ -424,7 +424,7 @@ object MarkdownRenderer {
     ): String {
         val resolved = resolveFileReference(content)
         return when {
-            resolved != null -> "<a href='openfile://${resolvedHref(resolved)}'><code>${escapeHtml(content)}</code></a>"
+            resolved != null -> "<a class='file-chip' href='openfile://${resolvedHref(resolved)}'><code>${escapeHtml(content)}</code></a>"
             GIT_SHA_REGEX.matches(content) && isGitCommit(content) ->
                 "<a href='gitshow://$content'><code>${escapeHtml(content)}</code></a>"
 
@@ -452,9 +452,9 @@ object MarkdownRenderer {
         isGitCommit: (String) -> Boolean
     ): String = when {
         rawTarget.startsWith("openfile://") || rawTarget.startsWith("gitshow://") ->
-            "<a href='${escapeHtml(rawTarget)}'>$linkText</a>"
+            "<a class='file-chip' href='${escapeHtml(rawTarget)}'>$linkText</a>"
 
-        resolved != null -> "<a href='openfile://${escapeHtml(resolvedHref(resolved))}'>$linkText</a>"
+        resolved != null -> "<a class='file-chip' href='openfile://${escapeHtml(resolvedHref(resolved))}'>$linkText</a>"
         GIT_SHA_REGEX.matches(rawTarget) && isGitCommit(rawTarget) ->
             "<a href='gitshow://${escapeHtml(rawTarget)}'>$linkText</a>"
 
@@ -482,7 +482,7 @@ object MarkdownRenderer {
             val pathPart = m.value.split(":")[0]
             val line = m.value.split(":").getOrNull(1)?.toIntOrNull()
             val resolved = resolveFilePath(pathPart)
-            if (resolved != null) "<a href='openfile://$resolved${if (line != null) ":$line" else ""}'>${m.value}</a>"
+            if (resolved != null) "<a class='file-chip' href='openfile://$resolved${if (line != null) ":$line" else ""}'>${m.value}</a>"
             else m.value
         }
         html = BARE_GIT_SHA_REGEX.replace(html) { m ->
