@@ -572,9 +572,12 @@ class PromptOrchestrator(
             callbacks.onTimerSetLastTurnMultiplier(null)
             if (turnInputTokens == 0 && turnEffectivePrompt.isNotEmpty()) {
                 turnInputTokens = TokenCounter.estimateInputTokens(turnEffectivePrompt, turnAttachments, turnModelId)
-                if (turnOutputTokens == 0) {
-                    turnOutputTokens =
-                        TokenCounter.estimateTokenCount(consolePanel().getLastResponseText(), turnModelId)
+            }
+            val responseText = consolePanel().getLastResponseText()
+            if (responseText.isNotEmpty()) {
+                val estimatedOutput = TokenCounter.estimateTokenCount(responseText, turnModelId)
+                if (turnOutputTokens <= 0 || turnOutputTokens > estimatedOutput * 3) {
+                    turnOutputTokens = estimatedOutput
                 }
             }
             callbacks.onTimerRecordUsage(turnInputTokens, turnOutputTokens, turnCostUsd)
@@ -612,6 +615,14 @@ class PromptOrchestrator(
         val turnMultiplier = if (client.supportsMultiplier()) getModelMultiplier(turnModelId) ?: "" else ""
         val commitHashes = collectTurnCommits()
         val turnEndGitBranch = captureGitBranch()
+        if (turnOutputTokens > 0) {
+            val estimatedOutput = TokenCounter.estimateTokenCount(
+                consolePanel().getLastResponseText(), turnModelId
+            )
+            if (turnOutputTokens > estimatedOutput * 3) {
+                turnOutputTokens = estimatedOutput
+            }
+        }
         consolePanel().emitTurnStats(
             TurnStatsData(
                 turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
