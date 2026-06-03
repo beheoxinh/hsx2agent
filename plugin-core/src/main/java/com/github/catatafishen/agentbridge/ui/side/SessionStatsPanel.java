@@ -1,7 +1,5 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
-import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
-import com.github.catatafishen.agentbridge.session.db.ConversationStatistics;
 import com.github.catatafishen.agentbridge.ui.BillingCalculator;
 import com.github.catatafishen.agentbridge.ui.BillingDisplayData;
 import com.github.catatafishen.agentbridge.ui.BillingManager;
@@ -9,10 +7,8 @@ import com.github.catatafishen.agentbridge.ui.ProcessingTimerPanel;
 import com.github.catatafishen.agentbridge.ui.SessionStatsSnapshot;
 import com.github.catatafishen.agentbridge.ui.TimerDisplayFormatter;
 import com.github.catatafishen.agentbridge.ui.UsageGraphPanel;
-import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers;
 import com.github.catatafishen.agentbridge.ui.util.VerticalScrollablePanel;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
@@ -25,21 +21,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * Side panel tab displaying session statistics as labeled rows: an optional
- * "Active turn" section (visible while the agent is processing, with elapsed time
- * inline in the header) and cumulative session totals (time, turns, tools, lines,
- * tokens, cost), followed by a thin billing usage graph with quota information,
- * and a project-files tree at the bottom.
- *
- * <p>Lines-changed values are rendered with colored numbers (green for additions,
- * red for removals) and animate smoothly when the counts update.
- *
- * <p>Subscribes to change callbacks from both {@link ProcessingTimerPanel} and
- * {@link BillingManager} for a single, consistent refresh model.
- */
 public final class SessionStatsPanel extends JPanel implements Disposable {
 
     private static final DateTimeFormatter RESET_DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy");
@@ -47,56 +29,32 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private static final String LABEL_PREMIUM_REQ = "Premium req";
     private static final String TOKENS_IN_OUT_SEP = " in / ";
     private static final String TOKENS_OUT_SUFFIX = " out";
-    private static final String LABEL_TOOL_CALLS = "Tool calls";
-    private static final String LABEL_LINES_CHANGED = "Lines changed";
 
     private final transient ProcessingTimerPanel timerPanel;
     private final transient BillingManager billing;
     private Font smallFont;
     private final Color dimColor;
 
-    /**
-     * Labels that use {@code smallFont} — re-populated in the constructor and refreshed in
-     * {@link #updateUI()} so font size stays correct after IDE zoom-level changes.
-     */
     private final List<JLabel> scalableLabels = new ArrayList<>();
     private final List<JLabel> boldScalableLabels = new ArrayList<>();
 
-    private final transient SessionDiffAnimator sessionDiffAnimator = new SessionDiffAnimator();
-    private final transient SessionDiffAnimator turnDiffAnimator = new SessionDiffAnimator();
-    private final Timer animationTimer;
-
-    // Current turn section (also displays the most recent completed turn between turns)
+    // Current turn section
     private final JLabel turnHeaderLabel = new JLabel("Active turn");
     private final JLabel turnTimeValue = new JLabel();
-    private final JLabel turnToolsValue = new JLabel();
-    private final JLabel turnLinesValue = new JLabel();
     private final JLabel turnTokensRowLabel = new JLabel(LABEL_TOKENS);
     private final JLabel turnTokensValue = new JLabel();
-    private final JLabel turnCostRowLabel = new JLabel("Cost");
-    private final JLabel turnCostValue = new JLabel();
-    private final JPanel turnToolsRow;
-    private final JPanel turnLinesRow;
     private final JPanel turnTokensRow;
-    private final JPanel turnCostRow;
     private final JPanel turnSection;
 
     // Session stats value labels
     private final JLabel timeValue = new JLabel();
     private final JLabel turnsValue = new JLabel();
-    private final JLabel toolsValue = new JLabel();
-    private final JLabel linesValue = new JLabel();
     private final JLabel tokensValue = new JLabel();
-    private final JLabel costValue = new JLabel();
 
     // Dynamic labels whose text changes based on provider mode
     private final JLabel tokensRowLabel = new JLabel(LABEL_TOKENS);
-    private final JLabel costRowLabel = new JLabel("Cost");
     private final JPanel turnsRow;
-    private final JPanel sessionToolsRow;
-    private final JPanel linesRow;
     private final JPanel tokensRow;
-    private final JPanel costRow;
 
     // Billing section widgets
     private final JLabel usageValue = new JLabel();
@@ -107,23 +65,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private final JPanel resetsRow;
     private final JPanel billingSection;
 
-    // "Today" section — aggregates persisted turn_stats rows for the current local date,
-    // across all agents. Independent of the in-memory Session totals (which only track
-    // the current chat session).
     private final transient Project project;
-    private final JLabel todayTimeValue = new JLabel();
-    private final JLabel todayTurnsValue = new JLabel();
-    private final JLabel todayToolsValue = new JLabel();
-    private final JLabel todayLinesValue = new JLabel();
-    private final JLabel todayTokensRowLabel = new JLabel(LABEL_TOKENS);
-    private final JLabel todayTokensValue = new JLabel();
-    private final JPanel todayToolsRow;
-    private final JPanel todayLinesRow;
-    private final JPanel todayTokensRow;
-    private final JPanel todaySection;
-    private final AtomicReference<TodayTotals> todayTotalsRef = new AtomicReference<>(TodayTotals.EMPTY);
-    private long lastTodayQueryNanos = 0L;
-    private static final long TODAY_REFRESH_INTERVAL_NANOS = 5_000_000_000L;
 
     public SessionStatsPanel(
         @NotNull Project project,
@@ -139,8 +81,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         this.smallFont = UIManager.getFont("Label.font").deriveFont((float) JBUI.scale(11));
         this.dimColor = JBUI.CurrentTheme.Label.disabledForeground();
 
-        // Current turn section — mirrors the Session grid layout (Time row first) so the
-        // two visually align. Stays visible after the turn ends, then re-labels as "Last turn".
+        // Current turn section
         JPanel turnHeader = createSectionHeader(turnHeaderLabel);
 
         JPanel turnGrid = new JPanel(new GridBagLayout());
@@ -150,10 +91,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         int tRow = 0;
         addStatRow(turnGrid, tRow++, "Time", turnTimeValue);
-        turnToolsRow = addStatRow(turnGrid, tRow++, LABEL_TOOL_CALLS, turnToolsValue);
-        turnLinesRow = addStatRow(turnGrid, tRow++, LABEL_LINES_CHANGED, turnLinesValue);
-        turnTokensRow = addStatRowWithLabel(turnGrid, tRow++, turnTokensRowLabel, turnTokensValue);
-        turnCostRow = addStatRowWithLabel(turnGrid, tRow, turnCostRowLabel, turnCostValue);
+        turnTokensRow = addStatRowWithLabel(turnGrid, tRow, turnTokensRowLabel, turnTokensValue);
 
         turnSection = new JPanel();
         turnSection.setLayout(new BoxLayout(turnSection, BoxLayout.Y_AXIS));
@@ -173,37 +111,9 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         int row = 0;
         addStatRow(statsGrid, row++, "Time", timeValue);
         turnsRow = addStatRow(statsGrid, row++, "Turns", turnsValue);
-        sessionToolsRow = addStatRow(statsGrid, row++, LABEL_TOOL_CALLS, toolsValue);
-        linesRow = addStatRow(statsGrid, row++, LABEL_LINES_CHANGED, linesValue);
+        tokensRow = addStatRowWithLabel(statsGrid, row, tokensRowLabel, tokensValue);
 
-        tokensRow = addStatRowWithLabel(statsGrid, row++, tokensRowLabel, tokensValue);
-        costRow = addStatRowWithLabel(statsGrid, row, costRowLabel, costValue);
-
-        // Today section — same row layout as Session, sourced from the persistent turn_stats DB.
-        // Spans across all chat sessions for the current local date so users see how much they've
-        // used the assistant today regardless of how many times they've reopened the IDE.
-        JPanel todayGrid = new JPanel(new GridBagLayout());
-        todayGrid.setOpaque(false);
-        todayGrid.setBorder(BorderFactory.createEmptyBorder(
-            JBUI.scale(2), JBUI.scale(8), JBUI.scale(4), JBUI.scale(8)));
-        int dRow = 0;
-        addStatRow(todayGrid, dRow++, "Time", todayTimeValue);
-        addStatRow(todayGrid, dRow++, "Turns", todayTurnsValue);
-        todayToolsRow = addStatRow(todayGrid, dRow++, LABEL_TOOL_CALLS, todayToolsValue);
-        todayLinesRow = addStatRow(todayGrid, dRow++, LABEL_LINES_CHANGED, todayLinesValue);
-        todayTokensRow = addStatRowWithLabel(todayGrid, dRow, todayTokensRowLabel, todayTokensValue);
-
-        todaySection = new JPanel();
-        todaySection.setLayout(new BoxLayout(todaySection, BoxLayout.Y_AXIS));
-        todaySection.setOpaque(false);
-        todaySection.add(createSectionHeader("Today"));
-        todaySection.add(todayGrid);
-        todaySection.setVisible(false);
-        leftAlignSection(todaySection);
-        leftAlignChild(todayGrid);
-
-        // Usage graph — full-width sparkline rendered last in the Monthly quota section.
-        // 5x taller than the original 20px to make trends visually readable at a glance.
+        // Usage graph
         JPanel graphSection = new JPanel(new BorderLayout());
         graphSection.setOpaque(false);
         graphSection.setBorder(BorderFactory.createEmptyBorder(
@@ -220,8 +130,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         billingGrid.setBorder(BorderFactory.createEmptyBorder(
             JBUI.scale(2), JBUI.scale(8), JBUI.scale(2), JBUI.scale(8)));
 
-        // Section header inlines the data-source note ("via gh CLI") next to the bold
-        // title — replacing the old standalone subtitle row that looked disconnected.
         JPanel billingHeader = createSectionHeaderWithSuffix("Monthly quota", "via gh CLI");
 
         int brow = 0;
@@ -229,8 +137,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         remainingRow = addStatRow(billingGrid, brow++, "Remaining", remainingValue);
         resetsRow = addStatRow(billingGrid, brow, "Resets", resetsValue);
 
-        // Wrap the entire billing area in one section so we can hide all of it (including
-        // the now-tall graph) when no billing data is available — avoids leaving a 100px gap.
         billingSection = new JPanel();
         billingSection.setLayout(new BoxLayout(billingSection, BoxLayout.Y_AXIS));
         billingSection.setOpaque(false);
@@ -241,7 +147,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         leftAlignChild(billingGrid);
         leftAlignChild(graphSection);
 
-        // Assemble the stats content (pinned to the top)
+        // Assemble the stats content
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setOpaque(false);
@@ -249,12 +155,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         content.add(turnSection);
         content.add(sessionHeader);
         content.add(statsGrid);
-        content.add(todaySection);
         content.add(billingSection);
-        // BoxLayout.Y_AXIS centers children with default CENTER_ALIGNMENT and sizes them
-        // to their preferredWidth — section panels would visually float in the middle of
-        // the side panel. Anchor each direct child of `content` at the left edge and let
-        // it grow to the full width.
         leftAlignChild(sessionHeader);
         leftAlignChild(statsGrid);
 
@@ -273,16 +174,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         add(scrollPane, BorderLayout.CENTER);
 
-        animationTimer = new Timer(33, e -> {
-            long now = System.currentTimeMillis();
-            updateDiffLabels(now);
-            repaint();
-            if (!sessionDiffAnimator.isAnimating(now) && !turnDiffAnimator.isAnimating(now)) {
-                ((Timer) e.getSource()).stop();
-            }
-        });
-        animationTimer.setRepeats(true);
-
         timerPanel.setOnStatsChanged(this::refresh);
         billing.setOnBillingChanged(this::refresh);
         refresh();
@@ -292,21 +183,10 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     public void dispose() {
         timerPanel.setOnStatsChanged(null);
         billing.setOnBillingChanged(null);
-        animationTimer.stop();
     }
 
-    /**
-     * Re-derives {@code smallFont} at the new scale factor whenever the IDE zoom level changes.
-     * IntelliJ fires {@code updateUI()} on all visible components when the user changes zoom,
-     * but Swing won't re-apply a font that was explicitly set via {@code setFont()} — so labels
-     * that use {@code smallFont} would stay at the pre-zoom pixel size without this override.
-     *
-     * <p>The {@code scalableLabels == null} guard is necessary: JPanel's constructor chain calls
-     * {@code updateUI()} before this class's field initialisers run, so the lists are genuinely
-     * null on that first invocation.
-     */
     @Override
-    @SuppressWarnings("java:S2583") // scalableLabels IS null on the first updateUI() call from super()
+    @SuppressWarnings("java:S2583")
     public void updateUI() {
         super.updateUI();
         if (scalableLabels == null) return;
@@ -317,21 +197,11 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         repaint();
     }
 
-    /**
-     * Anchors a section wrapper panel (BoxLayout.Y_AXIS) at the left edge of its parent
-     * BoxLayout.Y_AXIS container and stretches it horizontally so its left-aligned children
-     * read against the side panel's left margin instead of being centered.
-     */
     private static void leftAlignSection(JComponent section) {
         section.setAlignmentX(Component.LEFT_ALIGNMENT);
         section.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
     }
 
-    /**
-     * Anchors a single child component within a BoxLayout.Y_AXIS parent at the left edge
-     * and lets it grow to full width while keeping its preferred height. Used for grids
-     * and rows whose preferredWidth is less than the panel's width.
-     */
     private static void leftAlignChild(JComponent child) {
         child.setAlignmentX(Component.LEFT_ALIGNMENT);
         Dimension pref = child.getPreferredSize();
@@ -352,10 +222,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
             JBUI.scale(8), 0, JBUI.scale(2), 0));
         titleRow.add(label);
 
-        // Hairline separator below the title visually unifies all section headers
-        // across the side panel (Selected client / Active turn / Session / Monthly quota
-        // / Project files) — the same divider treatment makes them read as a single
-        // family of headers regardless of which createSectionHeader variant produced them.
         JSeparator divider = new JSeparator(SwingConstants.HORIZONTAL);
         divider.setForeground(JBUI.CurrentTheme.ToolWindow.borderColor());
         divider.setOpaque(false);
@@ -369,29 +235,17 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         titleRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         header.add(titleRow);
         header.add(divider);
-        // Force the header to fill the full width of its BoxLayout.Y_AXIS parent so
-        // the FlowLayout-LEFT title row can anchor at the left edge. Without this,
-        // BoxLayout sizes the header to its (small) preferredSize and the default
-        // CENTER_ALIGNMENT centers it, making the title appear in the middle.
         header.setAlignmentX(Component.LEFT_ALIGNMENT);
         header.setMaximumSize(new Dimension(Integer.MAX_VALUE, header.getPreferredSize().height));
         return header;
     }
 
-    /**
-     * Section header with a non-bold dim suffix (e.g. data-source note) shown next to the
-     * bold title. Keeps the title's visual weight while inlining the supplemental info that
-     * would otherwise need its own subtitle row.
-     */
     private JPanel createSectionHeaderWithSuffix(String title, String suffix) {
         JPanel header = createSectionHeader(title);
         JLabel suffixLabel = new JLabel(suffix);
         suffixLabel.setFont(smallFont);
         suffixLabel.setForeground(dimColor);
         scalableLabels.add(suffixLabel);
-        // The header is now a vertical box (title row + divider). The first child
-        // is the title FlowLayout row — append the suffix label there so it appears
-        // inline next to the bold title (matching the original behaviour).
         if (header.getComponentCount() > 0 && header.getComponent(0) instanceof JPanel titleRow) {
             titleRow.add(suffixLabel);
         } else {
@@ -410,7 +264,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         value.setFont(smallFont);
         scalableLabels.add(label);
         scalableLabels.add(value);
-        // Right-align values so columns line up cleanly across sections; label stays left.
         value.setHorizontalAlignment(SwingConstants.RIGHT);
 
         JPanel rowPanel = new JPanel(new BorderLayout(JBUI.scale(8), 0));
@@ -431,26 +284,16 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private void refresh() {
         SessionStatsSnapshot snap = timerPanel.getSessionSnapshot();
         BillingDisplayData bill = billing.getBillingDisplayData();
-        long now = System.currentTimeMillis();
-
-        sessionDiffAnimator.update(snap.getSessionLinesAdded(), snap.getSessionLinesRemoved(), now);
-        turnDiffAnimator.update(snap.getTurnLinesAdded(), snap.getTurnLinesRemoved(), now);
 
         refreshTurnSection(snap);
         refreshSessionStats(snap);
-        refreshTodayStats(snap);
         refreshBilling(bill);
-        updateDiffLabels(now);
-        startAnimationTimerIfNeeded(now);
 
         revalidate();
         repaint();
     }
 
     private void refreshTurnSection(SessionStatsSnapshot snap) {
-        // Show the section whenever there's any turn worth displaying — either an active
-        // turn or at least one completed turn in this session. Previously the section was
-        // hidden between turns, leaving users without a record of their last prompt's cost.
         boolean hasTurn = snap.isRunning() || snap.getSessionTurnCount() > 0;
         if (!hasTurn) {
             turnSection.setVisible(false);
@@ -459,40 +302,20 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         turnSection.setVisible(true);
         turnHeaderLabel.setText(snap.isRunning() ? "Active turn" : "Last turn");
 
-        // Time as a labeled row (mirrors the Session section) instead of inline in the
-        // header — the two sections now align visually.
         turnTimeValue.setText(TimerDisplayFormatter.INSTANCE.formatElapsedTime(snap.getTurnElapsedSec()));
-        int turnTools = snap.getTurnToolCalls();
-        turnToolsValue.setText(String.valueOf(turnTools));
-        // Hide zero-value rows to reduce visual noise — a row of "0"s conveys no signal.
-        turnToolsRow.setVisible(turnTools > 0);
-        long turnLines = (long) snap.getTurnLinesAdded() + snap.getTurnLinesRemoved();
-        turnLinesRow.setVisible(turnLines > 0);
 
         if (snap.getMultiplierMode()) {
             turnTokensRowLabel.setText(LABEL_PREMIUM_REQ);
             turnTokensValue.setText(BillingCalculator.INSTANCE.formatPremium(snap.getTurnPremiumRequests()));
             turnTokensRow.setVisible(true);
-            turnCostRow.setVisible(false);
         } else {
-            long turnTok = (long) snap.getTurnInputTokens() + snap.getTurnOutputTokens();
-            Double turnCost = snap.getTurnCostUsd();
-            boolean hasTurnUsage = turnTok > 0 || (turnCost != null && turnCost > 0.0);
-            if (hasTurnUsage) {
-                turnTokensRowLabel.setText(LABEL_TOKENS);
-                turnTokensValue.setText(
-                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnInputTokens()) +
-                        TOKENS_IN_OUT_SEP +
-                        TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnOutputTokens()) +
-                        TOKENS_OUT_SUFFIX);
-                turnTokensRow.setVisible(true);
-                turnCostRowLabel.setText("Cost");
-                turnCostValue.setText(TimerDisplayFormatter.INSTANCE.formatCost(turnCost != null ? turnCost : 0.0));
-                turnCostRow.setVisible(true);
-            } else {
-                turnTokensRow.setVisible(false);
-                turnCostRow.setVisible(false);
-            }
+            turnTokensRowLabel.setText(LABEL_TOKENS);
+            turnTokensValue.setText(
+                TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnInputTokens()) +
+                    TOKENS_IN_OUT_SEP +
+                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnOutputTokens()) +
+                    TOKENS_OUT_SUFFIX);
+            turnTokensRow.setVisible(true);
         }
     }
 
@@ -501,66 +324,24 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         int turns = snap.getSessionTurnCount();
         turnsValue.setText(String.valueOf(turns));
         turnsRow.setVisible(turns > 0);
-        int sessionTools = snap.getSessionToolCalls();
-        toolsValue.setText(String.valueOf(sessionTools));
-        sessionToolsRow.setVisible(sessionTools > 0);
-        long sessionLines = (long) snap.getSessionLinesAdded() + snap.getSessionLinesRemoved();
-        linesRow.setVisible(sessionLines > 0);
 
         if (snap.getMultiplierMode()) {
             tokensRowLabel.setText(LABEL_PREMIUM_REQ);
             tokensValue.setText(BillingCalculator.INSTANCE.formatPremium(snap.getLocalSessionPremiumRequests()));
             tokensRow.setVisible(true);
-            costRow.setVisible(false);
         } else {
-            long totalTokens = snap.getSessionInputTokens() + snap.getSessionOutputTokens();
-            if (totalTokens > 0 || snap.getSessionCostUsd() > 0.0) {
-                tokensRowLabel.setText(LABEL_TOKENS);
-                tokensValue.setText(
-                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionInputTokens()) +
-                        TOKENS_IN_OUT_SEP +
-                        TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionOutputTokens()) +
-                        TOKENS_OUT_SUFFIX);
-                tokensRow.setVisible(true);
-                costRowLabel.setText("Cost");
-                costValue.setText(TimerDisplayFormatter.INSTANCE.formatCost(snap.getSessionCostUsd()));
-                costRow.setVisible(true);
-            } else {
-                tokensRow.setVisible(false);
-                costRow.setVisible(false);
-            }
-        }
-    }
-
-    private void updateDiffLabels(long now) {
-        Color addColor = ToolRenderers.INSTANCE.getADD_COLOR();
-        Color delColor = ToolRenderers.INSTANCE.getDEL_COLOR();
-
-        SessionDiffAnimator.DiffCounts sCounts = sessionDiffAnimator.displayCounts(now);
-        String sHtml = TimerDisplayFormatter.formatDiffCountHtml(
-            sCounts.added(), sCounts.removed(), addColor, delColor);
-        linesValue.setText(sHtml.isEmpty() ? "—" : sHtml);
-
-        if (turnSection.isVisible()) {
-            SessionDiffAnimator.DiffCounts tCounts = turnDiffAnimator.displayCounts(now);
-            String tHtml = TimerDisplayFormatter.formatDiffCountHtml(
-                tCounts.added(), tCounts.removed(), addColor, delColor);
-            turnLinesValue.setText(tHtml.isEmpty() ? "—" : tHtml);
-        }
-    }
-
-    private void startAnimationTimerIfNeeded(long now) {
-        if (sessionDiffAnimator.isAnimating(now) || turnDiffAnimator.isAnimating(now)) {
-            if (!animationTimer.isRunning()) animationTimer.start();
-        } else {
-            animationTimer.stop();
+            tokensRowLabel.setText(LABEL_TOKENS);
+            tokensValue.setText(
+                TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionInputTokens()) +
+                    TOKENS_IN_OUT_SEP +
+                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionOutputTokens()) +
+                    TOKENS_OUT_SUFFIX);
+            tokensRow.setVisible(true);
         }
     }
 
     private void refreshBilling(BillingDisplayData bill) {
         boolean hasBilling = bill.getEntitlement() > 0 || bill.getUnlimited();
-        // Hide the entire section (header + grid + 100px graph) when no billing data —
-        // otherwise a tall empty graph leaves a visually broken gap in the side panel.
         billingSection.setVisible(hasBilling);
 
         if (bill.getUnlimited()) {
@@ -595,125 +376,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         } else {
             resetsRow.setVisible(false);
         }
-    }
-
-    /**
-     * Aggregates today's persisted turn_stats rows across all agents and updates the
-     * Today section. Throttled — at most one DB query every {@code TODAY_REFRESH_INTERVAL_NANOS}
-     * nanoseconds, executed on a pooled thread; UI updates are marshalled to the EDT.
-     * The cached {@link TodayTotals} is rendered immediately so the panel stays responsive
-     * even when no fresh query has fired yet.
-     */
-    private void refreshTodayStats(SessionStatsSnapshot snap) {
-        long nowNanos = System.nanoTime();
-        if (nowNanos - lastTodayQueryNanos > TODAY_REFRESH_INTERVAL_NANOS) {
-            lastTodayQueryNanos = nowNanos;
-            ApplicationManager.getApplication().executeOnPooledThread(() -> {
-                try {
-                    LocalDate today = LocalDate.now();
-                    String iso = today.format(DateTimeFormatter.ISO_LOCAL_DATE);
-                    List<ConversationStatistics.DailyTurnAggregate> rows =
-                        ConversationStatistics.queryDailyTurnStats(ConversationDatabase.getInstance(project), iso, iso);
-                    int turns = 0;
-                    int tools = 0;
-                    long inTok = 0;
-                    long outTok = 0;
-                    long linesAdded = 0;
-                    long linesRemoved = 0;
-                    long durMs = 0;
-                    double premium = 0.0;
-                    for (ConversationStatistics.DailyTurnAggregate r : rows) {
-                        turns += r.turns();
-                        tools += r.toolCalls();
-                        inTok += r.inputTokens();
-                        outTok += r.outputTokens();
-                        linesAdded += r.linesAdded();
-                        linesRemoved += r.linesRemoved();
-                        durMs += r.durationMs();
-                        premium += r.premiumRequests();
-                    }
-                    TodayTotals totals = new TodayTotals(turns, tools, inTok, outTok,
-                        linesAdded, linesRemoved, durMs, premium);
-                    todayTotalsRef.set(totals);
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        // Read multiplier mode on the EDT at apply time. The pooled-thread
-                        // DB query may take long enough that the user has switched providers
-                        // by the time we repaint — using the *current* snapshot avoids
-                        // rendering "Today" totals in the stale mode.
-                        SessionStatsSnapshot currentSnap = timerPanel.getSessionSnapshot();
-                        applyTodayTotals(totals, currentSnap);
-                    });
-                } catch (Exception ignored) {
-                    // Stats are advisory — never let a query failure crash the UI refresh loop.
-                }
-            });
-        }
-        applyTodayTotals(todayTotalsRef.get(), snap);
-    }
-
-    private void applyTodayTotals(TodayTotals t, SessionStatsSnapshot snap) {
-        boolean multiplierMode = snap.getMultiplierMode();
-        // Add the active turn's elapsed time on top of the DB-persisted aggregate so the
-        // "Today — Time" counter ticks live during a turn, matching Turn / Session timers.
-        // Persisted rows only land in turn_stats on stop(), so without this addend the row
-        // would freeze for the duration of every turn.
-        long liveDurMs = t.durationMs() + (snap.isRunning() ? snap.getTurnElapsedSec() * 1000L : 0L);
-        // Show the section as soon as a turn is in flight today, even before any turn has
-        // been persisted, so the user gets immediate feedback on first use of the day.
-        boolean hasActivity = t.turns() > 0 || (snap.isRunning() && snap.getTurnElapsedSec() > 0);
-        if (!hasActivity) {
-            todaySection.setVisible(false);
-            return;
-        }
-        todaySection.setVisible(true);
-        todayTimeValue.setText(TimerDisplayFormatter.INSTANCE.formatElapsedTime(liveDurMs / 1000));
-        int liveTurns = t.turns() + (snap.isRunning() ? 1 : 0);
-        todayTurnsValue.setText(String.valueOf(liveTurns));
-        todayToolsValue.setText(String.valueOf(t.toolCalls()));
-        todayToolsRow.setVisible(t.toolCalls() > 0);
-        long lines = t.linesAdded() + t.linesRemoved();
-        String linesHtml = TimerDisplayFormatter.formatDiffCountHtml(
-            (int) t.linesAdded(), (int) t.linesRemoved(),
-            ToolRenderers.INSTANCE.getADD_COLOR(), ToolRenderers.INSTANCE.getDEL_COLOR());
-        todayLinesValue.setText(lines > 0 ? linesHtml : "0");
-        todayLinesRow.setVisible(lines > 0);
-
-        if (multiplierMode) {
-            todayTokensRowLabel.setText(LABEL_PREMIUM_REQ);
-            todayTokensValue.setText(BillingCalculator.INSTANCE.formatPremium(t.premiumRequests()));
-            todayTokensRow.setVisible(true);
-        } else {
-            long totalTokens = t.inputTokens() + t.outputTokens();
-            if (totalTokens > 0) {
-                todayTokensRowLabel.setText(LABEL_TOKENS);
-                todayTokensValue.setText(
-                    TimerDisplayFormatter.INSTANCE.formatTokenCount(t.inputTokens()) +
-                        TOKENS_IN_OUT_SEP +
-                        TimerDisplayFormatter.INSTANCE.formatTokenCount(t.outputTokens()) +
-                        TOKENS_OUT_SUFFIX);
-                todayTokensRow.setVisible(true);
-            } else {
-                todayTokensRow.setVisible(false);
-            }
-        }
-    }
-
-    /**
-     * Snapshot of today's aggregated turn stats across all agents. Held in an
-     * {@link AtomicReference} so the pooled-thread query and the EDT render path
-     * never trip over each other.
-     */
-    private record TodayTotals(
-        int turns,
-        int toolCalls,
-        long inputTokens,
-        long outputTokens,
-        long linesAdded,
-        long linesRemoved,
-        long durationMs,
-        double premiumRequests
-    ) {
-        static final TodayTotals EMPTY = new TodayTotals(0, 0, 0, 0, 0, 0, 0, 0.0);
     }
 
 }
