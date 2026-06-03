@@ -89,6 +89,13 @@ public final class McpProtocolHandler {
     private static final String RESOURCES_CURSOR_PREFIX = "resources:";
     private static final String RESOURCE_TEMPLATES_CURSOR_PREFIX = "resourceTemplates:";
 
+    /**
+     * Tool name prefix stripped from incoming calls and added to tool list entries.
+     * Agents that know the prefix (Copilot ACP, OpenCode) can call tools with
+     * "agentbridge-read_file" instead of just "read_file".
+     */
+    private static final String TOOL_PREFIX = "agentbridge-";
+
     private static final String KEY_PARAMS = "params";
     private static final String KEY_CURSOR = "cursor";
     private static final String KEY_DESCRIPTION = "description";
@@ -289,7 +296,7 @@ public final class McpProtocolHandler {
         JsonArray tools = new JsonArray();
         for (ToolDefinition entry : enabledTools) {
             JsonObject tool = new JsonObject();
-            tool.addProperty("name", entry.id());
+            tool.addProperty("name", TOOL_PREFIX + entry.id());
             tool.addProperty(KEY_DESCRIPTION, entry.description());
             JsonObject schema = entry.inputSchema();
             tool.add("inputSchema", schema != null ? schema : new JsonObject());
@@ -549,6 +556,11 @@ public final class McpProtocolHandler {
         String toolName = params.has("name") ? params.get("name").getAsString() : null;
         if (toolName == null) {
             return respondError(msg, -32602, "Missing tool name");
+        }
+        // Strip known prefix so agents that use "agentbridge-read_file"
+        // (Copilot ACP, OpenCode) match our internal bare-name registry.
+        if (toolName.startsWith(TOOL_PREFIX)) {
+            toolName = toolName.substring(TOOL_PREFIX.length());
         }
 
         McpServerSettings settings = McpServerSettings.getInstance(project);
