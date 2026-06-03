@@ -89,6 +89,10 @@ class PromptOrchestrator(
     private var turnOutputTokens = 0
     private var turnCostUsd: Double? = null
     private var turnModelId = ""
+
+    /** Stashed effective prompt text for fallback token counting when the agent doesn't report usage. */
+    private var turnEffectivePrompt: String = ""
+    private var turnAttachments: List<PromptAttachment> = emptyList()
     private var turnStartHeadHash: String? = null
     private var turnStartGitBranch: String? = null
 
@@ -243,6 +247,8 @@ class PromptOrchestrator(
             val modelId = prepareModelAndTurnState(selectedModelId, isAutoCommit, isContinue)
             val attachments = contextManager.buildPromptAttachments(contextItems.ifEmpty { null })
             val effectivePrompt = buildEffectivePrompt(prompt, attachments)
+            turnEffectivePrompt = effectivePrompt
+            turnAttachments = attachments
             addContextEntries(attachments, contextItems)
 
             dispatchPromptWithRetry(client, sessionId, effectivePrompt, modelId, attachments)
@@ -564,6 +570,13 @@ class PromptOrchestrator(
         } else {
             consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
             callbacks.onTimerSetLastTurnMultiplier(null)
+            if (turnInputTokens == 0 && turnEffectivePrompt.isNotEmpty()) {
+                turnInputTokens = TokenCounter.estimateInputTokens(turnEffectivePrompt, turnAttachments, turnModelId)
+                if (turnOutputTokens == 0) {
+                    turnOutputTokens =
+                        TokenCounter.estimateTokenCount(consolePanel().getLastResponseText(), turnModelId)
+                }
+            }
             callbacks.onTimerRecordUsage(turnInputTokens, turnOutputTokens, turnCostUsd)
         }
 
