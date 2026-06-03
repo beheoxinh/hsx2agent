@@ -22,10 +22,11 @@ import com.intellij.openapi.editor.markup.HighlighterTargetArea;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.ReadonlyStatusHandler;
+import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.psi.PsiDocumentManager;
@@ -113,7 +114,7 @@ public abstract class FileTool extends Tool {
             for (String pathStr : paths) {
                 formatSingleFile(project, pathStr);
             }
-            saveAllDocuments();
+            saveAllDocuments(project);
             return;
         }
 
@@ -152,7 +153,7 @@ public abstract class FileTool extends Tool {
             return;
         }
         if (index >= paths.size()) {
-            saveAllDocuments();
+            saveAllDocuments(project);
             latch.countDown();
             return;
         }
@@ -214,11 +215,28 @@ public abstract class FileTool extends Tool {
         }
     }
 
-    private static void saveAllDocuments() {
+    private static void saveAllDocuments(Project project) {
         try {
-            WriteAction.run(() -> FileDocumentManager.getInstance().saveAllDocuments());
+            WriteAction.run(() -> {
+                FileDocumentManager.getInstance().saveAllDocuments();
+                PsiDocumentManager manager = PsiDocumentManager.getInstance(project);
+                manager.commitAllDocuments();
+            });
         } catch (Exception e) {
             LOG.warn("Failed to save documents after auto-format", e);
+        }
+        // Refresh VFS so subsequent reads see the auto-formatted content.
+        // Without this, the editor/tree may show stale pre-format content
+        // until the next manual scroll or VFS event.
+        refreshVfsRoot(project);
+    }
+
+    private static void refreshVfsRoot(Project project) {
+        String basePath = project.getBasePath();
+        if (basePath == null) return;
+        VirtualFile root = LocalFileSystem.getInstance().findFileByPath(basePath);
+        if (root != null) {
+            VfsUtil.markDirtyAndRefresh(false, true, true, root);
         }
     }
 
