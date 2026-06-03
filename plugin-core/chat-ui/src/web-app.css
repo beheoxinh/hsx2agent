@@ -1360,15 +1360,22 @@ file-nav {
     padding: 40px 16px;
 }
 
+.tcv-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2, 4px);
+}
+
 .tcv-item {
     /* Uses turn-chip/tool/kind-* CSS classes for color scheme (see chat.css).
-       Override to full-width flex row matching chat chip height. */
+       Override to 1/3-width flex row in a wrap grid. */
     display: flex !important;
-    width: 100%;
+    width: calc(33.33% - var(--sp-2, 4px));
+    min-width: 120px;
+    flex: 1 0 calc(33.33% - var(--sp-2, 4px));
     box-sizing: border-box;
     white-space: normal;
     border-radius: var(--r-sm, 3px);
-    margin-bottom: var(--sp-2, 4px);
     cursor: pointer;
     flex-wrap: wrap;
 }
