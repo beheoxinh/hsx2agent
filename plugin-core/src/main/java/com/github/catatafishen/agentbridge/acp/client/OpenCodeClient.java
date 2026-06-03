@@ -243,9 +243,7 @@ public final class OpenCodeClient extends AcpClient {
         if (update instanceof SessionUpdate.TurnUsage(int inputTokens, int outputTokens, Double costUsd)) {
             latestTurnInputTokens = inputTokens;
             latestTurnOutputTokens = outputTokens;
-            long deltaInput = latestTurnInputTokens - lastSessionInputTokens;
-            long deltaOutput = latestTurnOutputTokens - lastSessionOutputTokens;
-            return new SessionUpdate.TurnUsage((int) deltaInput, (int) deltaOutput, costUsd);
+            return update;
         }
         return super.processUpdate(update);
     }
