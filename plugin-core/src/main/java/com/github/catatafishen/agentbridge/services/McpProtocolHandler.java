@@ -557,6 +557,10 @@ public final class McpProtocolHandler {
         if (toolName == null) {
             return respondError(msg, -32602, "Missing tool name");
         }
+        // Strip Claude CLI's internal MCP prefix: "mcp__agentbridge__git_status" -> "git_status"
+        if (toolName.startsWith("mcp__agentbridge__")) {
+            toolName = toolName.substring("mcp__agentbridge__".length());
+        }
         // Strip known prefix so agents that use "agentbridge-read_file"
         // (Copilot ACP, OpenCode) match our internal bare-name registry.
         if (toolName.startsWith(TOOL_PREFIX)) {
