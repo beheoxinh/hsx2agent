@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.file;
 
+import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.FileAccessTracker;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.ReadFileRenderer;
@@ -10,6 +11,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiDocumentManager;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
@@ -79,6 +81,21 @@ public class ReadFileTool extends FileTool {
 
         int[] effectiveRange = new int[]{startLine, endLine};
 
+        // Refresh VFS outside ReadAction — refreshAndFindFileByPath needs a write lock.
+        VirtualFile preResolved = com.intellij.openapi.application.ReadAction.compute(
+            () -> resolveVirtualFile(pathStr));
+        if (preResolved != null) {
+            String resolvedPath = preResolved.getPath();
+            FILE_CACHE.remove(resolvedPath);
+            EdtUtil.invokeAndWait(() -> {
+                VirtualFile refreshed = LocalFileSystem.getInstance()
+                    .refreshAndFindFileByPath(resolvedPath);
+                if (refreshed != null) {
+                    PsiDocumentManager.getInstance(project).commitAllDocuments();
+                }
+            });
+        }
+
         String result = ReadAction.nonBlocking(() -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
@@ -114,12 +131,6 @@ public class ReadFileTool extends FileTool {
     }
 
     private String readFileContent(VirtualFile vf) {
-        // Lightweight VFS refresh: sync with disk so external edits (git, shell)
-        // are visible. Uses refreshAndFindFileByPath which returns the same or
-        // updated VirtualFile handle.
-        String path = vf.getPath();
-        VirtualFile refreshed = LocalFileSystem.getInstance().refreshAndFindFileByPath(path);
-        if (refreshed != null) vf = refreshed;
         Document doc = FileDocumentManager.getInstance().getCachedDocument(vf);
         if (doc != null) {
             return doc.getText();
