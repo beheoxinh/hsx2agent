@@ -548,17 +548,10 @@ class ChatToolWindowContent(
         restartSessionGroup?.updateIconForDisconnect()
         notifyWebServerDisconnected()
 
-        // Export the current session to the CLI's native format so the next connect can
-        // resume via session/load. Must complete before agentManager.stop() kills the process.
-        val profileId = agentManager.activeProfileId
+        // Clear the persisted resume session ID so the next connect starts fresh
+        // instead of wasting time on a stale session/resume that no longer exists.
+        agentManager.getClientIfRunning()?.dropCurrentSession()
         ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                val sessionSwitch = SessionSwitchService.getInstance(project)
-                sessionSwitch.exportForRestart(profileId)
-                sessionSwitch.awaitPendingExport(5_000)
-            } catch (e: Exception) {
-                LOG.warn("Failed to export session for restart during disconnect", e)
-            }
             try {
                 agentManager.stop()
             } catch (e: Exception) {
