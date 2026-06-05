@@ -181,7 +181,6 @@ class PromptOrchestrator(
                 agentManager.client.cancelSession(sessionId)
             } catch (_: Exception) {
             }
-            currentSessionId = null
         }
         thread?.interrupt()
         consolePanel().cancelAllRunning()
