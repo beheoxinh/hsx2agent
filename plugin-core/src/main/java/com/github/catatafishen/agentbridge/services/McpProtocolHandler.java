@@ -84,7 +84,8 @@ public final class McpProtocolHandler {
     private static final String SERVER_VERSION = BuildInfo.getVersion();
     private static final String PROTOCOL_VERSION = "2025-11-25";
     private static final String STARTUP_INSTRUCTIONS_URI = "resource://default-startup-instructions.md";
-    private static final String STARTUP_INSTRUCTIONS = loadInstructions();
+    private static final String STARTUP_INSTRUCTIONS = loadInstructions("/default-startup-instructions.md");
+    private static final String CLAUDE_CODE_INSTRUCTIONS = loadInstructions("/claude-code-startup-instructions.md");
     private static final String IMMUTABLE_GUARDRAILS = loadGuardrails();
     private static final String RESOURCES_CURSOR_PREFIX = "resources:";
     private static final String RESOURCE_TEMPLATES_CURSOR_PREFIX = "resourceTemplates:";
@@ -203,7 +204,16 @@ public final class McpProtocolHandler {
     }
 
     private @NotNull String buildInstructions() {
-        StringBuilder sb = new StringBuilder(STARTUP_INSTRUCTIONS);
+        // Use Claude Code-specific instructions when the agent is Claude Code Agent.
+        // Claude Code has its own built-in tool set (read, edit, grep, bash, etc.)
+        // and the strict "BANNED" rules in the default instructions confuse it.
+        // The Claude Code version presents agentbridge tools as optional extras
+        // instead of mandatory replacements.
+        String agentName = connectedAgentName;
+        boolean isClaudeCode = agentName != null
+            && agentName.toLowerCase(java.util.Locale.ROOT).contains("claude");
+
+        StringBuilder sb = new StringBuilder(isClaudeCode ? CLAUDE_CODE_INSTRUCTIONS : STARTUP_INSTRUCTIONS);
         String custom = StartupInstructionsSettings.getInstance().getCustomInstructions();
         if (custom != null && !custom.isBlank()) {
             sb.append("\n\n").append(custom);
@@ -261,14 +271,14 @@ public final class McpProtocolHandler {
         }
     }
 
-    private static String loadInstructions() {
-        try (java.io.InputStream is = McpProtocolHandler.class.getResourceAsStream("/default-startup-instructions.md")) {
+    private static String loadInstructions(String resourcePath) {
+        try (java.io.InputStream is = McpProtocolHandler.class.getResourceAsStream(resourcePath)) {
             if (is != null) {
                 return new String(is.readAllBytes(), StandardCharsets.UTF_8);
             }
-            LOG.warn("Resource /default-startup-instructions.md not found in classpath for MCP initialize");
+            LOG.warn("Resource " + resourcePath + " not found in classpath for MCP initialize");
         } catch (IOException e) {
-            LOG.error("Failed to read /default-startup-instructions.md from classpath for MCP initialize", e);
+            LOG.error("Failed to read " + resourcePath + " from classpath for MCP initialize", e);
         }
         return "You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.";
     }
