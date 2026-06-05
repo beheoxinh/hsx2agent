@@ -83,6 +83,15 @@ class PromptOrchestrator(
     @Volatile
     private var stopped = false
 
+    /**
+     * True when the current or most recent turn was cancelled by the user via Stop.
+     * Used in [sendWithSessionRetry] to suppress the "Session resume failed" error toast —
+     * when the user explicitly stops a turn, silently recovering from a lost session
+     * is expected and should not produce a scary warning.
+     * Cleared at the start of the next [execute] call.
+     */
+    private var wasStoppedByUser = false
+
     private var turnStartedAt: Long = 0
     private var turnToolCallCount = 0
     private var turnInputTokens = 0
@@ -154,6 +163,7 @@ class PromptOrchestrator(
         isTurnAutoCommit = isAutoCommit
         if (!isAutoCommit) consecutiveAutoCommits = 0
         cleanupPreviousTurnEditors()
+        wasStoppedByUser = false
         pendingRawText = rawText
         pendingContextItems = contextItems
         pendingPromptEntryId = promptEntryId
@@ -174,6 +184,7 @@ class PromptOrchestrator(
 
     fun stop() {
         stopped = true
+        wasStoppedByUser = true
         val sessionId = currentSessionId
         val thread = currentPromptThread
         if (sessionId != null) {
@@ -537,12 +548,19 @@ class PromptOrchestrator(
                 currentSessionId = null
                 val newSessionId = ensureSessionCreated(client)
 
-                ApplicationManager.getApplication().invokeLater {
-                    consolePanel().addErrorEntry(
-                        "⚠ Session resume failed — $agentName could not find the previous session. " +
-                            "Started a fresh session; earlier conversation context was not restored."
-                    )
+                // When the user explicitly stopped the previous turn, silently recover from
+                // a lost session — the agent may have destroyed it on session/cancel or the
+                // watchdog may have restarted the process. The user already saw "Stopped by
+                // user" — no need for a scary "Session resume failed" toast on top of it.
+                if (!wasStoppedByUser) {
+                    ApplicationManager.getApplication().invokeLater {
+                        consolePanel().addErrorEntry(
+                            "⚠ Session resume failed — $agentName could not find the previous session. " +
+                                "Started a fresh session; earlier conversation context was not restored."
+                        )
+                    }
                 }
+                wasStoppedByUser = false
 
                 sendCall(newSessionId)
             } else {
