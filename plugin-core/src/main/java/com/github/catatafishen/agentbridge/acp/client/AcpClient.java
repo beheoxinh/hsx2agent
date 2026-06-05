@@ -73,7 +73,7 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     private static final Logger LOG = Logger.getInstance(AcpClient.class);
 
-    private static final long INITIALIZE_TIMEOUT_SECONDS = 90;
+    private static final long INITIALIZE_TIMEOUT_SECONDS = 30;
     private static final long SESSION_TIMEOUT_SECONDS = 30;
     private static final long AUTH_TIMEOUT_SECONDS = 30;
     private static final long STOP_TIMEOUT_SECONDS = 5;
