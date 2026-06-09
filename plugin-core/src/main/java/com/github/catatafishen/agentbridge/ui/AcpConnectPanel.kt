@@ -103,6 +103,13 @@ class AcpConnectPanel(
             }
         }
 
+    /**
+     * When true, the next call to [resetConnectButton] selects "None (fresh session)"
+     * in the session combo instead of the default [SessionChoice.Latest].
+     * Set by [selectFreshSession], consumed and cleared by [resetConnectButton].
+     */
+    private var forceFreshSession = false
+
     private enum class BinaryState { UNKNOWN, FOUND, MISSING }
 
     private val profileStatusCheckInProgress = AtomicBoolean(false)
@@ -1555,11 +1562,14 @@ class AcpConnectPanel(
             connectSpinner.isVisible = false
             acpAutoConnectCheckbox.isSelected = agentManager.isAutoConnect
             refreshProfileCombo()
-            // refreshSessionCombo() auto-selects SessionChoice.Latest when sessions exist,
-            // and SessionChoice.None when there are none — do NOT override with None here.
-            // Previously this hardcoded None after every disconnect, causing chat history
-            // to be wiped on the next connect (applySessionChoice(None) deletes .current-session-id).
             refreshSessionCombo()
+            // On initial load, keep the default (Latest). Call selectFreshSession()
+            // to switch to None — this is invoked by disconnectFromAgent() so a
+            // disconnect implies the user wants a fresh session, not a resume.
+            if (forceFreshSession) {
+                sessionCombo.selectedItem = SessionChoice.None
+                forceFreshSession = false
+            }
             updateProfileStatus()
         }
     }
@@ -1577,5 +1587,14 @@ class AcpConnectPanel(
 
     fun refreshMcpStatus() {
         refreshMcpState()
+    }
+
+    /**
+     * Flags the next [resetConnectButton] call to select "None (fresh session)"
+     * instead of [SessionChoice.Latest]. Called by [ChatToolWindowContent.disconnectFromAgent]
+     * because disconnecting implies the user wants a fresh session on next connect.
+     */
+    fun selectFreshSession() {
+        forceFreshSession = true
     }
 }

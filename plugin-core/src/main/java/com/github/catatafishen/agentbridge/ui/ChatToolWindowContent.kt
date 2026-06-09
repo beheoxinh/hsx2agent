@@ -551,11 +551,12 @@ class ChatToolWindowContent(
         // - Pause state: prevent tool calls from blocking on a stale pause.
         // - Pending popup: prevent popup gate from blocking tool calls with
         //   "a popup is awaiting response" from the previous session.
-        // - connectedAgentName: cleared so buildInstructions() doesn't use
-        //   the stale agent name from the previous session for the initialize
-        //   handshake.
         McpPauseService.getInstance(project).setPaused(false)
         PendingPopupService.getInstance().cancelAndClear(null)
+
+        // Switch the session combo to "None (fresh session)" — disconnecting
+        // implies the user does not want to resume the previous session.
+        connectPanel.selectFreshSession()
 
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
