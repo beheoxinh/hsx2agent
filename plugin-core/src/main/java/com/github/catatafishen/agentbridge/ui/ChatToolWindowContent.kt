@@ -1,25 +1,21 @@
 package com.github.catatafishen.agentbridge.ui
 
-import  com.github.catatafishen.agentbridge.acp.model.Model
-import                com.github.catatafishen.agentbridge.acp.model.SessionUpdate
+import com.github.catatafishen.agentbridge.acp.model.Model
+import com.github.catatafishen.agentbridge.acp.model.SessionUpdate
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
+import com.github.catatafishen.agentbridge.psi.tools.quality.PendingPopupService
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
 import com.github.catatafishen.agentbridge.session.db.ConversationListener
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
-import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
-import com.github.catatafishen.agentbridge.settings.ChatInputSettings
-import com.github.catatafishen.agentbridge.settings.ChatWebServerSettings
-import com.github.catatafishen.agentbridge.settings.GitPolicy
-import com.github.catatafishen.agentbridge.settings.McpServerSettings
-import com.github.catatafishen.agentbridge.settings.SidePanelPosition
+import com.github.catatafishen.agentbridge.settings.*
 import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
+import com.intellij.openapi.actionSystem.ex.ComboBoxAction
 import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.actionSystem.impl.ActionButton
-import com.intellij.openapi.actionSystem.ex.ComboBoxAction
 import com.intellij.openapi.actionSystem.toolbarLayout.ToolbarLayoutStrategy
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
@@ -31,7 +27,6 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
-import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import java.awt.*
 import javax.swing.*
@@ -551,6 +546,17 @@ class ChatToolWindowContent(
         // Clear the persisted resume session ID so the next connect starts fresh
         // instead of wasting time on a stale session/resume that no longer exists.
         agentManager.getClientIfRunning()?.dropCurrentSession()
+
+        // Reset MCP-side state so the next connect starts with a clean slate:
+        // - Pause state: prevent tool calls from blocking on a stale pause.
+        // - Pending popup: prevent popup gate from blocking tool calls with
+        //   "a popup is awaiting response" from the previous session.
+        // - connectedAgentName: cleared so buildInstructions() doesn't use
+        //   the stale agent name from the previous session for the initialize
+        //   handshake.
+        McpPauseService.getInstance(project).setPaused(false)
+        PendingPopupService.getInstance().cancelAndClear(null)
+
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 agentManager.stop()
