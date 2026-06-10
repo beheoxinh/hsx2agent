@@ -67,6 +67,14 @@ public class BinaryDetector {
     /**
      * Find the absolute path to a binary using the captured shell environment.
      *
+     * <p>Resolution order:</p>
+     * <ol>
+     *   <li>{@code command -v} via login shell</li>
+     *   <li>Scan {@code PATH} directories directly</li>
+     *   <li>Scan common system locations ({@code /usr/local/bin}, {@code /opt/homebrew/bin}, …)</li>
+     *   <li>OS-native tools: {@code whereis -b} and {@code which -a}</li>
+     * </ol>
+     *
      * <p>On Windows, scans the {@code PATH} directories directly using Java's {@link File}
      * API to avoid encoding issues. The {@code where.exe} approach fails for users whose PATH
      * contains non-ASCII characters (e.g. accented characters in the Windows username) because
@@ -81,13 +89,24 @@ public class BinaryDetector {
             return findBinaryOnWindowsPath(binaryName);
         }
 
+        // Phase 1: command -v via login shell (fast, covers PATH)
         List<String> cmd = List.of("sh", "-c", "command -v " + binaryName);
         String output = runCommand(cmd, 3);
-        if (output == null || output.isBlank()) return null;
+        if (output != null && !output.isBlank()) {
+            String path = output.trim().split("\n")[0].trim();
+            logFound(binaryName, path);
+            return path;
+        }
 
-        String path = output.trim().split("\n")[0].trim();
-        logFound(binaryName, path);
-        return path;
+        // Phase 2: fall back to findAllBinaryPaths and return the first match
+        List<String> allPaths = findAllBinaryPaths(binaryName);
+        if (!allPaths.isEmpty()) {
+            String path = allPaths.getFirst();
+            logFound(binaryName, path);
+            return path;
+        }
+
+        return null;
     }
 
     /**

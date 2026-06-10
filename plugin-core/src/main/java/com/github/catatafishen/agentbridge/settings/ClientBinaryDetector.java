@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.settings;
 
+import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -14,7 +15,7 @@ import java.util.List;
  *   <li>User-configured override from {@link #getConfiguredPath()}</li>
  *   <li>Auto-detection via the captured login-shell environment ({@link BinaryDetector}),
  *       which includes generic known directories like {@code /opt/homebrew/bin},
- *       {@code /usr/local/bin}, etc.</li>
+ *       {@code /usr/local/bin}, etc., plus OS-native tools ({@code whereis}, {@code which -a}).</li>
  *   <li>Binary-specific additional paths from {@link #additionalSearchPaths()} —
  *       subclasses override this to list locations that are unique to their binary
  *       (e.g. snap packages, package-manager-specific install prefixes, Windows
@@ -22,6 +23,7 @@ import java.util.List;
  * </ol>
  */
 public abstract class ClientBinaryDetector {
+    private static final Logger LOG = Logger.getInstance(ClientBinaryDetector.class);
 
     /**
      * Return the user-configured binary path override, or {@code null} if none is set.
@@ -47,6 +49,10 @@ public abstract class ClientBinaryDetector {
      * auto-detects using the captured shell environment and any
      * {@link #additionalSearchPaths()}.
      *
+     * <p>Auto-detection collects all candidates (primary + alternates) via
+     * {@link BinaryDetector#findAllBinaryPaths}, then picks the one with the
+     * highest version. This is consistent with {@link AgentBinaryResolver}.
+     *
      * @param primaryName    Primary binary name (e.g. {@code "copilot"})
      * @param alternateNames Alternate names to try when primary is not found
      * @return Absolute path or name found, or {@code null} if not found
@@ -57,19 +63,47 @@ public abstract class ClientBinaryDetector {
         if (configured != null) {
             return configured;
         }
-        // Phase 1: shell-environment-aware PATH search + generic known dirs
-        String found = BinaryDetector.findBinaryPath(primaryName);
-        if (found != null) return found;
+
+        // Collect all candidates across primary and alternate names
+        List<String> allCandidates = new java.util.ArrayList<>(
+            BinaryDetector.findAllBinaryPaths(primaryName));
         for (String alt : alternateNames) {
-            found = BinaryDetector.findBinaryPath(alt);
-            if (found != null) return found;
+            allCandidates.addAll(BinaryDetector.findAllBinaryPaths(alt));
         }
-        // Phase 2: binary-specific additional paths (snap, linuxbrew, Windows program-files, etc.)
-        for (String path : additionalSearchPaths()) {
-            if (new File(path).canExecute()) {
-                return path;
+
+        if (allCandidates.isEmpty()) {
+            // Phase 2: binary-specific additional paths (snap, linuxbrew, Windows program-files, etc.)
+            for (String path : additionalSearchPaths()) {
+                if (new File(path).canExecute()) {
+                    return path;
+                }
+            }
+            return null;
+        }
+
+        if (allCandidates.size() == 1) return allCandidates.getFirst();
+
+        // Multiple candidates — pick the highest version
+        String bestPath = null;
+        String bestVersion = null;
+
+        for (String path : allCandidates) {
+            String version = BinaryDetector.getVersionForPath(path);
+            if (version == null) continue;
+
+            if (bestVersion == null || BinaryDetector.compareVersions(version, bestVersion) > 0) {
+                bestVersion = version;
+                bestPath = path;
             }
         }
-        return null;
+
+        if (bestPath != null) {
+            LOG.info("Selected " + bestPath + " (version: " + bestVersion
+                + ") from " + allCandidates.size() + " candidates for " + primaryName);
+            return bestPath;
+        }
+
+        // Version detection failed for all — fall back to first-found
+        return allCandidates.getFirst();
     }
 }
