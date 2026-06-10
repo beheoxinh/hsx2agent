@@ -6,6 +6,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
@@ -216,21 +217,30 @@ public final class BuildContextTool extends NavigationTool {
     private List<String> collectRelated(PsiElement element, String basePath) {
         List<String> related = new ArrayList<>();
         try {
-            Collection<PsiReference> refs = ReferencesSearch.search(
-                    element, GlobalSearchScope.projectScope(project)).findAll();
-            for (PsiReference ref : refs) {
-                if (related.size() >= MAX_RELATED_PER_ENTRY) break;
-                PsiElement refEl = ref.getElement();
-                PsiNamedElement container = PsiTreeUtil.getParentOfType(refEl, PsiNamedElement.class);
-                if (container != null && container.getName() != null) {
-                    String loc = uniqueKey(container, basePath);
-                    if (loc != null) {
-                        String type = ToolUtils.classifyElement(container);
-                        related.add(String.format("  %s [%s] at %s",
-                                container.getName(), type != null ? type : "symbol", loc));
-                    }
-                }
-            }
+            com.intellij.openapi.progress.ProgressIndicator indicator =
+                    new com.intellij.openapi.progress.EmptyProgressIndicator();
+            com.intellij.openapi.progress.ProgressManager.getInstance().runProcess(
+                    () -> {
+                        Collection<PsiReference> refs = ReferencesSearch.search(
+                                element, GlobalSearchScope.projectScope(project)).findAll();
+                        for (PsiReference ref : refs) {
+                            if (related.size() >= MAX_RELATED_PER_ENTRY) break;
+                            PsiElement refEl = ref.getElement();
+                            PsiNamedElement container = PsiTreeUtil.getParentOfType(refEl, PsiNamedElement.class);
+                            if (container != null && container.getName() != null) {
+                                String loc = uniqueKey(container, basePath);
+                                if (loc != null) {
+                                    String type = ToolUtils.classifyElement(container);
+                                    related.add(String.format("  %s [%s] at %s",
+                                            container.getName(), type != null ? type : "symbol", loc));
+                                }
+                            }
+                        }
+                    },
+                    indicator
+            );
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (Exception e) {
             // Reference search can fail for certain PSI elements; skip gracefully
         }
