@@ -662,7 +662,7 @@ class PromptOrchestrator(
         ApplicationManager.getApplication().invokeLater {
             consolePanel().component.revalidate()
             consolePanel().component.repaint()
-            if (ActiveAgentManager.getFollowAgentFiles(project)) {
+            if (ActiveAgentManager.getFollowAgentFiles(project) && nextMsg != null) {
                 callbacks.requestFocusAfterTurn()
             }
         }
