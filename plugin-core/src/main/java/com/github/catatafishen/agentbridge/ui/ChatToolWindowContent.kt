@@ -3555,6 +3555,7 @@ class ChatToolWindowContent(
     fun getComponent(): JComponent = rootSplitter
 
     private fun resetSessionState() {
+        if (!::promptOrchestrator.isInitialized) return
         promptOrchestrator.currentSessionId = null
         promptOrchestrator.conversationSummaryInjected = false
         billing.billingCycleStartUsed = -1
