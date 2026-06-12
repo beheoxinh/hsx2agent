@@ -320,6 +320,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setBuiltIn(true);
         p.setTransportType(TransportType.ACP);
         p.setBinaryName(OPENCODE_PROFILE_ID);
+        p.setAlternateNames(List.of("opencode-ai"));
         p.setInstallHint("Install with: npm i -g opencode-ai");
         p.setInstallUrl("https://opencode.ai/docs");
         return p;

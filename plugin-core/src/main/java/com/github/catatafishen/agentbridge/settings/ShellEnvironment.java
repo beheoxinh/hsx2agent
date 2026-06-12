@@ -67,50 +67,27 @@ public class ShellEnvironment {
     @NotNull
     private static Map<String, String> captureUnixEnvironment() {
         try {
-            String userShell = System.getenv("SHELL");
-            if (userShell == null || userShell.isBlank()) {
-                userShell = "/bin/sh";
-            }
-
-            // Run a login shell to pick up /etc/profile and ~/.bash_profile / ~/.profile.
-            // Then ALSO source well-known version-manager init scripts directly, because:
-            // - ~/.bashrc is NOT sourced by bash login shells on Linux (only by interactive shells)
-            // - ~/.bashrc often has "case $- in *i*) ;; *) return ;;" which skips nvm/sdkman init
-            //   even if sourced explicitly
-            // - nvm.sh and sdkman-init.sh are designed to be sourced without interactive guards
+            String userShell = resolveCaptureShell();
             String home = SystemProperties.getUserHome();
             String command = buildEnvCaptureCommand(home);
 
-            ProcessBuilder pb = new ProcessBuilder(userShell, "-l", "-c", command);
-            pb.redirectErrorStream(false);
-
-            Process process = pb.start();
-            Map<String, String> env = new HashMap<>();
-
-            try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    int idx = line.indexOf('=');
-                    if (idx > 0) {
-                        env.put(line.substring(0, idx), line.substring(idx + 1));
-                    }
-                }
+            // Phase 1: login shell with all known version-manager inits
+            Map<String, String> env = runShellCapture(userShell, "-l", command);
+            if (!env.isEmpty()) {
+                LOG.info("Captured shell environment with PATH: " + env.get("PATH"));
+                return Collections.unmodifiableMap(env);
             }
 
-            boolean finished = process.waitFor(5, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                LOG.warn("Shell environment capture timed out");
+            // Phase 2: same shell without -l flag (some systems lack login shell support)
+            LOG.warn("Login shell capture returned empty, retrying without -l");
+            env = runShellCapture(userShell, "", command);
+            if (!env.isEmpty()) {
+                LOG.info("Fallback capture succeeded (no -l) with PATH: " + env.get("PATH"));
+                return Collections.unmodifiableMap(env);
             }
 
-            if (env.isEmpty()) {
-                LOG.warn("Failed to capture shell environment, using system environment");
-                return System.getenv();
-            }
-
-            LOG.info("Captured shell environment with PATH: " + env.get("PATH"));
-            return Collections.unmodifiableMap(env);
+            LOG.warn("Failed to capture shell environment, using system environment");
+            return System.getenv();
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -122,19 +99,86 @@ public class ShellEnvironment {
         }
     }
 
+    @NotNull
+    private static Map<String, String> runShellCapture(
+        @NotNull String shell, @NotNull String shellFlag, @NotNull String command
+    ) throws Exception {
+        java.util.List<String> cmd = new java.util.ArrayList<>();
+        cmd.add(shell);
+        if (!shellFlag.isEmpty()) {
+            String[] flags = shellFlag.trim().split("\\s+");
+            java.util.Collections.addAll(cmd, flags);
+        }
+        cmd.add("-c");
+        cmd.add(command);
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.redirectErrorStream(true);
+
+        Process process = pb.start();
+        Map<String, String> env = new HashMap<>();
+
+        try (BufferedReader reader = new BufferedReader(
+            new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                int idx = line.indexOf('=');
+                if (idx > 0) {
+                    env.put(line.substring(0, idx), line.substring(idx + 1));
+                }
+            }
+        }
+
+        boolean finished = process.waitFor(10, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            LOG.warn("Shell capture timed out after 10s for: " + String.join(" ", cmd));
+        }
+
+        return env;
+    }
+
+    /**
+     * Resolve the shell to use for environment capture.
+     * Prefers the user's actual login shell, then IntelliJ's terminal shell, then /bin/sh.
+     */
+    @NotNull
+    private static String resolveCaptureShell() {
+        String shell = System.getenv("SHELL");
+        if (shell != null && !shell.isBlank() && new java.io.File(shell).canExecute()) {
+            return shell;
+        }
+        return "/bin/bash";
+    }
+
     /**
      * Builds a shell command that sources well-known version manager init scripts
-     * (nvm, sdkman, cargo, pyenv, etc.) before printing the environment.
+     * (nvm, sdkman, cargo, pyenv, mise, etc.) before printing the environment.
      * These scripts are safe to source in non-interactive shells — unlike ~/.bashrc.
+     *
+     * <p>Also ensures {@code ~/.local/bin} is on PATH since many modern tools
+     * (mise, pip --user, cargo, etc.) install there.
      */
     @NotNull
     private static String buildEnvCaptureCommand(@NotNull String home) {
-        // Each line: source the script if it exists, silently ignore errors
+        String lb = home + "/.local/bin";
         return "{ "
+            // Ensure ~/.local/bin is on PATH (needed for mise, pip --user, etc.)
+            + "case \":$PATH:\" in *:\"" + lb + "\":*) ;; *) export PATH=\"" + lb + ":$PATH\" ;; esac; "
+            // nvm
             + "[ -s '" + home + "/.nvm/nvm.sh' ] && . '" + home + "/.nvm/nvm.sh' 2>/dev/null; "
+            // sdkman
             + "[ -s '" + home + "/.sdkman/bin/sdkman-init.sh' ] && . '" + home + "/.sdkman/bin/sdkman-init.sh' 2>/dev/null; "
+            // cargo
             + "[ -s '" + home + "/.cargo/env' ] && . '" + home + "/.cargo/env' 2>/dev/null; "
+            // pyenv
             + "[ -f '" + home + "/.pyenv/bin/pyenv' ] && export PATH='" + home + "/.pyenv/bin:$PATH' 2>/dev/null; "
+            // mise (rtx successor) — activate via shims or eval hook
+            + "if command -v mise >/dev/null 2>&1; then "
+            +   "eval \"$(mise activate bash 2>/dev/null)\" 2>/dev/null; "
+            + "elif [ -x '" + lb + "/mise' ]; then "
+            +   "eval \"$('" + lb + "/mise' activate bash 2>/dev/null)\" 2>/dev/null; "
+            + "fi; "
             + "env 2>/dev/null; }";
     }
 
