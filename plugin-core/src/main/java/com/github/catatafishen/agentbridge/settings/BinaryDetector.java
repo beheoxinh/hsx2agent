@@ -50,18 +50,37 @@ public class BinaryDetector {
 
     @Nullable
     private static String tryDetectBinary(@NotNull String binaryName) {
+        // Phase 1: command -v via shell (fast, relies on subprocess PATH)
         List<String> cmd = isWindows()
             ? List.of("cmd.exe", "/c", binaryName + VERSION_FLAG)
             : List.of("sh", "-c", "command -v " + binaryName + " >/dev/null && " + binaryName + VERSION_FLAG);
 
         String output = runCommand(cmd, 5);
-        if (output == null) return null;
-
-        String version = parseVersion(output);
-        if (version != null) {
-            LOG.info("Detected " + binaryName + " version: " + version);
+        if (output != null) {
+            String version = parseVersion(output);
+            if (version != null) {
+                LOG.info("Detected " + binaryName + " version: " + version);
+            }
+            return version;
         }
-        return version;
+
+        // Phase 2: try each path from findAllBinaryPaths (handles mise, custom prefixes, etc.)
+        for (String path : findAllBinaryPaths(binaryName)) {
+            output = runCommand(
+                isWindows()
+                    ? List.of("cmd.exe", "/c", path + VERSION_FLAG)
+                    : List.of("sh", "-c", path + VERSION_FLAG),
+                5
+            );
+            if (output == null) continue;
+            String version = parseVersion(output);
+            if (version != null) {
+                LOG.info("Detected " + binaryName + " version: " + version + " at " + path);
+                return version;
+            }
+        }
+
+        return null;
     }
 
     /**

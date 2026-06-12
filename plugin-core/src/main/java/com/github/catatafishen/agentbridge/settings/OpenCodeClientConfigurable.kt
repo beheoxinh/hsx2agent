@@ -119,9 +119,15 @@ class OpenCodeClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project)
         statusLabel.text = "Checking..."
         statusLabel.foreground = UIUtil.getLabelForeground()
         ApplicationManager.getApplication().executeOnPooledThread {
-            val version = AcpClientBinaryResolver(AGENT_ID, AGENT_ID).detectVersion()
+            val resolver = AcpClientBinaryResolver(AGENT_ID, AGENT_ID)
+            val version = resolver.detectVersion()
+            val path = if (version != null) resolver.resolve() else null
             ApplicationManager.getApplication().invokeLater {
-                if (version != null) {
+                if (version != null && path != null) {
+                    AgentProfileManager.getInstance().saveBinaryPath(AGENT_ID, path)
+                    statusLabel.text = "✓ OpenCode found — $version at $path"
+                    statusLabel.foreground = JBColor(0x008000, 0x4EC94E)
+                } else if (version != null) {
                     statusLabel.text = "✓ OpenCode found — $version"
                     statusLabel.foreground = JBColor(0x008000, 0x4EC94E)
                 } else {
