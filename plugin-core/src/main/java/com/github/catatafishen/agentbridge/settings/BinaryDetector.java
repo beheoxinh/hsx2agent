@@ -127,6 +127,7 @@ public class BinaryDetector {
         if (!isWindows()) {
             results.addAll(findInCommonSystemLocations(binaryName));
             results.addAll(findUsingNativeTools(binaryName));
+            results.addAll(findUsingMise(binaryName));
         }
 
         // Deduplicate results by canonical path
@@ -198,6 +199,42 @@ public class BinaryDetector {
         }
 
         collectFromDirs(commonDirs, binaryName, results);
+        return results;
+    }
+
+    @NotNull
+    private static List<String> findUsingMise(@NotNull String binaryName) {
+        List<String> results = new java.util.ArrayList<>();
+        if (isWindows()) return results;
+
+        // mise bin-paths returns versioned install directories managed by mise.
+        // Works directly without needing mise activate — the raw bin-paths contain actual binaries.
+        // Try common mise install locations since mise may not be on the subprocess PATH.
+        String home = System.getProperty("user.home");
+        String[] miseCandidates = {
+            home + "/.local/bin/mise",
+            home + "/.local/share/mise/mise",
+            home + "/.config/mise/mise",
+            "/usr/local/bin/mise",
+            "/opt/mise/bin/mise",
+        };
+
+        for (String misePath : miseCandidates) {
+            if (!new File(misePath).canExecute()) continue;
+            String output = runCommand(List.of(misePath, "bin-paths"), 3);
+            if (output == null || output.isBlank()) continue;
+
+            for (String binDir : output.split("\n")) {
+                String dir = binDir.trim();
+                if (dir.isEmpty()) continue;
+                File f = new File(dir, binaryName);
+                if (f.isFile()) {
+                    results.add(f.getAbsolutePath());
+                }
+            }
+            break;
+        }
+
         return results;
     }
 
