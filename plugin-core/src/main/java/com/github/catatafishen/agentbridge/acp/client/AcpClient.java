@@ -805,6 +805,13 @@ public abstract class AcpClient extends AbstractAgentClient {
             return gson.fromJson(result, PromptResponse.class);
         } catch (InterruptedException e) {
             if (future != null) future.cancel(true);
+            if (currentSessionId != null) {
+                try {
+                    cancelSession(currentSessionId);
+                } catch (Exception cancelEx) {
+                    LOG.warn(displayName() + ": failed to cancel session after interrupt", cancelEx);
+                }
+            }
             try {
                 // Small sleep to let the backend settle after cancellation before releasing the lock
                 TimeUnit.MILLISECONDS.sleep(500);

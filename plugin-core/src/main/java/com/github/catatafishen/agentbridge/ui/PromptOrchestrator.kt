@@ -193,6 +193,15 @@ class PromptOrchestrator(
             } catch (_: Exception) {
             }
         }
+        // Give the cancel notification time to reach the agent before interrupting,
+        // so the agent processes session/cancel cleanly rather than dying mid-turn.
+        if (thread != null && thread.isAlive) {
+            try {
+                Thread.sleep(100)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
         thread?.interrupt()
         consolePanel().cancelAllRunning()
         consolePanel().addErrorEntry("Stopped by user")
