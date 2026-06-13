@@ -333,6 +333,13 @@ public abstract class AcpClient extends AbstractAgentClient {
     @Override
     public final void stop() {
         try {
+            if (currentSessionId != null) {
+                try {
+                    cancelSession(currentSessionId);
+                } catch (Exception e) {
+                    LOG.warn(displayName() + ": failed to cancel session during stop", e);
+                }
+            }
             transport.stop();
         } catch (Exception e) {
             LOG.warn("Transport stop encountered an error; proceeding to kill process", e);
