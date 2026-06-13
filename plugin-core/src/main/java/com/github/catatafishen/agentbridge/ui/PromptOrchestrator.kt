@@ -718,6 +718,17 @@ class PromptOrchestrator(
         currentSessionId = null
         callbacks.updateSessionInfo()
 
+        // Restart the agent process to clear any in-memory corruption (e.g. OpenCode's
+        // history compaction state). A fresh process + session/new avoids carrying the
+        // broken state into the next turn.
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                agentManager.restart()
+            } catch (ex: Exception) {
+                log.warn("Failed to restart agent after session corruption", ex)
+            }
+        }
+
         consolePanel().cancelAllRunning()
         consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
         callbacks.appendNewEntries()
