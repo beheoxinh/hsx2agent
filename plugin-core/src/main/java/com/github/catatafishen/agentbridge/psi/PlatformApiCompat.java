@@ -209,7 +209,16 @@ public final class PlatformApiCompat {
             ApplicationManager.getApplication().executeOnPooledThread(
                 () -> ApplicationManager.getApplication().runReadAction(
                     (Computable<Function<? super FileEditor, ? extends JComponent>>)
-                        () -> provider.collectNotificationData(project, vf)));
+                        () -> {
+                            try {
+                                return provider.collectNotificationData(project, vf);
+                            } catch (Exception e) {
+                                // Guard against providers that throw (e.g.
+                                // TypeScriptServiceOutOfMemoryEditorNotificationProvider calls
+                                // runBlockingCancellable without a ProgressIndicator on pooled threads)
+                                return null;
+                            }
+                        }));
         try {
             Function<? super FileEditor, ? extends JComponent> factory =
                 future.get(NOTIFICATION_PROVIDER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
