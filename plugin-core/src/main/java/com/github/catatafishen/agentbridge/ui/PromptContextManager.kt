@@ -51,11 +51,13 @@ class PromptContextManager(
     // ── Inline chip CRUD ──────────────────────────────────────────────
 
     /** Insert a U+FFFC placeholder at the caret and attach an inlay chip for the given context item. */
-    fun insertInlineChip(editor: EditorEx, data: ContextItemData) {
+    fun insertInlineChip(editor: EditorEx, data: ContextItemData, ownLine: Boolean = true) {
         com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
             val offset = editor.caretModel.offset
-            editor.document.insertString(offset, ORC.toString())
-            editor.caretModel.moveToOffset(offset + 1)
+            val prefix = if (ownLine && offset > 0) "\n" else ""
+            val suffix = if (ownLine) "\n" else ""
+            editor.document.insertString(offset, "$prefix${ORC}$suffix")
+            editor.caretModel.moveToOffset(offset + prefix.length + 1 + suffix.length)
         }
         val inlayOffset = editor.caretModel.offset - 1
         editor.inlayModel.addInlineElement(inlayOffset, true, ContextChipRenderer(data))
