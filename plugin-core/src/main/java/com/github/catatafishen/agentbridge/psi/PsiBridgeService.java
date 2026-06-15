@@ -311,7 +311,10 @@ public final class PsiBridgeService implements Disposable {
         // in-flight keystrokes leak into the editor before the 150ms delayed alarm
         // restores focus. User-initiated focus changes (mouse clicks, tab key) are
         // respected by the guard — only programmatic changes are reclaimed.
-        FocusGuard focusGuard = chatWasActive ? FocusGuard.install(project) : null;
+        // When Follow Agent is off, the agent should not perform any navigation that
+        // could steal focus, so the guard is unnecessary.
+        FocusGuard focusGuard = (chatWasActive && ToolLayerSettings.getInstance(project).getFollowAgentFiles())
+            ? FocusGuard.install(project) : null;
         boolean requiresSync = isSyncCategory(categoryName);
         boolean needsGlobalLock = def.needsWriteLock();
         boolean isWriteOp = needsGlobalLock && isWriteToolName(toolName);
@@ -482,7 +485,9 @@ public final class PsiBridgeService implements Disposable {
             // Restore focus only if chat was active when the tool STARTED *and* is still active
             // now. If the user switched away during execution, they made an explicit navigation
             // decision — honouring chatWasActive alone would steal focus from wherever they went.
-            if (req.chatWasActive() && isChatToolWindowActive(project)) {
+            // Also gate by Follow Agent: when disabled, the agent should not manipulate focus at all.
+            if (req.chatWasActive() && isChatToolWindowActive(project)
+                && ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
                 fireFocusRestoreEvent();
             }
         }
