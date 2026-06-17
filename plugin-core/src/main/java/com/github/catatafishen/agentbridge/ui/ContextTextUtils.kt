@@ -14,6 +14,13 @@ object ContextTextUtils {
     /**
      * Replace each ORC in [rawText] with a markdown link to the corresponding context item,
      * e.g. `[AuthLoginService.kt:116-170](file:///path/to/AuthLoginService.kt)`.
+     *
+     * Each file reference is placed on its own line: a newline is added before it
+     * unless the preceding character is already `\n` or the ref is at the start,
+     * and a newline is added after it unless the following character is already `\n`
+     * or the ref is at the end. This ensures the reference is always isolated even
+     * when the user edits away the newlines that [PromptContextManager.insertInlineChip]
+     * inserted.
      */
     fun replaceOrcsWithTextRefs(rawText: String, items: List<ContextItemData>): String {
         if (items.isEmpty()) return rawText.replace(ORC.toString(), "").trim()
@@ -23,12 +30,28 @@ object ContextTextUtils {
             if (ch == ORC && idx < items.size) {
                 val item = items[idx++]
                 val fileUrl = java.io.File(item.path).toURI().toString()
-                sb.append('[').append(item.name).append("](").append(fileUrl).append(')')
+                val ref = "[${item.name}]($fileUrl)"
+                val needNlBefore = sb.isNotEmpty() && sb.last() != '\n'
+                // Don't append trailing newline yet — peek at the next raw char instead.
+                // We compute needNlAfter lazily after building the full string.
+                if (needNlBefore) sb.append('\n')
+                sb.append(ref)
             } else {
                 sb.append(ch)
             }
         }
-        return sb.toString().trim()
+
+        // Second pass: ensure each file reference is followed by a newline unless
+        // already at end-of-string or followed by \n.
+        // We match markdown links to find ref boundaries within the builder.
+        val result = sb.toString()
+        val refRegex = Regex("\\[[^]]+]\\([^)]+\\)")
+        return refRegex.replace(result) { match ->
+            val ref = match.value
+            val afterIdx = match.range.last + 1
+            val needNlAfter = afterIdx < result.length && result[afterIdx] != '\n'
+            if (needNlAfter) "$ref\n" else ref
+        }.trim()
     }
 
     /**

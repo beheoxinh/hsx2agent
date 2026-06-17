@@ -53,12 +53,25 @@ class PromptContextManager(
     /** Insert a U+FFFC placeholder at the caret and attach an inlay chip for the given context item. */
     fun insertInlineChip(editor: EditorEx, data: ContextItemData, ownLine: Boolean = true) {
         com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
-            val offset = editor.caretModel.offset
-            val text = editor.document.charsSequence
-            val hasNewlineBefore = offset > 0 && text[offset - 1] == '\n'
+            val doc = editor.document
+            val sel = editor.selectionModel
+            val selStart = sel.selectionStart
+            val selEnd = sel.selectionEnd
+            val hasSelection = selStart < selEnd
+
+            // Delete selection first so the chip replaces the selected text
+            if (hasSelection) doc.deleteString(selStart, selEnd)
+
+            val text = doc.charsSequence
+            val offset = if (hasSelection) selStart else editor.caretModel.offset
+            val charBefore = if (offset > 0) text[offset - 1] else null
+            val charAfter = if (offset < doc.textLength) text[offset] else null
+            val hasNewlineBefore = charBefore == '\n'
+            val hasNewlineAfter = charAfter == '\n'
             val prefix = if (ownLine && offset > 0 && !hasNewlineBefore) "\n" else ""
-            val suffix = if (ownLine) "\n" else ""
-            editor.document.insertString(offset, "$prefix${ORC}$suffix")
+            val suffix = if (ownLine && !hasNewlineAfter) "\n" else ""
+
+            doc.insertString(offset, "$prefix${ORC}$suffix")
             editor.caretModel.moveToOffset(offset + prefix.length + 1 + suffix.length)
         }
         val inlayOffset = editor.caretModel.offset - 1
