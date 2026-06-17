@@ -274,7 +274,12 @@ public class WriteFileTool extends FileTool {
                 }
             }
             if (vf != null) {
-                com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments();
+                Document newDoc = FileDocumentManager.getInstance().getDocument(vf);
+                if (newDoc != null) {
+                    PsiDocumentManager.getInstance(project).commitDocument(newDoc);
+                } else {
+                    PsiDocumentManager.getInstance(project).commitAllDocuments();
+                }
             }
             CodeChangeTracker.recordChange(CodeChangeTracker.countLines(content), 0);
         });
@@ -714,13 +719,21 @@ public class WriteFileTool extends FileTool {
     }
 
     /**
-     * Commits PSI documents and marks the file as dirty so IntelliJ's VFS
-     * and file watcher pick up the change immediately. Without this, the
-     * editor buffer, VFS cache, and disk can stay out of sync — subsequent
-     * writes (e.g. from external tools) see stale content.
+     * Commits only the PSI document for the modified file and marks it as dirty.
+     *
+     * <p>During an agent turn, this is intentionally scoped to a single file —
+     * full {@code commitAllDocuments} + VFS root refresh is deferred to
+     * {@code PromptOrchestrator.handlePromptCompletion()} via
+     * {@link com.github.catatafishen.agentbridge.psi.PsiBridgeService#flushPendingAutoFormat()}.
+     * This prevents per-tool-call EDT freezes from cascading PSI commits.
      */
     private void refreshVfsAfterWrite(@NotNull VirtualFile vf) {
-        PsiDocumentManager.getInstance(project).commitAllDocuments();
+        Document doc = FileDocumentManager.getInstance().getCachedDocument(vf);
+        if (doc != null) {
+            PsiDocumentManager.getInstance(project).commitDocument(doc);
+        } else {
+            PsiDocumentManager.getInstance(project).commitAllDocuments();
+        }
         VfsUtil.markDirtyAndRefresh(false, true, true, vf);
     }
 }

@@ -82,6 +82,8 @@ public class ReadFileTool extends FileTool {
         int[] effectiveRange = new int[]{startLine, endLine};
 
         // Refresh VFS outside ReadAction — refreshAndFindFileByPath needs a write lock.
+        // During a turn, commit only the PSI for this file, not all documents.
+        // Full commitAllDocuments + VFS root refresh is deferred to turn end.
         VirtualFile preResolved = com.intellij.openapi.application.ReadAction.compute(
             () -> resolveVirtualFile(pathStr));
         if (preResolved != null) {
@@ -91,7 +93,13 @@ public class ReadFileTool extends FileTool {
                 VirtualFile refreshed = LocalFileSystem.getInstance()
                     .refreshAndFindFileByPath(resolvedPath);
                 if (refreshed != null) {
-                    PsiDocumentManager.getInstance(project).commitAllDocuments();
+                    Document refreshedDoc = FileDocumentManager.getInstance()
+                        .getCachedDocument(refreshed);
+                    if (refreshedDoc != null) {
+                        PsiDocumentManager.getInstance(project).commitDocument(refreshedDoc);
+                    } else {
+                        PsiDocumentManager.getInstance(project).commitAllDocuments();
+                    }
                 }
             });
         }
