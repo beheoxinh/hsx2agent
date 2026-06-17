@@ -54,7 +54,9 @@ class PromptContextManager(
     fun insertInlineChip(editor: EditorEx, data: ContextItemData, ownLine: Boolean = true) {
         com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
             val offset = editor.caretModel.offset
-            val prefix = if (ownLine && offset > 0) "\n" else ""
+            val text = editor.document.charsSequence
+            val hasNewlineBefore = offset > 0 && text[offset - 1] == '\n'
+            val prefix = if (ownLine && offset > 0 && !hasNewlineBefore) "\n" else ""
             val suffix = if (ownLine) "\n" else ""
             editor.document.insertString(offset, "$prefix${ORC}$suffix")
             editor.caretModel.moveToOffset(offset + prefix.length + 1 + suffix.length)
