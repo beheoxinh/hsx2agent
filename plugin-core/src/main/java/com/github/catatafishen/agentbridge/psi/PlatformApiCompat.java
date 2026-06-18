@@ -207,18 +207,21 @@ public final class PlatformApiCompat {
         @NotNull Project project, @NotNull VirtualFile vf, @NotNull FileEditor editor) {
         Future<Function<? super FileEditor, ? extends JComponent>> future =
             ApplicationManager.getApplication().executeOnPooledThread(
-                () -> ApplicationManager.getApplication().runReadAction(
+                () -> com.intellij.openapi.progress.ProgressManager.getInstance().runProcess(
                     (Computable<Function<? super FileEditor, ? extends JComponent>>)
-                        () -> {
-                            try {
-                                return provider.collectNotificationData(project, vf);
-                            } catch (Exception e) {
-                                // Guard against providers that throw (e.g.
-                                // TypeScriptServiceOutOfMemoryEditorNotificationProvider calls
-                                // runBlockingCancellable without a ProgressIndicator on pooled threads)
-                                return null;
-                            }
-                        }));
+                        () -> ApplicationManager.getApplication().runReadAction(
+                            (Computable<Function<? super FileEditor, ? extends JComponent>>)
+                                () -> {
+                                    try {
+                                        return provider.collectNotificationData(project, vf);
+                                    } catch (Exception e) {
+                                        // Guard against providers that throw (e.g.
+                                        // TypeScriptServiceOutOfMemoryEditorNotificationProvider calls
+                                        // runBlockingCancellable without a ProgressIndicator on pooled threads)
+                                        return null;
+                                    }
+                                }),
+                    new com.intellij.openapi.progress.EmptyProgressIndicator()));
         try {
             Function<? super FileEditor, ? extends JComponent> factory =
                 future.get(NOTIFICATION_PROVIDER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
