@@ -177,7 +177,7 @@ class AutoCommitToggleAction(private val project: Project) : ToggleAction(
 class TimeoutWarningToggleAction(private val project: Project) : ToggleAction(
     "Timeout Warning",
     "Show a dialog when a tool call exceeds 60 seconds, allowing you to extend or cancel it",
-    AllIcons.General.Warning
+    AllIcons.Actions.StopWatch
 ), CustomComponentAction {
 
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
