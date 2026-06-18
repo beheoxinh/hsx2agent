@@ -185,6 +185,19 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         myState.autoCommit = enabled;
     }
 
+    /**
+     * When true (default), a timeout warning dialog is shown when a tool call
+     * runs longer than the initial timeout period, letting the user extend the
+     * wait or cancel. When false, the tool call silently continues waiting.
+     */
+    public boolean isShowTimeoutDialog() {
+        return myState.showTimeoutDialog;
+    }
+
+    public void setShowTimeoutDialog(boolean show) {
+        myState.showTimeoutDialog = show;
+    }
+
     public boolean isSuggestGitInit() {
         return myState.suggestGitInit;
     }
@@ -400,6 +413,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private boolean autoApproveAgentEdits = false;
         private boolean autoCleanReviewOnNewPrompt = false;
         private boolean autoCommit = false;
+        private boolean showTimeoutDialog = true;
         private boolean suggestGitInit = true;
         private boolean showEditorHighlights = true;
         private boolean dbMigrationAllowed = false;

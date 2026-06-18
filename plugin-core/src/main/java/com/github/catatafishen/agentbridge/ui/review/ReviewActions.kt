@@ -174,6 +174,46 @@ class AutoCommitToggleAction(private val project: Project) : ToggleAction(
     }
 }
 
+class TimeoutWarningToggleAction(private val project: Project) : ToggleAction(
+    "Timeout Warning",
+    "Show a dialog when a tool call exceeds 60 seconds, allowing you to extend or cancel it",
+    AllIcons.General.Warning
+), CustomComponentAction {
+
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun isSelected(e: AnActionEvent): Boolean {
+        return McpServerSettings.getInstance(project).isShowTimeoutDialog
+    }
+
+    override fun setSelected(e: AnActionEvent, state: Boolean) {
+        McpServerSettings.getInstance(project).isShowTimeoutDialog = state
+    }
+
+    override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
+        return object : ActionButton(this, presentation, place, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE) {
+            override fun paintButtonLook(g: Graphics) {
+                if (isSelected) {
+                    val g2 = g.create() as Graphics2D
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                    g2.color = APPROVED_BG
+                    val arc = JBUI.scale(4)
+                    g2.fillRoundRect(2, 2, width - 4, height - 4, arc, arc)
+                    g2.dispose()
+                    val icon = presentation.icon
+                    if (icon != null) {
+                        val x = (width - icon.iconWidth) / 2
+                        val y = (height - icon.iconHeight) / 2
+                        icon.paintIcon(this, g, x, y)
+                    }
+                } else {
+                    super.paintButtonLook(g)
+                }
+            }
+        }
+    }
+}
+
 class ShowEditorHighlightsToggleAction(private val project: Project) : ToggleAction(
     "Editor Highlights",
     "Paint agent-edit background colors in the editor. Disable when git diff colors are sufficient",

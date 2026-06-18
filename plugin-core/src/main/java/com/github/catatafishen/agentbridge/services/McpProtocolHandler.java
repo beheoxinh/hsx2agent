@@ -760,6 +760,11 @@ public final class McpProtocolHandler {
                                     AtomicReference<Thread> workerThread,
                                     String toolName, @Nullable String displayName,
                                     int elapsedSeconds) {
+        // If the user disabled timeout warnings, wait indefinitely without showing a dialog.
+        if (!McpServerSettings.getInstance(project).isShowTimeoutDialog()) {
+            return getFutureResult(future, workerThread, toolName, "extended wait (timeout warnings disabled)");
+        }
+
         // If another concurrent tool already has a dialog showing, skip ours and wait indefinitely
         // to avoid stacking modal dialogs on the user.
         if (!timeoutDialogActive.compareAndSet(false, true)) {

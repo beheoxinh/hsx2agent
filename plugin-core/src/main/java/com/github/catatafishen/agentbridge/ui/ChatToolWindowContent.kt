@@ -356,6 +356,7 @@ class ChatToolWindowContent(
             com.github.catatafishen.agentbridge.ui.review.AutoCleanOnNewPromptToggleAction(project),
             Separator.create(),
             com.github.catatafishen.agentbridge.ui.review.AutoCommitToggleAction(project),
+            com.github.catatafishen.agentbridge.ui.review.TimeoutWarningToggleAction(project),
             SidePanelToggleAction(),
             Separator.create(),
             SettingsAction()
