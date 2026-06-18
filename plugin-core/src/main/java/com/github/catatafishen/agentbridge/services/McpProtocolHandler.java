@@ -78,7 +78,6 @@ public final class McpProtocolHandler {
     private static final int MAX_RESULT_CHARS = 80_000;
     private static final int RESOURCE_PAGE_SIZE = 200;
     private static final int RESOURCE_NOT_FOUND_ERROR = -32002;
-    private static final int INITIAL_TIMEOUT_SECONDS = 60;
 
     private static final String SERVER_NAME = "agentbridge";
     private static final String SERVER_VERSION = BuildInfo.getVersion();
@@ -738,7 +737,8 @@ public final class McpProtocolHandler {
         // prompt_user, git_commit, and git_push can block for up to 120s waiting for the user.
         // We wait 120s before showing the "Still Running" dialog for these tools.
         boolean isInteractive = "prompt_user".equals(toolName) || "git_commit".equals(toolName) || "git_push".equals(toolName);
-        int timeoutSeconds = isInteractive ? 120 : INITIAL_TIMEOUT_SECONDS;
+        int configuredTimeout = McpServerSettings.getInstance(project).getToolTimeoutSeconds();
+        int timeoutSeconds = isInteractive ? Math.max(configuredTimeout, 120) : configuredTimeout;
 
         try {
             return future.get(timeoutSeconds, TimeUnit.SECONDS);

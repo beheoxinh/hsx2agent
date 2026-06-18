@@ -74,6 +74,25 @@ class McpGroupConfigurable(private val project: Project) :
         }
         separator()
         row {
+            text("<b>Tool Call Timeout</b>")
+        }
+        row("Timeout warning:") {
+            checkBox("Show dialog when a tool call runs long")
+                .comment("When disabled, the tool call silently continues waiting")
+                .bindSelected(
+                    { settings.isShowTimeoutDialog },
+                    { settings.isShowTimeoutDialog = it }
+                )
+        }
+        row("Initial timeout (seconds):") {
+            spinner(10..600, 5)
+                .bindIntValue(
+                    { settings.toolTimeoutSeconds },
+                    { settings.toolTimeoutSeconds = it }
+                )
+        }
+        separator()
+        row {
             text("<b>Git Tool Policy</b>")
         }
         row("Policy:") {

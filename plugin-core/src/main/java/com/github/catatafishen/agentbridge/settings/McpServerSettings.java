@@ -198,6 +198,19 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         myState.showTimeoutDialog = show;
     }
 
+    /**
+     * Seconds before a tool call triggers the timeout warning dialog.
+     * Default is 60. Minimum is 10 seconds. Only applies when
+     * {@link #isShowTimeoutDialog()} is true.
+     */
+    public int getToolTimeoutSeconds() {
+        return myState.toolTimeoutSeconds;
+    }
+
+    public void setToolTimeoutSeconds(int seconds) {
+        myState.toolTimeoutSeconds = Math.max(10, seconds);
+    }
+
     public boolean isSuggestGitInit() {
         return myState.suggestGitInit;
     }
@@ -414,6 +427,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private boolean autoCleanReviewOnNewPrompt = false;
         private boolean autoCommit = false;
         private boolean showTimeoutDialog = true;
+        private int toolTimeoutSeconds = 60;
         private boolean suggestGitInit = true;
         private boolean showEditorHighlights = true;
         private boolean dbMigrationAllowed = false;
