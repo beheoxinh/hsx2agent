@@ -150,6 +150,14 @@ public abstract class AcpClient extends AbstractAgentClient {
      */
     private volatile boolean restoringHistory = false;
     /**
+     * True when models were extracted from {@code session/new} configOptions
+     * (id="model") instead of the standard ACP {@code models} field. When true,
+     * model changes MUST go through {@code session/set_config_option} with
+     * configId="model" rather than {@code session/set_model} — the agent (e.g.
+     * OpenCode) only respects config-option-based model changes.
+     */
+    private boolean modelsFromConfigOptions = false;
+    /**
      * Tracks pending {@code session/request_permission} request IDs so we can respond with
      * {@code {outcome: "cancelled"}} when {@link #cancelSession} is called.
      * Per ACP spec, the Client MUST respond to all pending permission requests with the
@@ -355,6 +363,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             currentModelId = null;
             currentAgentSlug = null;
             availableConfigOptions.clear();
+            modelsFromConfigOptions = false;
             pendingPermissionRequests.clear();
             terminalHandler.releaseAll();
             loadedSessionHistory = null;
@@ -507,6 +516,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             if (!"model".equals(opt.id())) continue;
             if (opt.values() == null || opt.values().isEmpty()) continue;
 
+            modelsFromConfigOptions = true;
             List<Model> extracted = new ArrayList<>();
             for (NewSessionResponse.SessionConfigOptionValue val : opt.values()) {
                 extracted.add(new Model(val.id(), val.label(), null, null));
@@ -1082,6 +1092,12 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     @Override
     public final void setModel(String sessionId, String modelId) {
+        if (modelsFromConfigOptions) {
+            // Agents (e.g. OpenCode) that expose models via configOptions
+            // require session/set_config_option instead of session/set_model.
+            setConfigOption(sessionId, "model", modelId);
+            return;
+        }
         JsonObject params = new JsonObject();
         params.addProperty(KEY_SESSION_ID, sessionId);
         params.addProperty("modelId", modelId);
