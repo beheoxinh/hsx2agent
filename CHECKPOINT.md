@@ -1,138 +1,138 @@
-# CHECKPOINT: PSI-powered Code Intelligence Tools
+# Session Lifecycle Audit
 
-## Objective
+## Current Flow Analysis
 
-Add 3 new MCP tools inspired by CodeGraph's one-shot context approach,
-implemented natively via IntelliJ PSI (compile-time accurate, real-time editor buffer, zero external deps).
+### Session ID Management
+- Session UUID stored in `.agent-work/sessions/.current-session-id`
+- `ConversationService.getCurrentSessionId()`: reads file or generates new UUID
+- `ConversationService.resetCurrentSessionId()`: deletes file -> next call generates fresh UUID
+- `GenericSettings.resumeSessionId`: stored per-profile in PropertiesComponent, sent to agent via `session/resume`
 
-**Branch:** `feature/unknow-error`
-**Impact:** Reduces AI agent tool calls by ~50-60% for architecture/refactor/trace questions.
-
----
-
-## Tool 1: `build_context` — One-Shot Task Context
-
-**What:** AI describes a task ("how does auth work?") → tool searches symbols, traces relationships,
-reads code snippets → returns a bundled context in 1 call (vs. 5-10 calls today).
-
-**MCP ID:** `build_context`
-**Category:** SEARCH
-**Read-only:** yes
-**Package:** `psi/tools/navigation/BuildContextTool.java`
-
-### Steps:
-
-- [x] 1.1 Create `BuildContextTool.java` extending `NavigationTool`
-- [x] 1.2 Define schema: `task` (required string), `max_symbols` (optional int, default 20), `include_code` (optional
-  bool, default true)
-- [x] 1.3 Implement core logic:
-    - Parse task description → extract keyword tokens (CamelCase priority, stop-word filtering)
-    - Search symbols matching keywords via `PsiSearchHelper`
-    - For each found symbol, collect: file path, line, signature, containing class
-    - If `include_code=true`, read source snippet (capped at 80 lines per symbol)
-    - Trace 1-level callers/callees for top-5 symbols via `ReferencesSearch`
-    - Format output as structured markdown: entry points → related symbols → code blocks
-    - Output budget: 60K chars max
-- [x] 1.4 Register in `NavigationToolFactory.create()`
-- [x] 1.5 Compile check — PASSED
-- [ ] 1.6 Write unit test `BuildContextToolTest.java`
-
----
-
-## Tool 2: `impact_analysis` — Recursive Impact Trace
-
-**What:** "If I change `UserService.validate()`, what breaks?" → recursive `find_references`
-with depth limit, returns full affected symbol chain.
-
-**MCP ID:** `impact_analysis`
-**Category:** SEARCH
-**Read-only:** yes
-**Package:** `psi/tools/navigation/ImpactAnalysisTool.java`
-
-### Steps:
-
-- [x] 2.1 Create `ImpactAnalysisTool.java` extending `NavigationTool`
-- [x] 2.2 Define schema: `symbol` (required), `file` (optional), `line` (optional), `depth` (optional int, default 2,
-  max 5)
-- [x] 2.3 Implement core logic:
-    - Resolve target symbol (FQN mode, file+line mode, or name-search fallback)
-    - BFS through `ReferencesSearch` up to `depth` levels
-    - Track visited set to avoid cycles (max 200 total, max 30 per level)
-    - For each affected symbol: record name, file:line, type, relationship (via ReferenceClassifier)
-    - Count total affected files and symbols
-    - Format as leveled tree grouped by file
-- [x] 2.4 Register in `NavigationToolFactory.create()`
-- [x] 2.5 Compile check — PASSED
-- [ ] 2.6 Write unit test `ImpactAnalysisToolTest.java`
-
----
-
-## Tool 3: `trace_call_path` — Symbol-to-Symbol Call Trace
-
-**What:** "How does `handleRequest` reach `databaseQuery`?" → BFS on call hierarchy to find
-the shortest call chain between two symbols, with code inline.
-
-**MCP ID:** `trace_call_path`
-**Category:** SEARCH
-**Read-only:** yes
-**Package:** `psi/tools/navigation/TraceCallPathTool.java`
-
-### Steps:
-
-- [x] 3.1 Create `TraceCallPathTool.java` extending `NavigationTool`
-- [x] 3.2 Define schema: `from` (required string), `to` (required string), `max_depth` (optional int, default 10, max
-  15), `include_code` (optional bool, default true)
-- [x] 3.3 Implement core logic:
-    - Resolve both `from` and `to` symbols via FQN or name search
-    - BFS from `from`, expand callers via `ReferencesSearch` at each level
-    - Stop when `to` is found or `max_depth` reached (max 50 refs per node)
-    - Reconstruct path via parent map
-    - If `include_code=true`, inline code snippet for each hop (capped at 30 lines)
-    - Format as chain summary + detailed hops with code
-- [x] 3.4 Register in `NavigationToolFactory.create()`
-- [x] 3.5 Compile check — PASSED
-- [ ] 3.6 Write unit test `TraceCallPathToolTest.java`
-
----
-
-## Integration & Verification
-
-- [x] 4.1 All 3 tools registered in `NavigationToolFactory`
-- [ ] 4.2 Manual test: connect agent, invoke each tool with real project
-- [ ] 4.3 Verify tools appear in `tools/list` MCP response
-- [x] 4.4 Commit all tools with descriptive message
-- [x] 4.5 Update CHECKPOINT.md with current status
-
----
-
-## Architecture Notes
-
-### How tools fit into existing codebase:
-
+### Connect Flow
 ```
-PsiBridgeService.init()
-  → NavigationToolFactory.create(project, hasJava)
-    → ... existing tools ...
-    → new BuildContextTool(project)      ← NEW
-    → new ImpactAnalysisTool(project)    ← NEW
-    → new TraceCallPathTool(project)     ← NEW
-  → ToolRegistry.registerAll(allTools)
-  → MCP tools/list exposes them to agents
+AcpConnectPanel.doConnect()
+  -> applySessionChoice(profileId)     // Handle "None"/"Latest"/"Older"
+  -> onConnect(profileId, customCommand)
+
+ChatToolWindowContent.connectToAgent()
+  -> maybe switchAgent()
+  -> getCurrentSessionId()             // Read or generate session UUID
+  -> sessionSwitched = prev != new
+  -> if (sessionSwitched) consolePanel.clear()
+  -> loadModelsAsync()
+    -> buildAndShowChatPanel()
+      -> if (!chatSessionInitialized) restoreConversation()
 ```
 
-### PSI APIs used (all read-only, thread-safe inside ReadAction):
+### Disconnect Flow
+```
+ChatToolWindowContent.disconnectFromAgent()
+  -> resetSessionState()               // null orchestrator sessionId
+  -> chatSessionInitialized = false
+  -> connectPanel.selectFreshSession() // force "None" on next connect
+  -> agentManager.stop()
+```
+**No `consolePanel.clear()`** - old conversation stays in DOM.
 
-- `PsiSearchHelper.processElementsWithWord` — keyword-based symbol search
-- `ReferencesSearch.search` — semantic reference lookup (callers, usages)
-- `PsiTreeUtil.getParentOfType` — container resolution
-- `FileDocumentManager.getDocument` — line number resolution
-- `ToolUtils.classifyElement` — symbol type detection (class/method/field/...)
-- `FqnResolver.resolve` — fully-qualified name resolution
-- `ReferenceClassifier.classifyUsage` — usage type detection (CALL, IMPORT, TYPE_REF...)
+---
 
-### No breaking changes:
+## Issues Found
 
-- All tools are additive (new files only)
-- No modifications to existing tool implementations
-- NavigationToolFactory: 3 lines added at the end of the tool list
-- No new dependencies — uses existing PSI and ToolUtils infrastructure
+### BUG #1: `consolePanel.clear()` never called when reconnecting after disconnect
+
+**Root cause:** `connectToAgent()` at line 472:
+```kotlin
+val sessionSwitched = previousSessionId != null && previousSessionId != newSessionId
+```
+After `disconnectFromAgent()`, `promptOrchestrator.currentSessionId = null` (set by `resetSessionState()`).
+So `previousSessionId = null` -> `sessionSwitched = false` -> `consolePanel.clear()` SKIPPED.
+
+`buildAndShowChatPanel()` calls `restoreConversation()` which loads entries for the **new** session UUID -> finds nothing. But the OLD conversation remains visible in the DOM because `consolePanel.clear()` was never called.
+
+**Fix:** Clear console when `chatSessionInitialized` was false (fresh start) OR when `sessionSwitched` is true.
+
+**File:** `ChatToolWindowContent.kt:459-497`
+
+---
+
+### BUG #2: `disconnectFromAgent()` doesn't clear the console panel UI
+
+**Root cause:** When user disconnects, the UI switches to connect panel card via `cardLayout.show(mainPanel, CARD_CONNECT)`. The old conversation is still in the browser DOM. If user then reconnects with "Latest" session, `restoreConversation()` prepends old entries on top of the still-visible conversation -> DOM gets duplicate entries.
+
+**Fix:** Call `consolePanel.clear()` in `disconnectFromAgent()`.
+
+---
+
+### BUG #3: `archiveConversation()` is a no-op with misleading name
+
+**Root cause:** `ConversationService.archive()` is documented as:
+```java
+// Intentional no-op: the session ID file must survive for restoreConversation() to read.
+```
+Called in `buildAndShowChatPanel()` before every `restoreConversation()`. Since it does nothing, it creates confusion about what session state is being "archived."
+
+**Fix:** Not a functional bug - but the name is misleading. Could remove or implement properly.
+
+---
+
+### BUG #4: `selectFreshSession()` flag consumed before `applySessionChoice`
+
+**Root cause:** `resetConnectButton()` at line 1569-1572:
+```kotlin
+if (forceFreshSession) {
+    sessionCombo.selectedItem = SessionChoice.None
+    forceFreshSession = false
+}
+```
+The flag is consumed when `resetConnectButton()` is called (in `disconnectFromAgent()`). If the user manually selects "Latest" from the combo before clicking Connect, the flag has already been consumed and the manual "Latest" selection is honored. This is **correct behavior** - user's manual override should win.
+
+Not a bug, but worth documenting.
+
+---
+
+### BUG #5: `connectToAgent()` should `restoreConversation` even when same session resumed
+
+After `disconnectFromAgent()`, `chatSessionInitialized = false`. In `connectToAgent()`, if the user picks "Latest" session:
+- `applySessionChoice("Latest")` writes the latest session ID to `.current-session-id`
+- `getCurrentSessionId()` reads it back
+- `previousSessionId = null` (from disconnect), `newSessionId = latestId`
+- `sessionSwitched = null != null && null != latestId` = `false`
+- `consolePanel.clear()` is skipped
+- In `buildAndShowChatPanel()`, `chatSessionInitialized = false` so it enters restore block
+- `restoreConversation()` loads entries for the latest session ID -> restores old conversation
+
+**This part works** because `chatSessionInitialized = false` from disconnect forces restore. The old conversation was never cleared from DOM, so restore prepends entries on top -> **DUPLICATE ENTRIES in DOM**.
+
+---
+
+## Fix Plan
+
+### Fix 1: Clear console panel on disconnect
+
+**File:** `ChatToolWindowContent.kt` - `disconnectFromAgent()` around line 524
+
+Add `consolePanel.clear()` before switching to connect panel.
+
+### Fix 2: Remove stale `sessionSwitched` logic, always clear on reconnect
+
+**File:** `ChatToolWindowContent.kt` - `connectToAgent()` lines 470-477
+
+Replace the complex `sessionSwitched` check with always-clearing the console when reconnecting. Since `disconnectFromAgent()` now also clears, this prevents double-clear.
+
+### Fix 3: Verify `restoreConversation` always shows correct history
+
+After Fix 1 and Fix 2, the flow for "None (fresh session)":
+1. `disconnectFromAgent()` -> console.clear() + chatSessionInitialized=false
+2. `connectToAgent()` -> console.clear() + chatSessionInitialized=false
+3. `buildAndShowChatPanel()` -> new session UUID -> `restoreConversation()` finds no entries -> empty chat
+
+Flow for "Latest" session:
+1. `disconnectFromAgent()` -> console.clear() + chatSessionInitialized=false
+2. `connectToAgent()` -> console.clear() + chatSessionInitialized=false
+3. `applySessionChoice("Latest")` writes old session ID to `.current-session-id`
+4. `buildAndShowChatPanel()` -> old session UUID -> `restoreConversation()` loads history -> correct
+
+---
+
+## Files to Modify
+1. `plugin-core/src/main/java/com/github/catatafishen/agentbridge/ui/ChatToolWindowContent.kt`

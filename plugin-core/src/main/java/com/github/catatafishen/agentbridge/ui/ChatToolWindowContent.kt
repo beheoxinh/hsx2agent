@@ -467,14 +467,13 @@ class ChatToolWindowContent(
         // the listener when the profile changes, so reconnecting to the same profile
         // after a disconnect would leave currentAgent stale.
         conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
-        val previousSessionId = if (::promptOrchestrator.isInitialized) promptOrchestrator.currentSessionId else null
-        val newSessionId = conversationStore.getCurrentSessionId(project.basePath)
-        val sessionSwitched = previousSessionId != null && previousSessionId != newSessionId
         if (::promptOrchestrator.isInitialized) resetSessionState()
-        if (sessionSwitched) {
-            consolePanel.clear()
-            chatSessionInitialized = false
-        }
+        // Always clear the console on (re)connect — the old conversation was either
+        // already cleared by disconnectFromAgent() or is stale from a previous session.
+        // restoreConversation() in buildAndShowChatPanel() will reload the correct history
+        // based on the current .current-session-id (set by applySessionChoice).
+        consolePanel.clear()
+        chatSessionInitialized = false
         // Stay on connect panel while spinner shows "Connecting…"
         // loadModelsAsync triggers agent.start() via getClient() — wait for it to complete
         loadModelsAsync(
@@ -521,6 +520,7 @@ class ChatToolWindowContent(
         // Keep resumeSessionId and persisted session files intact so the next connect can
         // resume the same session via session/load. Only resetSession() (user-initiated
         // "New Conversation") should wipe these — a disconnect is not a session reset.
+        consolePanel.clear()
         resetSessionState()
         sidePanel?.clearToolCalls()
         agentManager.isConnected = false
