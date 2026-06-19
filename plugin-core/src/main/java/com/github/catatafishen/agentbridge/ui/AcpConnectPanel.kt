@@ -50,7 +50,8 @@ import kotlin.math.max
  */
 class AcpConnectPanel(
     private val project: Project,
-    private val onConnect: (String, String?) -> Unit
+    private val onConnect: (String, String?) -> Unit,
+    private val onCancelConnect: () -> Unit,
 ) : JBPanel<AcpConnectPanel>(BorderLayout()) {
 
     companion object {
@@ -186,6 +187,10 @@ class AcpConnectPanel(
     }
     private lateinit var recentSessionsTitle: JBLabel
     private val connectButton = JButton("Connect")
+    private val cancelConnectButton = JButton("X").apply {
+        isVisible = false
+        toolTipText = "Cancel connecting"
+    }
     private val connectSpinner = AsyncProcessIcon("acp-connect").apply {
         isVisible = false
         toolTipText = "Connecting…"
@@ -740,12 +745,28 @@ class AcpConnectPanel(
         connectButton.addActionListener { doConnect() }
         panel.add(connectButton, BorderLayout.CENTER)
 
-        val spinnerWrapper = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+        cancelConnectButton.apply {
+            foreground = JBColor(Color(0xC6, 0x28, 0x28), Color(0xEF, 0x53, 0x50))
+            background = JBColor(Color(0xFF, 0xEB, 0xEE), Color(0x5D, 0x1F, 0x1F))
+            isOpaque = true
+            isContentAreaFilled = true
+            isFocusPainted = false
+            margin = JBUI.insets(0)
+            preferredSize = Dimension(JBUI.scale(32), JBUI.scale(32))
+            minimumSize = preferredSize
+            maximumSize = preferredSize
+            addActionListener { onCancelConnect() }
+        }
+
+        val rightControls = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
             isOpaque = false
             border = JBUI.Borders.emptyLeft(8)
+            add(cancelConnectButton)
+            add(Box.createHorizontalStrut(JBUI.scale(6)))
+            add(connectSpinner)
         }
-        spinnerWrapper.add(connectSpinner, BorderLayout.CENTER)
-        panel.add(spinnerWrapper, BorderLayout.EAST)
+        panel.add(rightControls, BorderLayout.EAST)
 
         return panel
     }
@@ -1501,6 +1522,7 @@ class AcpConnectPanel(
             isConnectingAgent = false
             connectButton.isEnabled = true
             connectButton.text = "Connect"
+            cancelConnectButton.isVisible = false
             connectSpinner.isVisible = false
             val profile = agentManager.activeProfile
             when {
@@ -1559,6 +1581,7 @@ class AcpConnectPanel(
             isConnectingAgent = false
             connectButton.isEnabled = true
             connectButton.text = "Connect"
+            cancelConnectButton.isVisible = false
             connectSpinner.isVisible = false
             acpAutoConnectCheckbox.isSelected = agentManager.isAutoConnect
             refreshProfileCombo()
@@ -1581,6 +1604,7 @@ class AcpConnectPanel(
             statusBanner.dismissCurrent()
             connectButton.isEnabled = false
             connectButton.text = "Connecting\u2026"
+            cancelConnectButton.isVisible = true
             connectSpinner.isVisible = true
         }
     }

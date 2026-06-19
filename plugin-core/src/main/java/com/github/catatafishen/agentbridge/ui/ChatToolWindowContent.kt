@@ -323,9 +323,11 @@ class ChatToolWindowContent(
         setupTitleBarActions()
         wireUpWebServerCallbacks()
 
-        connectPanel = AcpConnectPanel(project) { profileId, customCommand ->
-            connectToAgent(profileId, customCommand)
-        }
+        connectPanel = AcpConnectPanel(
+            project,
+            { profileId, customCommand -> connectToAgent(profileId, customCommand) },
+            { disconnectFromAgent() }
+        )
         mainPanel.add(connectPanel, CARD_CONNECT)
 
         // Always start on connect panel; auto-connect will proceed automatically
