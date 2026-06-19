@@ -152,7 +152,14 @@ class ChatConsolePanel(
         val onRespond: (String) -> Unit,
         val onExtend: () -> Long,
         val onSuperseded: () -> Unit,
-    )
+    ) {
+        constructor(
+            reqId: String,
+            onRespond: (String) -> Unit,
+            onExtend: () -> Long,
+            onSuperseded: () -> Unit,
+        ) : this(reqId, emptySet(), onRespond, onExtend, onSuperseded)
+    }
 
     private data class RecentAskUserResolution(
         val options: Set<String>,
