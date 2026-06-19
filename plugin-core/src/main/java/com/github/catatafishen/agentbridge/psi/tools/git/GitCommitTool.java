@@ -77,10 +77,10 @@ public final class GitCommitTool extends GitTool {
         }
 
         com.github.catatafishen.agentbridge.services.ActiveAgentManager manager = com.github.catatafishen.agentbridge.services.ActiveAgentManager.getInstance(project);
+        String message = requiredMessage(args);
+        boolean isAmend = resolveAmend(args);
         if (!manager.isDisableAskForCommit()) {
             JsonObject promptArgs = new JsonObject();
-            String message = requiredMessage(args);
-            boolean isAmend = resolveAmend(args);
             promptArgs.addProperty("question", "Agent wants to run `git commit" + (isAmend ? " --amend" : "") + "` with message:\n\n`" + message + "`\n\nDo you want to proceed?");
 
             com.google.gson.JsonArray options = new com.google.gson.JsonArray();
@@ -93,24 +93,17 @@ public final class GitCommitTool extends GitTool {
                 new com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool(project);
 
             String userResponse = promptTool.execute(promptArgs);
-            if (!"Yes, commit code".equalsIgnoreCase(userResponse.trim())) {
-                if (userResponse.contains("timed out")) {
-                    return "Commit skipped: user response timed out";
-                }
-                if (userResponse.startsWith("Error:")) {
-                    return "Commit cancelled: " + userResponse;
-                }
-                return "Commit cancelled by user. Response: " + userResponse;
+            String promptDecision = interpretPromptUserResponse(userResponse);
+            if (promptDecision != null) {
+                return promptDecision;
             }
         }
 
         String root = prepareCommit(args);
         if (root.startsWith("Error")) return root;
-        String message = requiredMessage(args);
         if (message == null) return "Error: 'message' parameter is required";
 
         boolean commitAll = resolveCommitAll(args);
-        boolean isAmend = resolveAmend(args);
 
         if (commitAll) runGitIn(root, "add", "-A");
         if (!isAmend && hasNoStagedChanges(root)) return buildNothingToCommitHint(root);
@@ -133,6 +126,33 @@ public final class GitCommitTool extends GitTool {
     private static @Nullable String requiredMessage(@NotNull JsonObject args) {
         if (!args.has(PARAM_MESSAGE) || args.get(PARAM_MESSAGE).getAsString().isEmpty()) return null;
         return args.get(PARAM_MESSAGE).getAsString();
+    }
+
+    static @Nullable String interpretPromptUserResponse(@Nullable String userResponse) {
+        if (userResponse == null) {
+            return "Commit cancelled: Error: prompt_user returned no response";
+        }
+        String trimmed = userResponse.trim();
+        if ("Yes, commit code".equalsIgnoreCase(trimmed)) {
+            return null;
+        }
+        if (shouldBypassAskForCommitOnError(trimmed)) {
+            return null;
+        }
+        if (trimmed.contains("timed out")) {
+            return "Commit skipped: user response timed out";
+        }
+        if (trimmed.startsWith("Error:")) {
+            return "Commit cancelled: " + trimmed;
+        }
+        return "Commit cancelled by user. Response: " + userResponse;
+    }
+
+    static boolean shouldBypassAskForCommitOnError(@NotNull String response) {
+        String normalized = response.toLowerCase();
+        return normalized.startsWith("error:")
+            && normalized.contains("modal dialog")
+            && normalized.contains("settings");
     }
 
     private boolean hasNoStagedChanges(@NotNull String root) {

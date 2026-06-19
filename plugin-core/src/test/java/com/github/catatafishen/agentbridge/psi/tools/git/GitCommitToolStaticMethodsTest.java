@@ -5,7 +5,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -83,6 +85,52 @@ class GitCommitToolStaticMethodsTest {
             args.addProperty("message", "test commit");
             args.addProperty("amend", true);
             assertTrue(GitCommitTool.resolveCommitAll(args));
+        }
+    }
+
+    @Nested
+    @DisplayName("interpretPromptUserResponse")
+    class InterpretPromptUserResponse {
+
+        @Test
+        @DisplayName("returns null for explicit approval")
+        void explicitApproval() {
+            assertNull(GitCommitTool.interpretPromptUserResponse("Yes, commit code"));
+        }
+
+        @Test
+        @DisplayName("bypasses ask-for-commit when Settings modal blocks prompt")
+        void bypassesSettingsModalError() {
+            assertNull(GitCommitTool.interpretPromptUserResponse(
+                "Error: EDT blocked by modal dialog. Modal dialog blocking: 'Settings' Use the interact_with_modal tool to respond to the dialog."
+            ));
+        }
+
+        @Test
+        @DisplayName("returns timeout message for timed out prompt")
+        void timeout() {
+            assertEquals(
+                "Commit skipped: user response timed out",
+                GitCommitTool.interpretPromptUserResponse("request timed out")
+            );
+        }
+
+        @Test
+        @DisplayName("returns cancellation for other prompt errors")
+        void otherPromptErrorsCancel() {
+            assertEquals(
+                "Commit cancelled: Error: Failed to invoke ask-user panel API",
+                GitCommitTool.interpretPromptUserResponse("Error: Failed to invoke ask-user panel API")
+            );
+        }
+
+        @Test
+        @DisplayName("returns cancellation for explicit user rejection")
+        void userRejectionCancels() {
+            assertEquals(
+                "Commit cancelled by user. Response: No, cancel",
+                GitCommitTool.interpretPromptUserResponse("No, cancel")
+            );
         }
     }
 }
