@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.agent.claude;
 
+import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -57,15 +58,16 @@ public final class InstructionsManager {
      *
      * <p>Thread-safe: uses a class-level lock so concurrent calls don't race.</p>
      */
-    public static void ensureInstructions(@Nullable String projectBasePath,
-                                          @NotNull String relativeTargetPath,
-                                          @NotNull String additionalInstructions) {
-        if (projectBasePath == null || relativeTargetPath.isEmpty()) return;
+    public static void ensureInstructions(@Nullable com.intellij.openapi.project.Project project,
+                                          @NotNull AgentProfile profile,
+                                          @Nullable String projectBasePath,
+                                          @NotNull String relativeTargetPath) {
+        if (project == null || projectBasePath == null || relativeTargetPath.isEmpty()) return;
 
         synchronized (LOCK) {
             try {
                 Path targetFile = Path.of(projectBasePath, relativeTargetPath);
-                String pluginInstructions = buildInstructions(additionalInstructions);
+                String pluginInstructions = buildInstructions(project, profile);
 
                 if (Files.isRegularFile(targetFile)) {
                     String existing = Files.readString(targetFile, StandardCharsets.UTF_8);
@@ -95,30 +97,11 @@ public final class InstructionsManager {
     }
 
     @NotNull
-    private static String buildInstructions(@NotNull String additionalInstructions) {
+    private static String buildInstructions(@NotNull com.intellij.openapi.project.Project project,
+                                            @NotNull AgentProfile profile) {
         StringBuilder sb = new StringBuilder(INSTRUCTIONS_SENTINEL).append("\n\n");
-        try (InputStream is = InstructionsManager.class.getResourceAsStream("/default-startup-instructions.md")) {
-            if (is != null) {
-                sb.append(new String(is.readAllBytes(), StandardCharsets.UTF_8));
-            } else {
-                LOG.warn("Resource /default-startup-instructions.md not found in classpath");
-                sb.append("You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.");
-            }
-        } catch (IOException e) {
-            LOG.error("Failed to read /default-startup-instructions.md from classpath", e);
-            sb.append("You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.");
-        }
-        String custom = StartupInstructionsSettings.getInstance().getCustomInstructions();
-        if (custom != null && !custom.isBlank()) {
-            sb.append("\n\n").append(custom);
-        }
-        if (!additionalInstructions.isBlank()) {
-            sb.append("\n\n").append(additionalInstructions);
-        }
-        String guardrails = StartupInstructionsSettings.getInstance().getImmutableGuardrails();
-        if (!guardrails.isEmpty()) {
-            sb.append("\n\n").append(guardrails);
-        }
+        sb.append(StartupInstructionsSettings.getInstance()
+            .getInstructions(project, profile, profile.getAdditionalInstructions()));
         sb.append("\n\n").append(INSTRUCTIONS_END);
         return sb.toString();
     }

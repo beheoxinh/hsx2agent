@@ -136,8 +136,7 @@ public class ProfileBasedAgentConfig implements AgentConfig {
     public void prepareForLaunch(@Nullable String projectBasePath) {
         String prependTarget = profile.getPrependInstructionsTo();
         if (prependTarget != null && !prependTarget.isEmpty()) {
-            InstructionsManager.ensureInstructions(projectBasePath, prependTarget,
-                profile.getAdditionalInstructions());
+            InstructionsManager.ensureInstructions(project, profile, projectBasePath, prependTarget);
         }
         List<String> bundledAgents = profile.getBundledAgentFiles();
         if (!bundledAgents.isEmpty()) {
@@ -352,14 +351,17 @@ public class ProfileBasedAgentConfig implements AgentConfig {
             return null;
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append(StartupInstructionsSettings.getInstance().getInstructions());
-        String additional = profile.getAdditionalInstructions();
-        if (!additional.isBlank()) {
-            if (!sb.isEmpty()) sb.append("\n\n");
-            sb.append(additional);
+        if (project == null) {
+            String base = StartupInstructionsSettings.getInstance().getInstructions();
+            String additional = profile.getAdditionalInstructions();
+            if (!additional.isBlank()) {
+                base = base + "\n\n" + additional;
+            }
+            return base.isBlank() ? null : base;
         }
-        return sb.isEmpty() ? null : sb.toString();
+        String instructions = StartupInstructionsSettings.getInstance()
+            .getInstructions(project, profile, profile.getAdditionalInstructions());
+        return instructions.isBlank() ? null : instructions;
     }
 
     @Override

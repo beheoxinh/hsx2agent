@@ -217,7 +217,8 @@ public final class JunieClient extends AcpClient {
 
     @Override
     protected void onSessionCreated(String sessionId) {
-        String userInstructions = StartupInstructionsSettings.getInstance().getInstructions();
+        String userInstructions = StartupInstructionsSettings.getInstance()
+            .getInstructions(project, null, null);
         sendSessionMessage(sessionId, buildInstructions(userInstructions));
     }
 

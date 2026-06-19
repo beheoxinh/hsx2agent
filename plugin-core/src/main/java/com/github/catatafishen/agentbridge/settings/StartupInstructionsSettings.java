@@ -1,10 +1,12 @@
 package com.github.catatafishen.agentbridge.settings;
 
+import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
+import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -67,6 +69,12 @@ public final class StartupInstructionsSettings implements PersistentStateCompone
             sb.append("\n\n").append(guardrails);
         }
         return sb.toString();
+    }
+
+    @NotNull
+    public String getInstructions(@NotNull Project project, @Nullable AgentProfile profile,
+                                  @Nullable String additionalInstructions) {
+        return StartupInstructionsComposer.compose(project, profile, getInstructions(), additionalInstructions);
     }
 
     /**
