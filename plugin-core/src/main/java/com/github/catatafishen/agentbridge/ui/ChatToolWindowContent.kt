@@ -3573,9 +3573,14 @@ class ChatToolWindowContent(
             agentManager.getClientIfRunning()?.clearPersistedSession()
         }
         resetSessionState()
+        // Clear the LiveToolCallService FIRST to prevent its change listener (which calls
+        // pushAllEntries) from re-populating the MCP tool call list after clearToolCalls().
+        LiveToolCallService.getInstance(project).clear()
         sidePanel?.clearToolCalls()
         consolePanel.clear()
         consolePanel.showPlaceholder("New conversation started.")
+        // Clear the DiffPanel — the user acknowledged the destructive nature via the warning dialog.
+        AgentEditSession.getInstance(project).clearSession()
         updateSessionInfo()
         archiveConversation()
         // Delete .current-session-id so the next save creates a brand-new v2 session.

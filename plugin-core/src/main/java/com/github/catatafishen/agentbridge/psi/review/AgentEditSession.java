@@ -227,6 +227,19 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         completeGate();
     }
 
+    /**
+     * Wipes all tracked state and ends any in-flight gate, unconditionally.
+     * Called on explicit user-initiated "Clear and Restart" — the warning dialog
+     * already acknowledges this is destructive. Also fires a review state change
+     * so the DiffPanel refreshes to show an empty list.
+     */
+    public void clearSession() {
+        LOG.info("Clearing review session (user-initiated reset)");
+        wipeAllTrackedState();
+        completeGate();
+        fireReviewStateChanged();
+    }
+
     // ── Capture / register ──────────────────────────────────────────────────
 
     public void captureBeforeContent(@NotNull VirtualFile vf, @NotNull String content) {
