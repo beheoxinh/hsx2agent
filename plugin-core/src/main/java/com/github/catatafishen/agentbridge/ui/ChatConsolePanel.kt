@@ -148,13 +148,22 @@ class ChatConsolePanel(
 
     private data class ActiveAskUser(
         val reqId: String,
+        val options: Set<String>,
         val onRespond: (String) -> Unit,
         val onExtend: () -> Long,
         val onSuperseded: () -> Unit,
     )
 
+    private data class RecentAskUserResolution(
+        val options: Set<String>,
+        val expiresAtMs: Long,
+    )
+
     @Volatile
     private var activeAskUser: ActiveAskUser? = null
+
+    @Volatile
+    private var recentAskUserResolution: RecentAskUserResolution? = null
     private var extendAskUserBridgeJs = ""
 
     // Sets the JCEF OSR windowless frame rate. BackendCefBrowser (Remote Dev) does not forward
@@ -1682,12 +1691,19 @@ class ChatConsolePanel(
         // If a previous ask is still open, supersede it cleanly so its waiter unblocks.
         activeAskUser?.let { prev ->
             activeAskUser = null
+            rememberResolvedAskUser(prev)
             disableQuickReplies()
             // Fire callback off-EDT — onSuperseded typically completes a CompletableFuture;
             // we don't want to do that under invokeLater chains that might re-enter the panel.
             ApplicationManager.getApplication().executeOnPooledThread { prev.onSuperseded() }
         }
-        activeAskUser = ActiveAskUser(reqId, onRespond, onExtend, onSuperseded)
+        activeAskUser = ActiveAskUser(
+            reqId,
+            options.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet(),
+            onRespond,
+            onExtend,
+            onSuperseded
+        )
 
         val safeId = escJs(reqId)
         val safeQuestion = escJs(question)
@@ -1702,14 +1718,24 @@ class ChatConsolePanel(
     override fun hasPendingAskUserRequest(): Boolean = activeAskUser != null
 
     override fun consumePendingAskUserResponse(response: String): Boolean {
-        if (response.isBlank()) return false
-        val active = activeAskUser ?: return false
+        val trimmed = response.trim()
+        if (trimmed.isEmpty()) return false
+        val active = activeAskUser
+        if (active == null) {
+            val recent = recentAskUserResolution
+            val normalized = trimmed.lowercase()
+            if (recent != null && recent.expiresAtMs >= System.currentTimeMillis() && normalized in recent.options) {
+                return true
+            }
+            return false
+        }
         activeAskUser = null
+        rememberResolvedAskUser(active)
         disableQuickReplies()
         // Tell JS to retire the countdown / extension button for this request.
         executeJs("window.closeAskUserRequest && window.closeAskUserRequest('${escJs(active.reqId)}','answered');")
-        addPromptEntry(response, null)
-        active.onRespond(response)
+        addPromptEntry(trimmed, null)
+        active.onRespond(trimmed)
         return true
     }
 
@@ -1717,9 +1743,21 @@ class ChatConsolePanel(
         val active = activeAskUser ?: return
         if (reqId != null && reqId != active.reqId) return
         activeAskUser = null
+        rememberResolvedAskUser(active)
         disableQuickReplies()
         executeJs("window.closeAskUserRequest && window.closeAskUserRequest('${escJs(active.reqId)}','cancelled');")
         ApplicationManager.getApplication().executeOnPooledThread { active.onSuperseded() }
+    }
+
+    private fun rememberResolvedAskUser(active: ActiveAskUser) {
+        if (active.options.isEmpty()) {
+            recentAskUserResolution = null
+            return
+        }
+        recentAskUserResolution = RecentAskUserResolution(
+            options = active.options,
+            expiresAtMs = System.currentTimeMillis() + 5_000,
+        )
     }
 
     /** Called from the JS "I need more time" button via the [extendAskUserBridgeJs] bridge. */

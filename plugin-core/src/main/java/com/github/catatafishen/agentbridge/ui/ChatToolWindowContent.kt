@@ -2696,7 +2696,8 @@ class ChatToolWindowContent(
         }
         consolePanel.onQuickReply = { text ->
             ApplicationManager.getApplication().invokeLater {
-                if (!consolePanel.consumePendingAskUserResponse(text)) {
+                val pendingAskUser = consolePanel.hasPendingAskUserRequest()
+                if (!consolePanel.consumePendingAskUserResponse(text) && !pendingAskUser) {
                     sendQuickReply(text)
                 }
             }
@@ -2809,7 +2810,8 @@ class ChatToolWindowContent(
         }
         ws.setOnQuickReply { text ->
             ApplicationManager.getApplication().invokeLater {
-                if (!consolePanel.consumePendingAskUserResponse(text)) sendQuickReply(text)
+                val pendingAskUser = consolePanel.hasPendingAskUserRequest()
+                if (!consolePanel.consumePendingAskUserResponse(text) && !pendingAskUser) sendQuickReply(text)
             }
         }
         ws.setOnNudge { text ->
