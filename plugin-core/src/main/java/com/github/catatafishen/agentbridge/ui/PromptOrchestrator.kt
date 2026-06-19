@@ -204,7 +204,6 @@ class PromptOrchestrator(
         }
         thread?.interrupt()
         consolePanel().cancelAllRunning()
-        consolePanel().addErrorEntry("Stopped by user")
 
         com.github.catatafishen.agentbridge.services.AgentNudgeService
             .getInstance(project).clearMessageQueue()
@@ -1065,7 +1064,7 @@ class PromptOrchestrator(
         if (!stopped) {
             consolePanel().addErrorEntry("Error: ${c.displayMessage}")
         }
-        // When stopped by user, skip the error banner — "Stopped by user" already shown.
+        // When stopped by user, keep the stop silent — only real failures should surface.
         if (!stopped && !c.isCancelled) {
             val bannerMsg = if (c.shouldRestorePrompt)
                 "${c.displayMessage} — your message has been restored to the input box"
