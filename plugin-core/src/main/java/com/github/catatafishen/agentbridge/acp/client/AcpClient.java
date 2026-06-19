@@ -1238,6 +1238,10 @@ public abstract class AcpClient extends AbstractAgentClient {
         return update;
     }
 
+    protected final void touchActivity() {
+        lastActivityNanos = System.nanoTime();
+    }
+
     // ═══════════════════════════════════════════════════
     // MCP port resolution
     // ═══════════════════════════════════════════════════
@@ -1632,7 +1636,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (params == null) return;
 
         // Reset inactivity clock on every update so long turns with active streaming never time out.
-        lastActivityNanos = System.nanoTime();
+        touchActivity();
 
         JsonObject updateObj = normalizeSessionUpdateParams(params);
 
@@ -1646,6 +1650,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (update != null) {
             update = processUpdate(update);
             if (update != null) {
+                touchActivity();
                 consumer.accept(update);
             }
         }
@@ -1712,6 +1717,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     protected void handleAgentRequest(JsonElement id, JsonRpcTransport.IncomingRequest request) {
+        touchActivity();
         switch (request.method()) {
             case "session/request_permission" -> handlePermissionRequest(id, request.params());
             case "fs/read_text_file" -> handleFsRequest(id, () -> fsHandler.readTextFile(request.params()));
@@ -1828,6 +1834,7 @@ public abstract class AcpClient extends AbstractAgentClient {
                 // Not needed for denied tools — handleAutoDeniedBuiltInTool already sends FAILED.
                 Consumer<SessionUpdate> builtInConsumer = updateConsumer;
                 if (builtInConsumer != null && !toolCallId.isEmpty()) {
+                    touchActivity();
                     builtInConsumer.accept(new SessionUpdate.ToolCallUpdate(
                         toolCallId, SessionUpdate.ToolCallStatus.COMPLETED, null, null, null));
                 }
@@ -1849,6 +1856,7 @@ public abstract class AcpClient extends AbstractAgentClient {
 
         Consumer<SessionUpdate> consumer = updateConsumer;
         if (consumer != null && !toolCallId.isEmpty()) {
+            touchActivity();
             consumer.accept(new SessionUpdate.ToolCallUpdate(
                 toolCallId,
                 SessionUpdate.ToolCallStatus.FAILED,
@@ -1869,6 +1877,7 @@ public abstract class AcpClient extends AbstractAgentClient {
 
         Consumer<SessionUpdate> consumer = updateConsumer;
         if (consumer != null && !toolCallId.isEmpty()) {
+            touchActivity();
             consumer.accept(new SessionUpdate.ToolCallUpdate(
                 toolCallId,
                 SessionUpdate.ToolCallStatus.FAILED,

@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
 import com.github.catatafishen.agentbridge.acp.model.NewSessionResponse;
+import com.github.catatafishen.agentbridge.acp.transport.JsonRpcTransport;
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.github.catatafishen.agentbridge.agent.AgentSessionException;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
@@ -964,6 +965,39 @@ class AcpClientTest {
     }
 
     // ── TestableAcpClient — concrete stub replacing Mockito CALLS_REAL_METHODS ──
+
+    @Nested
+    class ActivityTracking {
+
+        @Test
+        void touchActivityUpdatesLastActivityNanos() throws Exception {
+            TestableAcpClient client = new TestableAcpClient();
+            Field field = AcpClient.class.getDeclaredField("lastActivityNanos");
+            field.setAccessible(true);
+            field.setLong(client, 1L);
+
+            client.touchActivity();
+
+            assertTrue(field.getLong(client) > 1L);
+        }
+
+        @Test
+        void handleAgentRequestTouchesActivityForPermissionRequests() throws Exception {
+            TestableAcpClient client = new TestableAcpClient();
+            Field field = AcpClient.class.getDeclaredField("lastActivityNanos");
+            field.setAccessible(true);
+            field.setLong(client, 1L);
+
+            JsonObject params = new JsonObject();
+            JsonObject toolCall = new JsonObject();
+            toolCall.addProperty("title", "search_text");
+            toolCall.addProperty("toolCallId", "tc-1");
+            params.add("toolCall", toolCall);
+            client.handleAgentRequest(null, new JsonRpcTransport.IncomingRequest("session/request_permission", params));
+
+            assertTrue(field.getLong(client) > 1L);
+        }
+    }
 
     /**
      * Minimal concrete AcpClient subclass for testing.
