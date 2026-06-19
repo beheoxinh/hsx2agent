@@ -176,19 +176,15 @@ public final class QueryTurnsTool extends EditorTool {
             return "Error: " + e.getMessage();
         }
 
-        // Default to last_n=5 when no retrieval param is given.
-        // Reject conflicting combinations where more than one retrieval selector is set.
-        boolean hasRetrievalParam = turnId != null || sessionId != null || lastN != null;
-        if (hasRetrievalParam) {
-            int retrievalCount = (turnId != null ? 1 : 0) + (sessionId != null ? 1 : 0) + (lastN != null ? 1 : 0);
-            if (retrievalCount > 1) {
-                return "Error: Only one of turn_id, session_id, or last_n may be used at a time. Pick the one that matches your intent.";
-            }
+        RetrievalSelection retrieval;
+        try {
+            retrieval = normalizeRetrievalSelection(turnId, sessionId, lastN, offset);
+        } catch (IllegalArgumentException e) {
+            return "Error: " + e.getMessage();
         }
-        if (!hasRetrievalParam) lastN = 5;
 
         ConversationQuery.QueryParams params = new ConversationQuery.QueryParams(
-            turnId, sessionId, lastN, offset,
+            retrieval.turnId(), retrieval.sessionId(), retrieval.lastN(), retrieval.offset(),
             userMessage, assistantText, toolName, filePath, branch, agentName,
             since, until,
             includeThinking, includeToolCalls, maxChars,
@@ -203,6 +199,55 @@ public final class QueryTurnsTool extends EditorTool {
         }
 
         return formatTurns(turns, maxChars);
+    }
+
+    static RetrievalSelection normalizeRetrievalSelection(
+        @Nullable String turnId,
+        @Nullable String sessionId,
+        @Nullable Integer lastN,
+        @Nullable Integer offset
+    ) {
+        String normalizedTurnId = normalizeSelector(turnId);
+        String normalizedSessionId = normalizeSelector(sessionId);
+        Integer normalizedLastN = normalizeLastN(lastN);
+        Integer normalizedOffset = normalizeOffset(offset);
+
+        if (normalizedTurnId != null && normalizedSessionId != null) {
+            throw new IllegalArgumentException(
+                "Only one of turn_id or session_id may be used at a time. Pick the one that matches your intent.");
+        }
+        if (normalizedTurnId != null) {
+            return new RetrievalSelection(normalizedTurnId, null, null, null);
+        }
+        if (normalizedSessionId != null) {
+            return new RetrievalSelection(null, normalizedSessionId, null, null);
+        }
+        if (normalizedLastN == null) normalizedLastN = 5;
+        return new RetrievalSelection(null, null, normalizedLastN, normalizedOffset);
+    }
+
+    private static @Nullable String normalizeSelector(@Nullable String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static @Nullable Integer normalizeLastN(@Nullable Integer value) {
+        if (value == null || value <= 0) return null;
+        return value;
+    }
+
+    private static @Nullable Integer normalizeOffset(@Nullable Integer value) {
+        if (value == null || value <= 0) return null;
+        return value;
+    }
+
+    record RetrievalSelection(
+        @Nullable String turnId,
+        @Nullable String sessionId,
+        @Nullable Integer lastN,
+        @Nullable Integer offset
+    ) {
     }
 
     // ── Formatting ────────────────────────────────────────────────────────────
