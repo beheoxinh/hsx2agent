@@ -3711,7 +3711,7 @@ class ChatToolWindowContent(
         selectedModelIndex = -1
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val models = fetchModelsWithRetry()
+                val models = fetchModelsWithRetry(generation)
                 ApplicationManager.getApplication().invokeLater {
                     if (generation == modelLoadGeneration) {
                         onModelsLoaded(models, onSuccess)
@@ -3732,13 +3732,12 @@ class ChatToolWindowContent(
         }
     }
 
-    private fun fetchModelsWithRetry(): List<Model> {
+    private fun fetchModelsWithRetry(generation: Int): List<Model> {
         // Wait for any in-progress session export to complete before starting the agent.
         // Without this, createSession() reads a stale or missing resumeSessionId because
         // the export from the previous agent runs concurrently on a pooled thread.
         SessionSwitchService.getInstance(project).awaitPendingExport(10_000)
 
-        val startGeneration = modelLoadGeneration
         var lastError: Exception? = null
         for (attempt in 1..3) {
             if (attempt > 1) {
@@ -3746,9 +3745,9 @@ class ChatToolWindowContent(
                 // this retry backoff runs on a pooled thread (executeOnPooledThread), not EDT.
                 // An Alarm or coroutine delay would add complexity without benefit for a simple retry loop.
                 Thread.sleep(2000L)
-                // If the user disconnected during the sleep, abort rather than restarting the agent.
-                if (modelLoadGeneration != startGeneration) return emptyList()
             }
+            // If the user disconnected (clicked X), abort rather than starting/restarting the agent.
+            if (modelLoadGeneration != generation) return emptyList()
             try {
                 val models = agentManager.client.getAvailableModels()
                 if (models.isNotEmpty()) return models
