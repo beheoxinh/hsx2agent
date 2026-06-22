@@ -746,13 +746,13 @@ class AcpConnectPanel(
         panel.add(connectButton, BorderLayout.CENTER)
 
         cancelConnectButton.apply {
-            foreground = JBColor(Color(0xC6, 0x28, 0x28), Color(0xEF, 0x53, 0x50))
-            background = JBColor(Color(0xFF, 0xEB, 0xEE), Color(0x5D, 0x1F, 0x1F))
-            isOpaque = true
-            isContentAreaFilled = true
+            font = JBUI.Fonts.label().deriveFont(14f)
+            isOpaque = false
+            isContentAreaFilled = false
             isFocusPainted = false
+            border = JBUI.Borders.empty()
             margin = JBUI.insets(0)
-            preferredSize = Dimension(JBUI.scale(32), JBUI.scale(32))
+            preferredSize = Dimension(JBUI.scale(24), JBUI.scale(24))
             minimumSize = preferredSize
             maximumSize = preferredSize
             addActionListener { onCancelConnect() }
@@ -1455,6 +1455,7 @@ class AcpConnectPanel(
         statusBanner.dismissCurrent()
         connectButton.isEnabled = false
         connectButton.text = "Connecting\u2026"
+        cancelConnectButton.isVisible = true
         connectSpinner.isVisible = true
 
         // Defer the actual work to the next EDT cycle so the button state paints first.
