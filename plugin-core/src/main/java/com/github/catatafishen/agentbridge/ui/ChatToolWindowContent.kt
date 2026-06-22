@@ -474,7 +474,7 @@ class ChatToolWindowContent(
         // already cleared by disconnectFromAgent() or is stale from a previous session.
         // restoreConversation() in buildAndShowChatPanel() will reload the correct history
         // based on the current .current-session-id (set by applySessionChoice).
-        consolePanel.clear()
+        if (::consolePanel.isInitialized) consolePanel.clear()
         chatSessionInitialized = false
         // Stay on connect panel while spinner shows "Connecting…"
         // loadModelsAsync triggers agent.start() via getClient() — wait for it to complete
