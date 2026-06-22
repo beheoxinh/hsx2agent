@@ -230,11 +230,14 @@ class ChatToolWindowContent(
                     // Try exact subagentId first; if not found or empty, try activeSubAgentId
                     var targetId = subagentId
                     if (targetId.isBlank() || !hasActiveSubAgent(targetId)) {
-                        targetId = promptOrchestrator?.activeSubAgentId ?: return@invokeLater
+                        if (!::promptOrchestrator.isInitialized) return@invokeLater
+                        targetId = promptOrchestrator.activeSubAgentId ?: return@invokeLater
                     }
                     val record = ToolCallTracker.getInstance(project).findByAcpId(targetId)
                     val recordId = record?.recordId ?: targetId
-                    consolePanel.appendSubAgentStream(recordId, content, isThinking)
+                    if (::consolePanel.isInitialized) {
+                        consolePanel.appendSubAgentStream(recordId, content, isThinking)
+                    }
                 }
             }
         )
@@ -3581,8 +3584,10 @@ class ChatToolWindowContent(
         // pushAllEntries) from re-populating the MCP tool call list after clearToolCalls().
         LiveToolCallService.getInstance(project).clear()
         sidePanel?.clearToolCalls()
-        consolePanel.clear()
-        consolePanel.showPlaceholder("New conversation started.")
+        if (::consolePanel.isInitialized) {
+            consolePanel.clear()
+            consolePanel.showPlaceholder("New conversation started.")
+        }
         // Clear the DiffPanel — the user acknowledged the destructive nature via the warning dialog.
         AgentEditSession.getInstance(project).clearSession()
         updateSessionInfo()
