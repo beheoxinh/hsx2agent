@@ -522,7 +522,7 @@ class ChatToolWindowContent(
         // Keep resumeSessionId and persisted session files intact so the next connect can
         // resume the same session via session/load. Only resetSession() (user-initiated
         // "New Conversation") should wipe these — a disconnect is not a session reset.
-        consolePanel.clear()
+        if (::consolePanel.isInitialized) consolePanel.clear()
         resetSessionState()
         sidePanel?.clearToolCalls()
         agentManager.isConnected = false
