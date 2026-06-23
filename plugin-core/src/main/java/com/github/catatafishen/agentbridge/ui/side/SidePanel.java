@@ -46,6 +46,13 @@ public final class SidePanel extends JPanel implements Disposable {
     private final JPanel contentContainer = new JPanel(cardLayout);
     private int selectedTab = TAB_MCP;
 
+    @Nullable
+    private java.util.function.Consumer<Integer> onTabSwitch = null;
+
+    public void setOnTabSwitch(@Nullable java.util.function.Consumer<Integer> listener) {
+        this.onTabSwitch = listener;
+    }
+
     private final JComponent mcpPanel;
     private final OnePixelSplitter reviewSplitter;
     private final OnePixelSplitter reviewStatsSplitter;
@@ -123,6 +130,9 @@ public final class SidePanel extends JPanel implements Disposable {
         selectedTab = index;
         cardLayout.show(contentContainer, String.valueOf(index));
         updateStatsVisibility();
+        if (onTabSwitch != null) {
+            onTabSwitch.accept(index);
+        }
     }
 
     private void updateStatsVisibility() {

@@ -861,6 +861,23 @@ class ChatToolWindowContent(
             com.github.catatafishen.agentbridge.ui.side.SidePanel(project, chatConsolePanel, sessionStatsPanel).apply {
                 border = JBUI.Borders.empty(4)
                 isVisible = false // Initially hidden
+                setOnTabSwitch { tabIndex ->
+                    val position = ChatInputSettings.getInstance().sidePanelPosition
+                    val total = if (position.isVertical()) rootSplitter.height else rootSplitter.width
+                    if (total > 0) {
+                        val targetPx = when (tabIndex) {
+                            com.github.catatafishen.agentbridge.ui.side.SidePanel.TAB_MCP -> 170f
+                            else -> 340f
+                        }
+                        val newProportion = when (position) {
+                            com.github.catatafishen.agentbridge.settings.SidePanelPosition.LEFT,
+                            com.github.catatafishen.agentbridge.settings.SidePanelPosition.TOP ->
+                                targetPx / total
+                            else -> 1f - targetPx / total
+                        }
+                        rootSplitter.proportion = newProportion.coerceIn(0.01f, 0.99f)
+                    }
+                }
             }
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable, side)
         sidePanel = side
