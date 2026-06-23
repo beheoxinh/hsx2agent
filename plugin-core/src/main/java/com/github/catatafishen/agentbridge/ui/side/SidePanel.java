@@ -46,10 +46,9 @@ public final class SidePanel extends JPanel implements Disposable {
     private final JPanel contentContainer = new JPanel(cardLayout);
     private int selectedTab = TAB_MCP;
 
-    @Nullable
     private java.util.function.Consumer<Integer> onTabSwitch = null;
 
-    public void setOnTabSwitch(@Nullable java.util.function.Consumer<Integer> listener) {
+    public void setOnTabSwitch(java.util.function.Consumer<Integer> listener) {
         this.onTabSwitch = listener;
     }
 
