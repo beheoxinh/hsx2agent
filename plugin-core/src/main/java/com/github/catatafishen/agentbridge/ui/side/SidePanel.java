@@ -71,12 +71,12 @@ public final class SidePanel extends JPanel implements Disposable {
         boolean vertical = !position.isVertical();
         mcpPanel = buildMcpPanel(project);
 
-        float initialReviewSplitterProportion = position.isVertical() ? 1.0f / 3.0f : 0.5f;
+        float initialReviewSplitterProportion = 5.0f / 11.0f;
         reviewSplitter = new OnePixelSplitter(vertical, initialReviewSplitterProportion);
         reviewSplitter.setFirstComponent(mcpPanel);
         reviewSplitter.setSecondComponent(reviewPanel);
 
-        float initialStatsSplitterProportion = position.isVertical() ? 0.75f : 0.8f;
+        float initialStatsSplitterProportion = 11.0f / 15.0f;
         reviewStatsSplitter = new OnePixelSplitter(vertical, initialStatsSplitterProportion);
         reviewStatsSplitter.setFirstComponent(reviewSplitter);
         reviewStatsSplitter.setSecondComponent(statsPanel);
@@ -105,17 +105,10 @@ public final class SidePanel extends JPanel implements Disposable {
         reviewSplitter.setOrientation(vertical);
         reviewStatsSplitter.setOrientation(vertical);
 
-        if (position.isVertical()) {
-            // TOP/BOTTOM: 3-column layout with 1:2:1 ratio (MCP:Diff:Stats)
-            // reviewSplitter (MCP | Diff): 1/3 for MCP, 2/3 for Diff
-            reviewSplitter.setProportion(1.0f / 3.0f);
-            // reviewStatsSplitter (reviewSplitter | Stats): 3/4 for reviewSplitter, 1/4 for Stats
-            reviewStatsSplitter.setProportion(0.75f);
-        } else {
-            // LEFT/RIGHT: keep old column proportions (2 columns layout).
-            reviewSplitter.setProportion(0.5f);
-            reviewStatsSplitter.setProportion(0.8f);
-        }
+        // reviewSplitter (MCP | Diff): 5/11 for MCP (1/3 of total), 6/11 for Diff (2/5 of total)
+        reviewSplitter.setProportion(5.0f / 11.0f);
+        // reviewStatsSplitter (reviewSplitter | Stats): 11/15 for reviewSplitter (1/3+2/5), 4/15 for Stats
+        reviewStatsSplitter.setProportion(11.0f / 15.0f);
 
         reviewPanel.updateLayoutOrientation(position);
         revalidate();
