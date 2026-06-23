@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.settings
 
+import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.McpServerControl
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
@@ -115,6 +116,22 @@ class McpGroupConfigurable(private val project: Project) :
                     "<b>Standard:</b> Block remote git operations (push, fetch, pull)<br>" +
                     "<b>Safety:</b> Only read-only git tools (status, diff, log, blame, show, file history)"
             )
+        }
+        row {
+            checkBox("Disable ask for commit")
+                .comment("If checked, git commit will execute automatically without asking.")
+                .bindSelected(
+                    { ActiveAgentManager.getInstance(project).isDisableAskForCommit },
+                    { ActiveAgentManager.getInstance(project).isDisableAskForCommit = it }
+                )
+        }
+        row {
+            checkBox("Enable ask for push (default never push)")
+                .comment("If checked, git push will ask for confirmation. Otherwise, it is disabled.")
+                .bindSelected(
+                    { ActiveAgentManager.getInstance(project).isEnableAskForPush },
+                    { ActiveAgentManager.getInstance(project).isEnableAskForPush = it }
+                )
         }
         row {
             checkBox("Database tool security (block migrations and seeds)")
