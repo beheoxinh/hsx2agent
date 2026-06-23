@@ -79,7 +79,8 @@ public final class GitCommitTool extends GitTool {
         com.github.catatafishen.agentbridge.services.ActiveAgentManager manager = com.github.catatafishen.agentbridge.services.ActiveAgentManager.getInstance(project);
         String message = requiredMessage(args);
         boolean isAmend = resolveAmend(args);
-        if (!manager.isDisableAskForCommit()) {
+        boolean autoCommit = com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isAutoCommit();
+        if (!manager.isDisableAskForCommit() && !autoCommit) {
             JsonObject promptArgs = new JsonObject();
             promptArgs.addProperty("question", "Agent wants to run `git commit" + (isAmend ? " --amend" : "") + "` with message:\n\n`" + message + "`\n\nDo you want to proceed?");
 
