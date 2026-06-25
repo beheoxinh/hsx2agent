@@ -1057,21 +1057,28 @@ class PromptOrchestrator(
 
         if (!c.isRecoverable) {
             if (c.isProcessCrashWithRecovery) {
-                log.info("Agent process crashed — dropping session and restarting agent")
-                agentManager.client.dropCurrentSession()
+                log.info("Agent process crashed — restarting agent to recover")
+                // Process is dead — currentSessionId is meaningless.
+                // dropCurrentSession() is intentionally skipped because:
+                // 1. getClientIfRunning() returns null (dead process)
+                // 2. agentManager.client would force-start a new client just to clear it
+                // 3. restart() creates everything from scratch
                 currentSessionId = null
                 ApplicationManager.getApplication().executeOnPooledThread {
                     agentManager.restart()
                 }
             } else if (c.isNetworkTimeoutOrZombie) {
                 log.info("Network timeout or zombie process detected — restarting agent to recover ...")
-                agentManager.client.dropCurrentSession()
+                agentManager.getClientIfRunning()?.dropCurrentSession()
                 currentSessionId = null
                 ApplicationManager.getApplication().executeOnPooledThread {
                     agentManager.restart()
                 }
             } else {
-                agentManager.client.dropCurrentSession()
+                // Process is alive but returned a protocol error (e.g. code 300).
+                // Drop the session so the next createSession() sends a fresh
+                // session/new rather than reusing a dead session.
+                agentManager.getClientIfRunning()?.dropCurrentSession()
                 currentSessionId = null
             }
             callbacks.updateSessionInfo()
