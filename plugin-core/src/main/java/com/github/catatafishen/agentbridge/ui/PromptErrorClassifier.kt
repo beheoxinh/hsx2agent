@@ -30,13 +30,11 @@ object PromptErrorClassifier {
      * @param exception the thrown exception
      * @param turnHadContent whether the agent produced any content before the error
      * @param isAuthenticationError predicate to check if a message indicates an auth failure
-     * @param isClientHealthy whether the agent client is still responsive
      */
     fun classify(
         exception: Exception,
         turnHadContent: Boolean,
         isAuthenticationError: (String) -> Boolean,
-        isClientHealthy: Boolean,
     ): Classification {
         val isCancelled = exception is InterruptedException
             || exception.cause is InterruptedException
@@ -65,12 +63,12 @@ object PromptErrorClassifier {
         val isRecoverable = isCancelled
             || (exception is AgentException && exception.isRecoverable)
 
-        // Agent process crashed but already recovered — preserve session
+        // Agent process crashed — the health check is irrelevant because a crashed
+        // process always reports unhealthy. The error message tells us what happened.
         val isProcessCrashWithRecovery = !isCancelled
             && generateSequence(exception as Throwable?) { it.cause }.any {
             it.message?.contains("process exited unexpectedly", ignoreCase = true) == true
         }
-            && isClientHealthy
 
         val isNetworkTimeoutOrZombie = !isCancelled
             && generateSequence(exception as Throwable?) { it.cause }.any {

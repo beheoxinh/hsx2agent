@@ -26,7 +26,9 @@ class PromptErrorClassifierTest {
         boolean turnHadContent,
         Function<String, Boolean> isAuthError,
         boolean isClientHealthy) {
-        return PromptErrorClassifier.INSTANCE.classify(exception, turnHadContent, isAuthError::apply, isClientHealthy);
+        // isClientHealthy was removed from the classifier — kept as unused param
+        // to minimize test churn. It no longer affects classification.
+        return PromptErrorClassifier.INSTANCE.classify(exception, turnHadContent, isAuthError::apply);
     }
 
     // ── classify: InterruptedException ──────────────────────────────────
@@ -239,10 +241,11 @@ class PromptErrorClassifierTest {
     }
 
     @Test
-    void classify_processExitedUnexpectedly_clientNotHealthy_notProcessCrashWithRecovery() {
+    void classify_processExitedUnexpectedly_clientNotHealthy_isProcessCrashWithRecovery() {
+        // isClientHealthy no longer affects crash detection — the error message alone decides.
         var ex = new RuntimeException("process exited unexpectedly");
         var result = classify(ex, false, NO_AUTH, false);
-        assertFalse(result.isProcessCrashWithRecovery());
+        assertTrue(result.isProcessCrashWithRecovery());
     }
 
     @Test

@@ -153,10 +153,20 @@ class PromptOrchestrator(
         if (stopped) {
             val thread = currentPromptThread
             if (thread != null && thread.isAlive) {
-                log.warn("execute() called while stop is in progress — refusing to start new turn")
-                return
+                log.warn("execute() called while stop is in progress — killing old thread and starting fresh")
+                thread.interrupt()
+                // Kill the transport and restart so any stuck IO releases.
+                try {
+                    agentManager.getClientIfRunning()?.close()
+                } catch (_: Exception) {
+                }
+                try {
+                    agentManager.stop()
+                } catch (_: Exception) {
+                }
+            } else {
+                log.info("execute() called after stop completed — resetting stopped flag")
             }
-            log.info("execute() called after stop completed — resetting stopped flag")
             stopped = false
         }
         val myGeneration = synchronized(this) { ++turnGeneration }
@@ -1015,7 +1025,6 @@ class PromptOrchestrator(
             exception = e,
             turnHadContent = turnHadContent,
             isAuthenticationError = { authService.isAuthenticationError(it) },
-            isClientHealthy = agentManager.isClientHealthy,
         )
 
         if (c.shouldRestorePrompt) {
@@ -1048,9 +1057,16 @@ class PromptOrchestrator(
 
         if (!c.isRecoverable) {
             if (c.isProcessCrashWithRecovery) {
-                log.info("Agent process crashed but recovered — preserving session ...")
+                log.info("Agent process crashed — dropping session and restarting agent")
+                agentManager.client.dropCurrentSession()
+                currentSessionId = null
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    agentManager.restart()
+                }
             } else if (c.isNetworkTimeoutOrZombie) {
                 log.info("Network timeout or zombie process detected — restarting agent to recover ...")
+                agentManager.client.dropCurrentSession()
+                currentSessionId = null
                 ApplicationManager.getApplication().executeOnPooledThread {
                     agentManager.restart()
                 }

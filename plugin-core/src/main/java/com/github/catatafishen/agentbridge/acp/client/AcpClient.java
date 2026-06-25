@@ -753,6 +753,10 @@ public abstract class AcpClient extends AbstractAgentClient {
     public void dropCurrentSession() {
         currentSessionId = null;
         persistResumeSessionId(null);
+        // Clear cached models so fetchModelsWithRetry() does not return stale
+        // models from the dead session and skip session/new creation.
+        availableModels.clear();
+        modelsFromConfigOptions = false;
     }
 
     @Override

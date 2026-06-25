@@ -1753,12 +1753,145 @@ class ChatToolWindowContent(
 
     private fun triggerAutoCommit() {
         if (isSending || project.isDisposed) return
-        submitTurn(
-            "If further work is needed to complete the task, pick the best and most efficient solution then finish it. If there are no more actions required, commit all approved changes now with a descriptive conventional commit message without more actions or research needed.",
-            emptyList(),
-            isAutoCommit = true,
-            isSilent = true
-        )
+        isLastTurnAutoCommit = true
+
+        val basePath = project.basePath ?: return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                ApplicationManager.getApplication().invokeAndWait {
+                    com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments()
+                }
+
+                val root = resolveGitRoot(basePath) ?: return@executeOnPooledThread
+
+                runGitCommand(root, "add", "-A")
+
+                val stagedDiff = runGitCommand(root, "diff", "--cached", "--name-status")
+                if (stagedDiff.isBlank()) return@executeOnPooledThread
+
+                val message = buildAutoCommitMessage(stagedDiff)
+                val commitResult = runGitCommand(root, "commit", "-m", message)
+
+                ApplicationManager.getApplication().invokeLater {
+                    val summary = commitResult.lines().firstOrNull {
+                        it.isNotBlank() && !it.startsWith("#")
+                    } ?: commitResult.take(80)
+                    consolePanel.addInfoEntry("Auto-commit: ${summary.take(80)}")
+                    com.intellij.openapi.vcs.changes.VcsDirtyScopeManager.getInstance(project)
+                        .markEverythingDirty()
+                }
+
+                try {
+                    com.github.catatafishen.agentbridge.psi.review.AgentEditSession
+                        .getInstance(project)?.removeAllApproved()
+                } catch (_: Throwable) {
+                }
+            } catch (e: Exception) {
+                com.intellij.openapi.diagnostic.Logger.getInstance(
+                    ChatToolWindowContent::class.java
+                ).warn("Auto-commit failed", e)
+            }
+        }
+    }
+
+    private fun resolveGitRoot(basePath: String): String? {
+        return try {
+            val pb = ProcessBuilder("git", "rev-parse", "--show-toplevel")
+                .directory(java.io.File(basePath))
+            pb.environment()["GIT_TERMINAL_PROMPT"] = "0"
+            val proc = pb.start()
+            val output = proc.inputStream.bufferedReader().readText().trim()
+            if (proc.waitFor() == 0 && output.isNotBlank()) output else basePath
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun runGitCommand(workingDir: String, vararg args: String): String {
+        val pb = ProcessBuilder("git", *args)
+            .directory(java.io.File(workingDir))
+        pb.environment()["GIT_TERMINAL_PROMPT"] = "0"
+        val proc = pb.start()
+        val output = proc.inputStream.bufferedReader().readText().trim()
+        val errOut = proc.errorStream.bufferedReader().readText().trim()
+        if (proc.waitFor() != 0) {
+            throw RuntimeException("git ${args.joinToString(" ")} failed: ${errOut.ifBlank { output }}")
+        }
+        return output
+    }
+
+    private fun buildAutoCommitMessage(stagedDiff: String): String {
+        val agentText = consolePanel.getLastResponseText().trim()
+        val suggestion = if (agentText.isNotBlank()) {
+            extractCommitSuggestion(agentText)
+        } else null
+
+        val type = detectCommitType(stagedDiff)
+        return if (suggestion != null && suggestion.isNotEmpty()) {
+            val msg = "$type: $suggestion"
+            if (msg.length <= 100) msg else "${msg.take(97)}..."
+        } else {
+            "$type: ${buildFileSummary(stagedDiff)}"
+        }
+    }
+
+    private fun extractCommitSuggestion(text: String): String? {
+        val cleaned = text
+            .replace(Regex("<thinking>.*?</thinking>", RegexOption.DOT_MATCHES_ALL), "")
+            .trim()
+        val para = cleaned.substringBefore("\n\n").trim()
+        val plain = para
+            .replace(Regex("^#+\\s*", RegexOption.MULTILINE), "")
+            .replace(Regex("[*_]{1,2}"), "")
+            .trim()
+        val content = if (plain.length <= 200) plain
+        else plain.split(Regex("(?<=\\.)\\s")).first().trim()
+
+        return content
+            .removePrefix("I've ").removePrefix("I have ")
+            .removePrefix("Here's ").removePrefix("This ")
+            .removePrefix("Now we ").removePrefix("Now ")
+            .replaceFirstChar { it.lowercase() }
+            .removeSuffix(".")
+            .trim()
+            .takeIf { it.length in 10..200 }
+    }
+
+    private fun detectCommitType(stagedDiff: String): String {
+        val lines = stagedDiff.lines().filter { it.isNotBlank() }
+        val hasTestChanges = lines.any { line ->
+            val path = line.drop(1).trim()
+            path.contains("/test/") || path.contains("/tests/") ||
+                path.endsWith("Test.kt") || path.endsWith("Test.java")
+        }
+        val hasSourceChanges = lines.any { line ->
+            val path = line.drop(1).trim()
+            !path.contains("/test/") && !path.contains("/tests/") &&
+                !path.endsWith("Test.kt") && !path.endsWith("Test.java")
+        }
+        if (lines.any { it.startsWith("A") }) return if (hasTestChanges && !hasSourceChanges) "test" else "feat"
+        if (lines.any { it.startsWith("D") }) return "chore"
+        if (lines.any { it.startsWith("M") }) return if (hasTestChanges && !hasSourceChanges) "test" else "fix"
+        if (lines.any { it.startsWith("R") }) return "refactor"
+        return "chore"
+    }
+
+    private fun buildFileSummary(stagedDiff: String): String {
+        val files = mutableMapOf<Char, MutableList<String>>()
+        for (line in stagedDiff.lines().filter { it.isNotBlank() }) {
+            files.computeIfAbsent(line.first()) { mutableListOf() }.add(line.drop(1).trim())
+        }
+        val allNames = files.values.flatten()
+        val parts = mutableListOf<String>()
+        when {
+            allNames.size <= 2 -> parts.add(allNames.joinToString(", ") { it.substringAfterLast("/") })
+            allNames.size <= 5 -> {
+                parts.add(allNames.first().substringAfterLast("/"))
+                parts.add("and ${allNames.size - 1} others")
+            }
+            else -> parts.add("${allNames.size} files")
+        }
+        return parts.joinToString(" ")
     }
 
     private fun restoreUnhandledNudgeIfNeeded() {
