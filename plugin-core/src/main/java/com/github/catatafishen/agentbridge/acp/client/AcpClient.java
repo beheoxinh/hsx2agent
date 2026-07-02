@@ -455,10 +455,15 @@ public abstract class AcpClient extends AbstractAgentClient {
             LOG.warn(displayName() + ": session/load interrupted for " + requestedResumeId
                 + ", falling back to session/new");
             clearResumeAndEnableInjectionFallback();
-        } catch (Exception e) {
-            LOG.warn(displayName() + ": session/load failed for " + requestedResumeId
-                + ", falling back to session/new: " + e.getMessage());
+        } catch (AgentSessionException e) {
+            LOG.info(displayName() + ": session/load capability check failed: " + e.getMessage()
+                + ", falling back to session/new");
             clearResumeAndEnableInjectionFallback();
+        } catch (Exception e) {
+            LOG.warn(displayName() + ": session/load RPC failed for " + requestedResumeId
+                + ": " + e.getMessage() + " — aborting session creation to force process restart");
+            clearResumeAndEnableInjectionFallback();
+            throw new RuntimeException("Session resumption RPC failed, forcing process restart", e);
         }
         return null;
     }
