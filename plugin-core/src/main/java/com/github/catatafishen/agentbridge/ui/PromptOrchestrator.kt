@@ -203,6 +203,7 @@ class PromptOrchestrator(
             } catch (_: Exception) {
             }
         }
+        agentManager.clearSessionResumeState()
         // Give the cancel notification time to reach the agent before interrupting,
         // so the agent processes session/cancel cleanly rather than dying mid-turn.
         if (thread != null && thread.isAlive) {
@@ -224,6 +225,7 @@ class PromptOrchestrator(
                 Thread.sleep(3000)
                 if (stopped && thread != null && thread.isAlive) {
                     log.warn("stop(): prompt thread still alive after 3 s — killing transport")
+                    agentManager.clearSessionResumeState()
                     try {
                         client.close()
                     } catch (_: Exception) {
@@ -1101,6 +1103,7 @@ class PromptOrchestrator(
     private fun reconnectAfterError() {
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
+                agentManager.clearSessionResumeState()
                 agentManager.restart()
                 ApplicationManager.getApplication().invokeLater {
                     statusBanner()?.showInfo("Reconnected — ready for a new message.")

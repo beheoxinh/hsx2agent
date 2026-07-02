@@ -273,6 +273,28 @@ public final class ActiveAgentManager implements Disposable {
         return null;
     }
 
+    /**
+     * Clears cached and persisted session-resume state without starting the agent.
+     *
+     * <p>Use this on user-driven flows like Stop, Disconnect, Reconnect, and New Conversation
+     * so the next session always starts fresh even if the previous agent process already died.</p>
+     */
+    public synchronized void clearSessionResumeState() {
+        getSettings().setResumeSessionId(null);
+        if (acpClient != null) {
+            try {
+                acpClient.dropCurrentSession();
+            } catch (Exception e) {
+                LOG.warn("Failed to drop current session while clearing resume state", e);
+            }
+            try {
+                acpClient.clearPersistedSession();
+            } catch (Exception e) {
+                LOG.warn("Failed to clear persisted session while clearing resume state", e);
+            }
+        }
+    }
+
     @Nullable
     public String checkAuthentication() {
         if (started && acpClient != null && acpClient.isHealthy()) {

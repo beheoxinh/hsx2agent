@@ -549,9 +549,9 @@ class ChatToolWindowContent(
         restartSessionGroup?.updateIconForDisconnect()
         notifyWebServerDisconnected()
 
-        // Clear the persisted resume session ID so the next connect starts fresh
-        // instead of wasting time on a stale session/resume that no longer exists.
-        agentManager.getClientIfRunning()?.dropCurrentSession()
+        // Clear all resume state so the next connect starts fresh even if the
+        // previous client already died before disconnect ran.
+        agentManager.clearSessionResumeState()
 
         // Reset MCP-side state so the next connect starts with a clean slate:
         // - Pause state: prevent tool calls from blocking on a stale pause.
@@ -3724,11 +3724,8 @@ class ChatToolWindowContent(
     }
 
     fun resetSession() {
-        // Clear the persisted resume ID so the next session/new starts completely fresh.
-        agentManager.settings.setResumeSessionId(null)
-        ApplicationManager.getApplication().executeOnPooledThread {
-            agentManager.getClientIfRunning()?.clearPersistedSession()
-        }
+        // Clear all resume state so the next session/new is always fresh.
+        agentManager.clearSessionResumeState()
         resetSessionState()
         // Clear the LiveToolCallService FIRST to prevent its change listener (which calls
         // pushAllEntries) from re-populating the MCP tool call list after clearToolCalls().
