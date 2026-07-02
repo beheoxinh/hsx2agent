@@ -557,14 +557,19 @@ class PromptOrchestrator(
             sendCall(initialSessionId)
         } catch (e: Exception) {
             val msg = e.message ?: ""
-            if (msg.contains("not found", ignoreCase = true)) {
+            val sessionMissing = msg.contains("not found", ignoreCase = true)
+            val sessionServiceFailed = msg.contains("service failure", ignoreCase = true)
+                && msg.contains("\"service\":\"session\"", ignoreCase = true)
+            if (sessionMissing || sessionServiceFailed) {
                 val agentName = agentManager.activeProfile.displayName
+                val failureKind = if (sessionMissing) "not found" else "service=session failure"
                 log.warn(
-                    "$agentName: session '$initialSessionId' not found — " +
+                    "$agentName: session '$initialSessionId' $failureKind — " +
                         "falling back to fresh session. Previous context will be lost. " +
                         "Original error: $msg",
                     e
                 )
+                client.dropCurrentSession()
                 currentSessionId = null
                 val newSessionId = ensureSessionCreated(client)
 
@@ -575,7 +580,7 @@ class PromptOrchestrator(
                 if (!wasStoppedByUser) {
                     ApplicationManager.getApplication().invokeLater {
                         consolePanel().addErrorEntry(
-                            "⚠ Session resume failed — $agentName could not find the previous session. " +
+                            "⚠ Session resume failed — $agentName could not restore the previous session. " +
                                 "Started a fresh session; earlier conversation context was not restored."
                         )
                     }
