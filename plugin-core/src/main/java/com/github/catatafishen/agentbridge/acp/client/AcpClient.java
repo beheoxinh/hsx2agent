@@ -218,6 +218,31 @@ public abstract class AcpClient extends AbstractAgentClient {
         return s.substring(0, LOG_MAX_CHARS) + "... [truncated " + (s.length() - LOG_MAX_CHARS) + " chars]";
     }
 
+    private static Throwable rootCauseOf(Throwable error) {
+        Throwable current = error;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    private static String buildDetailedErrorMessage(Throwable error, Throwable rootCause) {
+        String top = error.getMessage();
+        String root = rootCause != null ? rootCause.getMessage() : null;
+        String rootType = rootCause != null ? rootCause.getClass().getSimpleName() : null;
+        if ((top == null || top.isBlank()) && (root == null || root.isBlank())) {
+            return rootType != null ? rootType : error.getClass().getSimpleName();
+        }
+        if (rootCause == null || rootCause == error || java.util.Objects.equals(top, root)) {
+            return top != null && !top.isBlank() ? top : rootType + ": " + root;
+        }
+        String topPart = top != null && !top.isBlank() ? top : error.getClass().getSimpleName();
+        String rootPart = root != null && !root.isBlank()
+            ? ((rootType != null && !root.startsWith(rootType + ":")) ? rootType + ": " + root : root)
+            : rootType;
+        return rootPart != null && !rootPart.isBlank() ? topPart + " — caused by: " + rootPart : topPart;
+    }
+
     @Override
     public final void start() throws AgentStartException {
         try {
@@ -757,10 +782,17 @@ public abstract class AcpClient extends AbstractAgentClient {
     @Override
     public void dropCurrentSession() {
         currentSessionId = null;
+        requestedResumeId = null;
+        loadedSessionHistory = null;
         persistResumeSessionId(null);
-        // Clear cached models so fetchModelsWithRetry() does not return stale
-        // models from the dead session and skip session/new creation.
+        // Clear cached session-derived state so the next createSession() cannot
+        // reuse stale model/config metadata from the dead or corrupted session.
         availableModels.clear();
+        availableModes.clear();
+        availableConfigOptions.clear();
+        currentModelId = null;
+        currentModeSlug = null;
+        currentAgentSlug = null;
         modelsFromConfigOptions = false;
     }
 
@@ -1600,8 +1632,8 @@ public abstract class AcpClient extends AbstractAgentClient {
             LOG.info(displayName() + ": eagerly loaded " + availableModels.size()
                 + " model(s) on retry, session=" + currentSessionId);
         } catch (Exception e) {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
-            String errorMsg = e.getMessage() + (cause != e ? " — caused by: " + cause.getMessage() : "");
+            Throwable cause = rootCauseOf(e);
+            String errorMsg = buildDetailedErrorMessage(e, cause);
 
             // Check if this is an auth error - if so, re-throw it so startup fails immediately
             Throwable current = e;

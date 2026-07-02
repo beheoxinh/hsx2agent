@@ -405,6 +405,21 @@ public final class ActiveAgentManager implements Disposable {
         start();
     }
 
+    /**
+     * Restart the agent process without exporting or resuming the current session.
+     *
+     * <p>Use this after session corruption, failed session creation, or explicit
+     * reconnect/new-session flows where carrying native session state forward can
+     * immediately reproduce the same broken session on startup.</p>
+     */
+    public synchronized void restartFresh() {
+        LOG.info("Restarting ACP client with fresh session state");
+        clearSessionResumeState();
+        stop();
+        clearCachedConfig();
+        start();
+    }
+
     @Override
     public void dispose() {
         LOG.info("ActiveAgentManager disposed");

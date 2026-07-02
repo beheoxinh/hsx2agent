@@ -739,7 +739,7 @@ class PromptOrchestrator(
         // broken state into the next turn.
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                agentManager.restart()
+                agentManager.restartFresh()
             } catch (ex: Exception) {
                 log.warn("Failed to restart agent after session corruption", ex)
             }
@@ -1072,14 +1072,14 @@ class PromptOrchestrator(
                 // 3. restart() creates everything from scratch
                 currentSessionId = null
                 ApplicationManager.getApplication().executeOnPooledThread {
-                    agentManager.restart()
+                    agentManager.restartFresh()
                 }
             } else if (c.isNetworkTimeoutOrZombie) {
                 log.info("Network timeout or zombie process detected — restarting agent to recover ...")
                 agentManager.getClientIfRunning()?.dropCurrentSession()
                 currentSessionId = null
                 ApplicationManager.getApplication().executeOnPooledThread {
-                    agentManager.restart()
+                    agentManager.restartFresh()
                 }
             } else {
                 // Process is alive but returned a protocol error (e.g. code 300).
@@ -1109,7 +1109,7 @@ class PromptOrchestrator(
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 agentManager.clearSessionResumeState()
-                agentManager.restart()
+                agentManager.restartFresh()
                 ApplicationManager.getApplication().invokeLater {
                     statusBanner()?.showInfo("Reconnected — ready for a new message.")
                 }
