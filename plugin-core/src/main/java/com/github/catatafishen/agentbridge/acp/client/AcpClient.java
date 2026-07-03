@@ -40,6 +40,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.util.SystemProperties;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -57,6 +58,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -129,11 +131,25 @@ public abstract class AcpClient extends AbstractAgentClient {
     protected @Nullable String requestedResumeId;
     private final List<Model> availableModels = new ArrayList<>();
     private final List<AbstractAgentClient.AgentMode> availableModes = new ArrayList<>();
+    private final List<String> availableCommandNames = new ArrayList<>();
+    private final List<NewSessionResponse.AvailableCommand> availableCommandDetails = new ArrayList<>();
     private @Nullable String currentModeSlug = null;
     private @Nullable String currentModelId = null;
     private @Nullable String currentAgentSlug = null;
     private final List<AbstractAgentClient.AgentConfigOption> availableConfigOptions = new ArrayList<>();
     private volatile @Nullable Consumer<SessionUpdate> updateConsumer;
+
+    /**
+     * True after a turn has completed but ACP updates are still arriving.
+     * Cleared when the next turn starts or when clearPostTurnState() is called.
+     */
+    protected volatile boolean postTurnActive = false;
+
+    /** One-shot callback fired on the first post-turn update. */
+    private final AtomicReference<Runnable> firstPostTurnCallback = new AtomicReference<>();
+
+    /** Auto-clear future for post-turn background state. */
+    private final AtomicReference<java.util.concurrent.ScheduledFuture<?>> postTurnClearFuture = new AtomicReference<>();
     /**
      * Conversation history replayed by the agent during {@code session/load}.
      * Non-null and non-empty when the agent successfully restored a session with
@@ -377,6 +393,8 @@ public abstract class AcpClient extends AbstractAgentClient {
             launchCwd = null;
             availableModels.clear();
             availableModes.clear();
+            availableCommandNames.clear();
+            availableCommandDetails.clear();
             currentModeSlug = null;
             currentModelId = null;
             currentAgentSlug = null;
@@ -548,6 +566,10 @@ public abstract class AcpClient extends AbstractAgentClient {
             updateModes(response);
         }
 
+        if (response.commands() != null) {
+            updateCommands(response.commands());
+        }
+
         if (response.configOptions() != null) {
             updateConfigOptions(response);
         }
@@ -615,6 +637,26 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (currentAgentSlug == null) {
             currentAgentSlug = defaultAgentSlug();
         }
+    }
+
+    private void updateCommands(List<NewSessionResponse.AvailableCommand> commands) {
+        List<String> names = new ArrayList<>();
+        availableCommandDetails.clear();
+        for (NewSessionResponse.AvailableCommand cmd : commands) {
+            if (cmd.name() != null && !cmd.name().isBlank()) {
+                names.add(cmd.name());
+                availableCommandDetails.add(cmd);
+            }
+        }
+        updateCommandNames(names);
+    }
+
+    protected void updateCommandNames(List<String> names) {
+        availableCommandNames.clear();
+        for (String name : names) {
+            availableCommandNames.add(name.startsWith("/") ? name : "/" + name);
+        }
+        LOG.info(displayName() + ": " + availableCommandNames.size() + " slash command(s) available");
     }
 
     static List<AbstractAgentClient.AgentConfigOption> mapConfigOptionsStatic(
@@ -821,6 +863,8 @@ public abstract class AcpClient extends AbstractAgentClient {
         // reuse stale model/config metadata from the dead or corrupted session.
         availableModels.clear();
         availableModes.clear();
+        availableCommandNames.clear();
+        availableCommandDetails.clear();
         availableConfigOptions.clear();
         currentModelId = null;
         currentModeSlug = null;
@@ -939,16 +983,34 @@ public abstract class AcpClient extends AbstractAgentClient {
      * augment the request (e.g. prepend corrective guidance). Default: returns unchanged.
      */
     protected PromptRequest beforeSendPrompt(PromptRequest request) {
+        clearPostTurnState();
         return request;
     }
 
     /**
      * Called in the finally block after {@code sendPrompt} completes (success or failure).
-     * Default: clears {@code updateConsumer}. Override to retain it (e.g. Kiro sends
-     * thought chunks asynchronously after the prompt response).
+     * Enters post-turn mode so background ACP updates can still reach the UI briefly.
      */
     protected void afterPromptComplete() {
+        postTurnActive = true;
+        postTurnClearFuture.set(AppExecutorUtil.getAppScheduledExecutorService()
+            .schedule(this::clearPostTurnState, 120, TimeUnit.SECONDS));
+    }
+
+    @Override
+    public void clearPostTurnState() {
+        postTurnActive = false;
+        firstPostTurnCallback.set(null);
+        java.util.concurrent.ScheduledFuture<?> future = postTurnClearFuture.getAndSet(null);
+        if (future != null) {
+            future.cancel(false);
+        }
         updateConsumer = null;
+    }
+
+    @Override
+    public void setFirstPostTurnCallback(@Nullable Runnable callback) {
+        firstPostTurnCallback.set(callback);
     }
 
     /**
@@ -1736,6 +1798,10 @@ public abstract class AcpClient extends AbstractAgentClient {
             }
         }
 
+        if (update instanceof SessionUpdate.AvailableCommandsChanged availableCommandsChanged) {
+            updateCommands(availableCommandsChanged.commands());
+        }
+
         if (update instanceof SessionUpdate.SessionInfoChanged sessionInfoChanged
             && sessionInfoChanged.title() != null
             && !sessionInfoChanged.title().isBlank()) {
@@ -1746,6 +1812,13 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (consumer == null) {
             LOG.debug("Session update received but no consumer registered");
             return;
+        }
+
+        if (postTurnActive) {
+            Runnable callback = firstPostTurnCallback.getAndSet(null);
+            if (callback != null) {
+                callback.run();
+            }
         }
 
         if (update != null) {

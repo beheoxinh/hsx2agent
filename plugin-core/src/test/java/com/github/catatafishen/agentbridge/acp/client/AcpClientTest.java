@@ -1045,6 +1045,47 @@ class AcpClientTest {
             assertEquals("plan", client.getCurrentModeSlug());
         }
 
+        @Test
+        void availableCommandsUpdateRefreshesInternalSlashCommandState() throws Exception {
+            TestableAcpClient client = new TestableAcpClient();
+            JsonObject params = new JsonObject();
+            JsonObject update = new JsonObject();
+            update.addProperty("sessionUpdate", "available_commands_update");
+            JsonArray commands = new JsonArray();
+            JsonObject command = new JsonObject();
+            command.addProperty("name", "cancel");
+            command.addProperty("description", "Cancel current task");
+            commands.add(command);
+            update.add("availableCommands", commands);
+            params.add("update", update);
+
+            invokeHandleSessionUpdate(client, params);
+
+            Field field = AcpClient.class.getDeclaredField("availableCommandNames");
+            field.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            List<String> names = (List<String>) field.get(client);
+            assertEquals(List.of("/cancel"), names);
+        }
+
+        @Test
+        void clearPostTurnStateClearsCallbackAndConsumer() throws Exception {
+            TestableAcpClient client = new TestableAcpClient();
+            client.setFirstPostTurnCallback(() -> {});
+            Field consumerField = AcpClient.class.getDeclaredField("updateConsumer");
+            consumerField.setAccessible(true);
+            consumerField.set(client, (java.util.function.Consumer<com.github.catatafishen.agentbridge.acp.model.SessionUpdate>) update -> {});
+
+            Field activeField = AcpClient.class.getDeclaredField("postTurnActive");
+            activeField.setAccessible(true);
+            activeField.setBoolean(client, true);
+
+            client.clearPostTurnState();
+
+            assertFalse(activeField.getBoolean(client));
+            assertNull(consumerField.get(client));
+        }
+
         private void invokeHandleSessionUpdate(TestableAcpClient client, JsonObject params) throws Exception {
             Method method = AcpClient.class.getDeclaredMethod("handleSessionUpdate", JsonObject.class);
             method.setAccessible(true);
