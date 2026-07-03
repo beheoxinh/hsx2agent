@@ -631,6 +631,9 @@ public final class McpProtocolHandler {
         ToolHookConfig hookConfig = HookRegistry.getInstance(project).findConfig(toolName);
         boolean hasHooks = hookConfig != null && !hookConfig.isEmpty();
         long callId = liveService.recordStart(toolName, displayName, inputJson, kind, hasHooks, originalInputJson);
+        // If ACP has already correlated this call before MCP started executing, apply the
+        // richer ACP title to the chip immediately so it shows the better name from the start.
+        applyAcpTitleIfPresent(callId, toolUseId, displayName);
         long callStartMs = System.currentTimeMillis();
 
         try {
@@ -644,13 +647,7 @@ public final class McpProtocolHandler {
             // Enrich the live entry display name with the ACP title once it is available.
             // ACP registers before MCP executes, so the record (and its acpTitle) should
             // already exist by the time callTool() returns.
-            ToolCallRecord trackerRecord = ToolCallTracker.getInstance(project).findByToolUseId(toolUseId);
-            if (trackerRecord != null) {
-                String acpTitle = trackerRecord.getAcpTitle();
-                if (acpTitle != null && !acpTitle.equals(displayName)) {
-                    liveService.setDisplayName(callId, acpTitle);
-                }
-            }
+            applyAcpTitleIfPresent(callId, toolUseId, displayName);
 
             long durationMs = System.currentTimeMillis() - callStartMs;
             var postOutcome = applyPostHook(toolName, arguments, resultText, hookStages);
@@ -700,6 +697,16 @@ public final class McpProtocolHandler {
             return buildToolResult(msg, finalOutput, isError);
         } finally {
             McpCallContext.clear();
+        }
+    }
+
+    private void applyAcpTitleIfPresent(long callId, @Nullable String toolUseId, String displayName) {
+        ToolCallRecord trackerRecord = ToolCallTracker.getInstance(project).findByToolUseId(toolUseId);
+        if (trackerRecord != null) {
+            String acpTitle = trackerRecord.getAcpTitle();
+            if (acpTitle != null && !acpTitle.equals(displayName)) {
+                LiveToolCallService.getInstance(project).setDisplayName(callId, acpTitle);
+            }
         }
     }
 
