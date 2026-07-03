@@ -6,9 +6,9 @@ import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.SystemInfo;
-import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -371,31 +371,55 @@ public final class OpenCodeClient extends AcpClient {
     public void cleanupCorruptedSessions() {
         String basePath = project.getBasePath();
         if (basePath == null) return;
+
+        // 1. Session cleanup within OpenCode DB
         java.io.File dbFile = java.nio.file.Paths.get(
             System.getProperty("user.home"), ".local", "share", "opencode", "opencode.db").toFile();
-        if (!dbFile.isFile()) return;
-        try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath())) {
-            // Find the project_id for this workspace directory
-            try (java.sql.PreparedStatement ps = conn.prepareStatement(
-                "SELECT project_id FROM project_directory WHERE directory = ?")) {
-                ps.setString(1, basePath);
-                try (java.sql.ResultSet rs = ps.executeQuery()) {
-                    if (!rs.next()) return;
-                    String projectId = rs.getString("project_id");
-                    // Delete sessions with compaction never completed
-                    try (java.sql.PreparedStatement del = conn.prepareStatement(
-                        "DELETE FROM session WHERE project_id = ? AND time_compacting IS NULL")) {
-                        del.setString(1, projectId);
-                        int deleted = del.executeUpdate();
-                        if (deleted > 0) {
-                            LOG.info("OpenCodeClient: cleaned " + deleted
-                                + " corrupted session(s) from OpenCode DB for project " + projectId);
+        if (dbFile.isFile()) {
+            try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath())) {
+                try (java.sql.PreparedStatement ps = conn.prepareStatement(
+                    "SELECT project_id FROM project_directory WHERE directory = ?")) {
+                    ps.setString(1, basePath);
+                    try (java.sql.ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            String projectId = rs.getString("project_id");
+                            // Delete sessions with incomplete compaction
+                            try (java.sql.PreparedStatement del = conn.prepareStatement(
+                                "DELETE FROM session WHERE project_id = ? AND time_compacting IS NULL")) {
+                                del.setString(1, projectId);
+                                int deleted = del.executeUpdate();
+                                if (deleted > 0) {
+                                    LOG.info("OpenCodeClient: cleaned " + deleted
+                                        + " corrupted session(s) for project " + projectId);
+                                }
+                            }
                         }
                     }
                 }
+            } catch (Exception e) {
+                LOG.warn("OpenCodeClient: failed to clean OpenCode DB", e);
             }
-        } catch (Exception e) {
-            LOG.warn("OpenCodeClient: failed to clean corrupted sessions from OpenCode DB", e);
+        }
+
+        // 2. Stale workspace files — OpenCode persists per-project workspace state
+        // (model selections, session references, VCS branch info). If a workspace file
+        // references a deleted session, OpenCode may try to resume it and fail.
+        String configDir = System.getProperty("user.home") + "/.config/ai.opencode.desktop/";
+        java.io.File dir = new java.io.File(configDir);
+        String projectTag = basePath.replace('/', '-').replaceAll("[^a-zA-Z0-9_-]", "");
+        if (dir.isDirectory()) {
+            java.io.File[] stale = dir.listFiles((d, name) -> name.startsWith("opencode.workspace.-" + projectTag));
+            if (stale != null) {
+                for (java.io.File f : stale) {
+                    try {
+                        if (f.delete()) {
+                            LOG.info("OpenCodeClient: deleted stale workspace file: " + f.getName());
+                        }
+                    } catch (Exception e) {
+                        LOG.warn("OpenCodeClient: failed to delete workspace file " + f.getName(), e);
+                    }
+                }
+            }
         }
     }
 
