@@ -23,7 +23,9 @@ import com.github.catatafishen.agentbridge.bridge.McpServerJarLocator;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
+import com.github.catatafishen.agentbridge.services.InFlightMcpToolRegistry;
 import com.github.catatafishen.agentbridge.services.McpServerControl;
+import com.github.catatafishen.agentbridge.services.ToolCallTracker;
 import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.settings.AcpClientBinaryResolver;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
@@ -383,6 +385,20 @@ public abstract class AcpClient extends AbstractAgentClient {
     public final void stop() {
         sendSessionCloseIfSupported();
         try {
+            // Release any in-flight MCP tools (e.g. prompt_user waiters) and fail their chips
+            // so users see a clear failure state instead of a spinner that never resolves.
+            if (project != null && !project.isDisposed()) {
+                try {
+                    InFlightMcpToolRegistry.getInstance(project).cancelAll("agent stopped");
+                } catch (Exception e) {
+                    LOG.warn("Failed to cancel in-flight MCP tools on stop", e);
+                }
+                try {
+                    ToolCallTracker.getInstance(project).stopAllInFlight("agent stopped");
+                } catch (Exception e) {
+                    LOG.warn("Failed to stop in-flight tool calls on stop", e);
+                }
+            }
             transport.stop();
         } catch (Exception e) {
             LOG.warn("Transport stop encountered an error; proceeding to kill process", e);

@@ -75,6 +75,16 @@ public final class ToolCallTracker {
          */
         default void onFlushed(@NotNull ToolCallRecord callRecord) {
         }
+
+        /**
+         * Agent process stopped while the record was still in-flight.
+         * The record's state is {@link ToolCallRecord.State#FAILED}.
+         *
+         * @param callRecord the record that was in-flight when agent stopped
+         * @param reason     human-readable cause (e.g. "agent stopped", "process crashed")
+         */
+        default void onAgentStopped(@NotNull ToolCallRecord callRecord, @NotNull String reason) {
+        }
     }
 
     // ── Live set ─────────────────────────────────────────────────────────────
@@ -538,5 +548,44 @@ public final class ToolCallTracker {
                 }
             }
         });
+    }
+
+    private void fireOnAgentStopped(@NotNull ToolCallRecord callRecord, @NotNull String reason) {
+        if (listeners.isEmpty()) return;
+        ApplicationManager.getApplication().invokeLater(() -> {
+            for (Listener l : listeners) {
+                try {
+                    l.onAgentStopped(callRecord, reason);
+                } catch (Exception e) {
+                    LOG.warn(LISTENER_ERROR_MSG, e);
+                }
+            }
+        });
+    }
+
+    // ── Shutdown ─────────────────────────────────────────────────────────────
+
+    /**
+     * Fail every live record because the agent process exited (whether by user-initiated
+     * disconnect or unexpected crash). Fires
+     * {@link Listener#onAgentStopped(ToolCallRecord, String)} followed by
+     * {@link Listener#onFlushed(ToolCallRecord)} for each record, then clears all internal
+     * maps. UI listeners use this to transition orphan spinning chips into a failed state.
+     *
+     * @param reason human-readable cause shown to the user in the chip details
+     */
+    public synchronized void stopAllInFlight(@NotNull String reason) {
+        if (liveRecords.isEmpty()) return;
+        List<ToolCallRecord> all = new ArrayList<>(liveRecords.values());
+        liveRecords.clear();
+        acpIdToRecordId.clear();
+        toolUseIdToRecordId.clear();
+        acpSequence = 0;
+        for (ToolCallRecord r : all) {
+            r.setState(ToolCallRecord.State.FAILED);
+            fireOnAgentStopped(r, reason);
+            fireOnFlushed(r);
+        }
+        LOG.info("ToolCallTracker: failed " + all.size() + " in-flight record(s) — " + reason);
     }
 }
