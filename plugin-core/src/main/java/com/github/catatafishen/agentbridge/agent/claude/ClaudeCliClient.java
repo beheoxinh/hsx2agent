@@ -93,6 +93,18 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     private static final String STOP_REASON_END_TURN = "end_turn";
     private static final String PROFILE_FLAG = "--profile";
     private static final int STDERR_BUFFER_MAX_LINES = 100;
+    private static final String SUBTYPE_INIT = "init";
+    private static final String FIELD_SLASH_COMMANDS = "slash_commands";
+
+    /**
+     * Claude Code built-in tools that bypass the IDE and must be suppressed when the profile
+     * enables {@code excludeAgentBuiltInTools}. These are passed to the CLI via
+     * {@code --disallowedTools}. WebFetch and WebSearch are intentionally omitted because they
+     * have no MCP equivalent and should remain available.
+     */
+    static final java.util.List<String> DISABLED_BUILT_IN_TOOLS = java.util.List.of(
+        "Bash", "Edit", "Read", "Write", "WebSearchTool", "LS", "Glob", "Grep", "NotebookRead", "NotebookEdit"
+    );
 
     @NotNull
     public static AgentProfile createDefaultProfile() {
@@ -134,6 +146,10 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
      */
     private final Map<String, String> cliSessionIds = new ConcurrentHashMap<>();
     private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
+    /**
+     * Slash commands reported by the CLI in the {@code system/init} event.
+     */
+    private final java.util.List<String> availableSlashCommands = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     private static final String KEY_CLI_SESSION_MAP_PREFIX = "claude-cli.cliSessionIdMap.";
 
@@ -188,11 +204,17 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     }
 
     @Override
+    public java.util.List<String> getAvailableCommands() {
+        return java.util.List.copyOf(availableSlashCommands);
+    }
+
+    @Override
     public void stop() {
         started = false;
         activeProcesses.values().forEach(Process::destroyForcibly);
         activeProcesses.clear();
         cliSessionIds.clear();
+        availableSlashCommands.clear();
         sessionModels.clear();
         sessionCancelled.clear();
     }
@@ -473,12 +495,11 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         cmd.add("--model");
         cmd.add(model);
 
-        // Allow only safe web tools (WebFetch, WebSearch) when excluding agent built-in tools.
-        // All other tools (Bash, Edit, Write, Read, etc.) are provided via MCP instead.
-        if (profile.isExcludeAgentBuiltInTools()) {
-            cmd.add("--tools");
-            cmd.add("WebFetch,WebSearch");
-        }
+        // Suppress IDE-bypassing built-in tools when the profile excludes them. Uses a
+        // --disallowedTools denylist (not a --tools allowlist) so that WebFetch, WebSearch, and
+        // all mcp__agentbridge__* tools remain available. A --tools allowlist would also strip the
+        // MCP tools, leaving the model with no file/search/command capabilities at all.
+        cmd.addAll(buildToolRestrictionArgs(profile.isExcludeAgentBuiltInTools()));
 
         String effort = getSessionOption(sessionId, "effort");
         if (effort != null && !effort.isEmpty()) {
@@ -492,6 +513,14 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             cmd.add(cliSessionId);
         }
         return cmd;
+    }
+
+    @NotNull
+    static List<String> buildToolRestrictionArgs(boolean excludeAgentBuiltInTools) {
+        if (!excludeAgentBuiltInTools) {
+            return List.of();
+        }
+        return List.of("--disallowedTools", String.join(",", DISABLED_BUILT_IN_TOOLS));
     }
 
     /**
@@ -698,10 +727,23 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         String type = event.has(FIELD_TYPE) ? event.get(FIELD_TYPE).getAsString() : "";
         return switch (type) {
             case "system" -> {
-                if (event.has(FIELD_SESSION_ID)) {
-                    String cliId = event.get(FIELD_SESSION_ID).getAsString();
-                    cliSessionIds.put(sessionId, cliId);
-                    persistCliSessionId(sessionId, cliId);
+                // The result event is the authoritative source for session IDs.
+                // Updating here would overwrite the last known-good ID when Claude silently
+                // starts a fresh session because the --resume file was missing or invalid.
+                // The init event carries the list of slash commands supported by this CLI version.
+                // Parse them so the autocomplete popup can surface them to the user.
+                if (SUBTYPE_INIT.equals(event.has(FIELD_SUBTYPE)
+                    ? event.get(FIELD_SUBTYPE).getAsString() : null)
+                    && event.has(FIELD_SLASH_COMMANDS)
+                    && event.get(FIELD_SLASH_COMMANDS).isJsonArray()) {
+                    List<String> cmds = new ArrayList<>();
+                    for (JsonElement el : event.getAsJsonArray(FIELD_SLASH_COMMANDS)) {
+                        String cmd = el.getAsString();
+                        cmds.add(cmd.startsWith("/") ? cmd : "/" + cmd);
+                    }
+                    availableSlashCommands.clear();
+                    availableSlashCommands.addAll(cmds);
+                    LOG.info("ClaudeCliClient: " + cmds.size() + " slash command(s) available: " + cmds);
                 }
                 yield currentStopReason;
             }
