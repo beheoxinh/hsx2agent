@@ -327,6 +327,24 @@ public abstract class AbstractAgentClient {
         return false;
     }
 
+    // ─── Slash Commands ──────────────────────────────
+
+    /**
+     * Available slash commands for this agent, with leading '/' prefix.
+     * Default: empty.
+     */
+    public List<String> getAvailableCommands() {
+        return List.of();
+    }
+
+    /**
+     * Available slash commands with descriptions.
+     * Default: empty.
+     */
+    public List<SlashCommandInfo> getAvailableCommandDetails() {
+        return List.of();
+    }
+
     // ─── Session Options ─────────────────────────────
 
     /**

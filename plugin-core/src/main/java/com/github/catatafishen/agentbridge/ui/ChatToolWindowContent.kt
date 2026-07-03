@@ -3664,17 +3664,9 @@ class ChatToolWindowContent(
         }
 
         val commands = client.availableCommands
-        if (commands.size() == 0) return
+        if (commands.isEmpty()) return
 
-        val matches = mutableListOf<String>()
-        for (i in 0 until commands.size()) {
-            val cmdObj = commands[i].asJsonObject
-            val cmd = cmdObj["name"]?.asString ?: continue
-            if (cmd.startsWith(text, ignoreCase = true)) {
-                matches.add(cmd)
-            }
-        }
-
+        val matches = commands.filter { it.startsWith(text, ignoreCase = true) }
         if (matches.isEmpty()) {
             autocompletePopup?.cancel()
             return

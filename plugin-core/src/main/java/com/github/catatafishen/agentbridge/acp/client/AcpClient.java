@@ -17,6 +17,7 @@ import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.github.catatafishen.agentbridge.agent.AgentPromptException;
 import com.github.catatafishen.agentbridge.agent.AgentSessionException;
 import com.github.catatafishen.agentbridge.agent.AgentStartException;
+import com.github.catatafishen.agentbridge.agent.SlashCommandInfo;
 import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import com.github.catatafishen.agentbridge.bridge.McpServerJarLocator;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
@@ -1134,6 +1135,24 @@ public abstract class AcpClient extends AbstractAgentClient {
     @Override
     public final List<AbstractAgentClient.AgentMode> getAvailableModes() {
         return List.copyOf(availableModes);
+    }
+
+    @Override
+    public final List<String> getAvailableCommands() {
+        return List.copyOf(availableCommandNames);
+    }
+
+    @Override
+    public final List<SlashCommandInfo> getAvailableCommandDetails() {
+        List<SlashCommandInfo> result = new ArrayList<>();
+        for (NewSessionResponse.AvailableCommand cmd : availableCommandDetails) {
+            String name = cmd.name();
+            if (name == null || name.isBlank()) continue;
+            if (!name.startsWith("/")) name = "/" + name;
+            String desc = cmd.description();
+            result.add(new SlashCommandInfo(name, desc != null ? desc : ""));
+        }
+        return result;
     }
 
     @Override

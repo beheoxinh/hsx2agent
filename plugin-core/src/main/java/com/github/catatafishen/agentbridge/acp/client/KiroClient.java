@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.acp.model.ContentBlock;
 import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -104,12 +105,25 @@ public final class KiroClient extends AcpClient {
         }
     }
 
-    private JsonArray availableCommands = new JsonArray();
-
     private void handleCommandsAvailable(JsonObject params) {
         if (params != null && params.has("commands")) {
-            availableCommands = params.getAsJsonArray("commands");
-            LOG.info("Kiro slash commands available: " + availableCommands.size());
+            JsonArray arr = params.getAsJsonArray("commands");
+            List<String> names = new java.util.ArrayList<>();
+            // Register each command name into the shared base command pipeline
+            // so getAvailableCommands() returns them for UI slash command autocomplete.
+            for (int i = 0; i < arr.size(); i++) {
+                JsonElement el = arr.get(i);
+                if (el.isJsonPrimitive()) {
+                    names.add(el.getAsString());
+                } else if (el.isJsonObject() && el.getAsJsonObject().has("name")) {
+                    String name = el.getAsJsonObject().get("name").getAsString();
+                    if (name != null && !name.isBlank()) {
+                        names.add(name);
+                    }
+                }
+            }
+            updateCommandNames(names);
+            LOG.info("Kiro slash commands available: " + names.size());
         }
     }
 
@@ -124,8 +138,17 @@ public final class KiroClient extends AcpClient {
         });
     }
 
-    public JsonArray getAvailableCommands() {
-        return availableCommands;
+    /**
+     * Returns available slash commands as a JsonArray, maintaining backward compatibility
+     * with potential callers expecting this format. New code should use the shared
+     * {@link #getAvailableCommands()} API instead.
+     */
+    public JsonArray getAvailableCommandsJson() {
+        JsonArray arr = new JsonArray();
+        for (String name : getAvailableCommands()) {
+            arr.add(name);
+        }
+        return arr;
     }
 
     private void handleMcpOAuthRequest(JsonObject params) {
