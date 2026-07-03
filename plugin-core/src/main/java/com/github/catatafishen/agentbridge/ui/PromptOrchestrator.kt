@@ -72,6 +72,7 @@ class PromptOrchestrator(
     private val taskCompleteTool = "task_complete"
 
     internal var currentSessionId: String? = null
+    private var lastInitialisedSessionId: String? = null
     internal var conversationSummaryInjected: Boolean = false
     private var currentPromptThread: Thread? = null
 
@@ -195,7 +196,7 @@ class PromptOrchestrator(
     fun stop() {
         stopped = true
         wasStoppedByUser = true
-        val sessionId = currentSessionId
+        val sessionId = agentManager.getClientIfRunning()?.activeSessionId ?: currentSessionId
         val thread = currentPromptThread
         if (sessionId != null) {
             try {
@@ -256,6 +257,7 @@ class PromptOrchestrator(
         isAutoCommit: Boolean = false,
         isContinue: Boolean = false
     ) {
+        agentManager.beginPrompt()
         try {
             // Clean up agent resources from previous turns before starting a new one
             AgentTabTracker.getInstance(project).closeTrackedTabs()
@@ -298,6 +300,8 @@ class PromptOrchestrator(
             handlePromptCompletion(prompt)
         } catch (e: Exception) {
             handlePromptError(e)
+        } finally {
+            agentManager.endPrompt()
         }
     }
 
@@ -314,13 +318,18 @@ class PromptOrchestrator(
 
     @Synchronized
     private fun ensureSessionCreated(client: AbstractAgentClient): String {
-        if (currentSessionId == null) {
-            currentSessionId = client.createSession(project.basePath)
+        // Always delegate to client.createSession() so the client remains the single source
+        // of truth for session ownership. This avoids orchestrator/client drift after process
+        // restart, session invalidation, or recovery from a cancelled turn.
+        val sessionId = client.createSession(project.basePath)
+        currentSessionId = sessionId
+        if (sessionId != lastInitialisedSessionId) {
+            lastInitialisedSessionId = sessionId
             callbacks.updateSessionInfo()
             val savedModel = agentManager.settings.selectedModel
             if (!savedModel.isNullOrEmpty()) {
                 try {
-                    client.setModel(currentSessionId!!, savedModel)
+                    client.setModel(sessionId, savedModel)
                 } catch (ex: Exception) {
                     log.warn("Failed to set model $savedModel on new session", ex)
                 }
@@ -329,14 +338,14 @@ class PromptOrchestrator(
                 val savedValue = agentManager.settings.getSessionOptionValue(option.key)
                 if (savedValue.isNotEmpty()) {
                     try {
-                        client.setSessionOption(currentSessionId!!, option.key, savedValue)
+                        client.setSessionOption(sessionId, option.key, savedValue)
                     } catch (ex: Exception) {
                         log.warn("Failed to restore session option ${option.key}=$savedValue", ex)
                     }
                 }
             }
         }
-        return currentSessionId!!
+        return sessionId
     }
 
     private fun wirePermissionListener(client: AbstractAgentClient) {
