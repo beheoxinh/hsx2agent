@@ -363,6 +363,12 @@ public final class OpenCodeClient extends AcpClient {
     }
 
     @Override
+    public @Nullable java.nio.file.Path getSessionDirectory() {
+        java.io.File dir = com.github.catatafishen.agentbridge.session.exporters.ExportUtils.sessionsDir(project);
+        return dir.isDirectory() ? dir.toPath() : null;
+    }
+
+    @Override
     public AbstractAgentClient.ModelDisplayMode modelDisplayMode() {
         return AbstractAgentClient.ModelDisplayMode.TOKEN_COUNT;
     }
