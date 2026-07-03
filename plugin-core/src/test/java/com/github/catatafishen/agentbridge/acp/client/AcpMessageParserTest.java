@@ -240,6 +240,74 @@ class AcpMessageParserTest {
         assertNull(update, "Missing sessionUpdate field should return null");
     }
 
+    @Test
+    void parsesConfigOptionUpdate_fullListFormat() {
+        JsonObject params = updateParams("config_option_update");
+        JsonArray configOptions = new JsonArray();
+        JsonObject model = new JsonObject();
+        model.addProperty("id", "model");
+        model.addProperty("label", "Model");
+        JsonArray values = new JsonArray();
+        JsonObject option = new JsonObject();
+        option.addProperty("id", "gpt-5");
+        option.addProperty("label", "GPT-5");
+        values.add(option);
+        model.add("values", values);
+        model.addProperty("selectedValueId", "gpt-5");
+        configOptions.add(model);
+        params.add("configOptions", configOptions);
+
+        SessionUpdate update = parser.parse(params);
+
+        assertInstanceOf(SessionUpdate.ConfigOptionsChanged.class, update);
+        SessionUpdate.ConfigOptionsChanged changed = (SessionUpdate.ConfigOptionsChanged) update;
+        assertEquals(1, changed.options().size());
+        assertEquals("model", changed.options().getFirst().id());
+        assertEquals("gpt-5", changed.options().getFirst().selectedValueId());
+    }
+
+    @Test
+    void parsesAvailableCommandsUpdate() {
+        JsonObject params = updateParams("available_commands_update");
+        JsonArray commands = new JsonArray();
+        JsonObject command = new JsonObject();
+        command.addProperty("name", "cancel");
+        command.addProperty("description", "Cancel current task");
+        commands.add(command);
+        params.add("availableCommands", commands);
+
+        SessionUpdate update = parser.parse(params);
+
+        assertInstanceOf(SessionUpdate.AvailableCommandsChanged.class, update);
+        SessionUpdate.AvailableCommandsChanged changed = (SessionUpdate.AvailableCommandsChanged) update;
+        assertEquals(1, changed.commands().size());
+        assertEquals("cancel", changed.commands().getFirst().name());
+    }
+
+    @Test
+    void parsesSessionInfoUpdate() {
+        JsonObject params = updateParams("session_info_update");
+        params.addProperty("title", "Fix OpenCode transport");
+
+        SessionUpdate update = parser.parse(params);
+
+        assertInstanceOf(SessionUpdate.SessionInfoChanged.class, update);
+        assertEquals("Fix OpenCode transport", ((SessionUpdate.SessionInfoChanged) update).title());
+    }
+
+    @Test
+    void parsesCurrentModeUpdate() {
+        JsonObject params = updateParams("current_mode_update");
+        params.addProperty("slug", "plan");
+
+        SessionUpdate update = parser.parse(params);
+
+        assertInstanceOf(SessionUpdate.AvailableModesChanged.class, update);
+        SessionUpdate.AvailableModesChanged changed = (SessionUpdate.AvailableModesChanged) update;
+        assertNull(changed.modes(), "current_mode_update should not replace the modes list");
+        assertEquals("plan", changed.activeSlug());
+    }
+
     // ── usage_update — OpenCode usage tracking ───────────────────────────
 
     @Test

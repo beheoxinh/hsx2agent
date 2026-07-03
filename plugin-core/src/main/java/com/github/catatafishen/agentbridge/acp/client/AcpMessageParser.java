@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.acp.client;
 
 import com.github.catatafishen.agentbridge.acp.model.ContentBlock;
 import com.github.catatafishen.agentbridge.acp.model.Location;
+import com.github.catatafishen.agentbridge.acp.model.NewSessionResponse;
 import com.github.catatafishen.agentbridge.acp.model.PlanEntry;
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
 import com.google.gson.JsonArray;
@@ -101,18 +102,15 @@ class AcpMessageParser {
             // Currently used by: OpenCode (fields: used, size, cost.amount, cost.currency).
             // 'used' is cumulative context tokens (not per-turn delta), so the toolbar value grows each turn.
             case "usage_update" -> parseUsageUpdate(params);
-            // config_option_update: sent by Copilot CLI when agent configuration changes (e.g. model,
-            // tool filters). Fields are undocumented; we acknowledge and ignore for now.
-            case "config_option_update" -> {
-                LOG.debug(displayName.get() + ": received config_option_update (not yet handled)");
-                yield null;
-            }
-            // available_commands_update: sent by OpenCode to notify the client about available
-            // session commands (e.g. "cancel"). Currently handled by standard protocol methods.
-            case "available_commands_update" -> {
-                LOG.debug(displayName.get() + ": received available_commands_update (ignoring)");
-                yield null;
-            }
+            // config_option_update: sent by ACP agents when available config options change.
+            case "config_option_update" -> parseConfigOptionUpdate(params);
+            // session_info_update: sent when the agent updates session metadata like title.
+            case "session_info_update" -> parseSessionInfoUpdate(params);
+            // current_mode_update: active mode changed mid-session; available modes themselves
+            // are unchanged so only the active slug is carried forward.
+            case "current_mode_update" -> parseCurrentModeUpdate(params);
+            // available_commands_update: sent by ACP agents when slash/available commands change.
+            case "available_commands_update" -> parseAvailableCommandsUpdate(params);
             default -> {
                 LOG.warn(displayName.get() + ": unknown session update type: '" + type + "'");
                 yield null;
@@ -261,6 +259,114 @@ class AcpMessageParser {
         return new SessionUpdate.TurnUsage(used, size, cost);
     }
 
+    private SessionUpdate.ConfigOptionsChanged parseConfigOptionUpdate(JsonObject params) {
+        List<NewSessionResponse.SessionConfigOption> options = new ArrayList<>();
+        if (params.has("configOptions") && params.get("configOptions").isJsonArray()) {
+            for (JsonElement e : params.getAsJsonArray("configOptions")) {
+                if (e.isJsonObject()) {
+                    options.add(parseConfigOption(e.getAsJsonObject()));
+                }
+            }
+        } else if (params.has("id") && params.get("id").isJsonPrimitive()
+            && !params.get("id").getAsString().isBlank()) {
+            options.add(parseConfigOption(params));
+        } else {
+            LOG.warn(displayName.get() + ": config_option_update has unrecognised structure: " + params);
+        }
+        return new SessionUpdate.ConfigOptionsChanged(options);
+    }
+
+    private SessionUpdate.SessionInfoChanged parseSessionInfoUpdate(JsonObject params) {
+        return new SessionUpdate.SessionInfoChanged(getStringOrNull(params, "title"));
+    }
+
+    private SessionUpdate.AvailableModesChanged parseCurrentModeUpdate(JsonObject params) {
+        String modeSlug = params.has("slug") ? params.get("slug").getAsString() : null;
+        return new SessionUpdate.AvailableModesChanged(null, modeSlug);
+    }
+
+    private SessionUpdate.AvailableCommandsChanged parseAvailableCommandsUpdate(JsonObject params) {
+        JsonArray arr = null;
+        if (params.has("availableCommands") && params.get("availableCommands").isJsonArray()) {
+            arr = params.getAsJsonArray("availableCommands");
+        } else if (params.has("commands") && params.get("commands").isJsonArray()) {
+            arr = params.getAsJsonArray("commands");
+        }
+        return new SessionUpdate.AvailableCommandsChanged(parseCommandArray(arr));
+    }
+
+    private List<NewSessionResponse.AvailableCommand> parseCommandArray(@Nullable JsonArray arr) {
+        if (arr == null) return List.of();
+        List<NewSessionResponse.AvailableCommand> commands = new ArrayList<>();
+        for (JsonElement e : arr) {
+            if (!e.isJsonObject()) continue;
+            NewSessionResponse.AvailableCommand cmd = parseSingleCommand(e.getAsJsonObject());
+            if (cmd != null) commands.add(cmd);
+        }
+        return commands;
+    }
+
+    @Nullable
+    private NewSessionResponse.AvailableCommand parseSingleCommand(JsonObject cmd) {
+        String name = getStringOrNull(cmd, "name");
+        if (name == null || name.isBlank()) return null;
+        String desc = getStringOrNull(cmd, KEY_DESCRIPTION);
+        NewSessionResponse.AvailableCommandInput input = null;
+        if (cmd.has("input") && cmd.get("input").isJsonObject()) {
+            JsonObject inputObj = cmd.getAsJsonObject("input");
+            input = new NewSessionResponse.AvailableCommandInput(
+                getStringOrNull(inputObj, "type"),
+                getStringOrNull(inputObj, "placeholder")
+            );
+        }
+        return new NewSessionResponse.AvailableCommand(name, desc != null ? desc : "", input);
+    }
+
+    private static NewSessionResponse.SessionConfigOption parseConfigOption(JsonObject obj) {
+        String id = getStringOrNull(obj, "id");
+        String label = resolveLabel(obj, id);
+        String selectedValueId = getStringOrNull(obj, "selectedValueId");
+        if (selectedValueId == null) selectedValueId = getStringOrNull(obj, "currentValue");
+        return new NewSessionResponse.SessionConfigOption(
+            id,
+            label,
+            null,
+            parseConfigOptionValues(obj),
+            selectedValueId
+        );
+    }
+
+    private static String resolveLabel(JsonObject obj, String id) {
+        String label = getStringOrNull(obj, "label");
+        if (label == null) label = getStringOrNull(obj, "name");
+        if (label == null) label = id != null ? id : "";
+        return label;
+    }
+
+    private static List<NewSessionResponse.SessionConfigOptionValue> parseConfigOptionValues(JsonObject obj) {
+        List<NewSessionResponse.SessionConfigOptionValue> values = new ArrayList<>();
+        JsonElement valuesEl = obj.has("values") ? obj.get("values") : obj.get("options");
+        if (valuesEl != null && valuesEl.isJsonArray()) {
+            for (JsonElement e : valuesEl.getAsJsonArray()) {
+                if (!e.isJsonObject()) continue;
+                NewSessionResponse.SessionConfigOptionValue value = parseSingleOptionValue(e.getAsJsonObject());
+                if (value != null) values.add(value);
+            }
+        }
+        return values;
+    }
+
+    @Nullable
+    private static NewSessionResponse.SessionConfigOptionValue parseSingleOptionValue(JsonObject valueObj) {
+        String valueId = getStringOrNull(valueObj, "id");
+        if (valueId == null) valueId = getStringOrNull(valueObj, "value");
+        if (valueId == null) return null;
+        String valueLabel = getStringOrNull(valueObj, "label");
+        if (valueLabel == null) valueLabel = getStringOrNull(valueObj, "name");
+        if (valueLabel == null) valueLabel = valueId;
+        return new NewSessionResponse.SessionConfigOptionValue(valueId, valueLabel);
+    }
+
     private List<ContentBlock> parseContentBlocks(JsonObject params) {
         if (params.has(KEY_CONTENT) && params.get(KEY_CONTENT).isJsonArray()) {
             return parseContentArray(params.getAsJsonArray(KEY_CONTENT));
@@ -312,5 +418,11 @@ class AcpMessageParser {
     static String getStringOrEmpty(JsonObject obj, String key) {
         return obj.has(key) && obj.get(key).isJsonPrimitive()
             ? obj.get(key).getAsString() : "";
+    }
+
+    @Nullable
+    private static String getStringOrNull(JsonObject obj, String key) {
+        if (!obj.has(key) || !obj.get(key).isJsonPrimitive()) return null;
+        return obj.get(key).getAsString();
     }
 }

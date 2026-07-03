@@ -364,14 +364,8 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     @Override
     public final void stop() {
+        sendSessionCloseIfSupported();
         try {
-            if (currentSessionId != null) {
-                try {
-                    cancelSession(currentSessionId);
-                } catch (Exception e) {
-                    LOG.warn(displayName() + ": failed to cancel session during stop", e);
-                }
-            }
             transport.stop();
         } catch (Exception e) {
             LOG.warn("Transport stop encountered an error; proceeding to kill process", e);
@@ -393,6 +387,29 @@ public abstract class AcpClient extends AbstractAgentClient {
             loadedSessionHistory = null;
             updateConsumer = null;
         }
+    }
+
+    private void sendSessionCloseIfSupported() {
+        String sessionId = currentSessionId;
+        if (sessionId == null) return;
+        InitializeResponse caps = capabilities;
+        if (caps == null
+            || caps.agentCapabilities() == null
+            || caps.agentCapabilities().sessionCapabilities() == null) {
+            return;
+        }
+        JsonObject params = new JsonObject();
+        params.addProperty(KEY_SESSION_ID, sessionId);
+        String name = displayName();
+        transport.sendRequest("session/close", params)
+            .orTimeout(STOP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .whenComplete((result, ex) -> {
+                if (ex == null) {
+                    LOG.info(name + ": session/close sent for " + sessionId);
+                } else {
+                    LOG.debug(name + ": session/close did not complete cleanly (process will be killed): " + ex.getMessage());
+                }
+            });
     }
 
     @Override
@@ -622,6 +639,22 @@ public abstract class AcpClient extends AbstractAgentClient {
         LOG.debug(displayName() + ": session/new: " + availableConfigOptions.size() + " config option(s)");
     }
 
+    private void updateConfigOptionsFromNotification(List<NewSessionResponse.SessionConfigOption> options) {
+        availableConfigOptions.clear();
+        availableConfigOptions.addAll(mapConfigOptionsStatic(options));
+        for (NewSessionResponse.SessionConfigOption option : options) {
+            if (!"model".equals(option.id())) continue;
+            if (option.selectedValueId() != null && !option.selectedValueId().isBlank()) {
+                currentModelId = option.selectedValueId();
+            }
+            if (option.values() != null && !option.values().isEmpty()) {
+                extractModelsFromConfigOptions(List.of(option));
+            }
+            break;
+        }
+        LOG.debug(displayName() + ": config_option_update: " + availableConfigOptions.size() + " config option(s)");
+    }
+
     /**
      * Loads an existing session by ID, per the ACP {@code session/load} spec.
      * <p>
@@ -804,10 +837,6 @@ public abstract class AcpClient extends AbstractAgentClient {
         JsonObject params = new JsonObject();
         params.addProperty(KEY_SESSION_ID, sessionId);
         transport.sendNotification("session/cancel", params);
-        // Clear the cached session ID so the next createSession() starts a new one
-        if (sessionId.equals(currentSessionId)) {
-            currentSessionId = null;
-        }
     }
 
     // ── Session resumption helpers ───────────────────────────────────────────
@@ -1688,6 +1717,27 @@ public abstract class AcpClient extends AbstractAgentClient {
         touchActivity();
 
         JsonObject updateObj = normalizeSessionUpdateParams(params);
+        SessionUpdate update = messageParser.parse(updateObj);
+
+        if (update instanceof SessionUpdate.ConfigOptionsChanged configOptionsChanged) {
+            updateConfigOptionsFromNotification(configOptionsChanged.options());
+        }
+
+        if (update instanceof SessionUpdate.AvailableModesChanged availableModesChanged) {
+            if (availableModesChanged.modes() != null) {
+                availableModes.clear();
+                availableModes.addAll(mapModesStatic(availableModesChanged.modes()));
+            }
+            if (availableModesChanged.activeSlug() != null && !availableModesChanged.activeSlug().isBlank()) {
+                currentModeSlug = availableModesChanged.activeSlug();
+            }
+        }
+
+        if (update instanceof SessionUpdate.SessionInfoChanged sessionInfoChanged
+            && sessionInfoChanged.title() != null
+            && !sessionInfoChanged.title().isBlank()) {
+            LOG.debug(displayName() + ": session_info_update title='" + sessionInfoChanged.title() + "'");
+        }
 
         Consumer<SessionUpdate> consumer = updateConsumer;
         if (consumer == null) {
@@ -1695,7 +1745,6 @@ public abstract class AcpClient extends AbstractAgentClient {
             return;
         }
 
-        SessionUpdate update = messageParser.parse(updateObj);
         if (update != null) {
             update = processUpdate(update);
             if (update != null) {

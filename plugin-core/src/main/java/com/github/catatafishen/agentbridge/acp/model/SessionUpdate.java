@@ -20,7 +20,9 @@ public sealed interface SessionUpdate
     SessionUpdate.Banner,
     SessionUpdate.Plan,
     SessionUpdate.AvailableCommandsChanged,
-    SessionUpdate.AvailableModesChanged {
+    SessionUpdate.AvailableModesChanged,
+    SessionUpdate.ConfigOptionsChanged,
+    SessionUpdate.SessionInfoChanged {
 
     // ── Enums ────────────────────────────────────────────────────────────────
 
@@ -290,6 +292,22 @@ public sealed interface SessionUpdate
     record AvailableModesChanged(
         List<NewSessionResponse.AvailableMode> modes,
         @Nullable String activeSlug
+    ) implements SessionUpdate {
+    }
+
+    /**
+     * Session config options have changed.
+     */
+    record ConfigOptionsChanged(
+        List<NewSessionResponse.SessionConfigOption> options
+    ) implements SessionUpdate {
+    }
+
+    /**
+     * Session metadata changed, typically an agent-generated title.
+     */
+    record SessionInfoChanged(
+        @Nullable String title
     ) implements SessionUpdate {
     }
 

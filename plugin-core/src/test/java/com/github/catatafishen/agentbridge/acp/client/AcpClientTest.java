@@ -939,7 +939,7 @@ class AcpClientTest {
         void returnsNullWhenSessionAlreadyCreated() throws Exception {
             TestableAcpClient client = new TestableAcpClient();
             client.setHealthy(true);
-            Field field = AcpClient.class.getDeclaredField("currentSessionId");
+            Field field = AbstractAgentClient.class.getDeclaredField("currentSessionId");
             field.setAccessible(true);
             field.set(client, "existing-session");
 
@@ -996,6 +996,59 @@ class AcpClientTest {
             client.handleAgentRequest(null, new JsonRpcTransport.IncomingRequest("session/request_permission", params));
 
             assertTrue(field.getLong(client) > 1L);
+        }
+    }
+
+    @Nested
+    class HandleSessionUpdate {
+
+        @Test
+        void configOptionUpdateRefreshesStateWithoutConsumer() throws Exception {
+            TestableAcpClient client = new TestableAcpClient();
+            JsonObject params = new JsonObject();
+            JsonObject update = new JsonObject();
+            update.addProperty("sessionUpdate", "config_option_update");
+            JsonArray configOptions = new JsonArray();
+            JsonObject model = new JsonObject();
+            model.addProperty("id", "model");
+            model.addProperty("label", "Model");
+            model.addProperty("selectedValueId", "gpt-5");
+            JsonArray values = new JsonArray();
+            JsonObject value = new JsonObject();
+            value.addProperty("id", "gpt-5");
+            value.addProperty("label", "GPT-5");
+            values.add(value);
+            model.add("values", values);
+            configOptions.add(model);
+            update.add("configOptions", configOptions);
+            params.add("update", update);
+
+            invokeHandleSessionUpdate(client, params);
+
+            assertEquals("gpt-5", client.getCurrentModelId());
+            assertEquals(1, client.getAvailableConfigOptions().size());
+            assertEquals("model", client.getAvailableConfigOptions().getFirst().id());
+            assertEquals("gpt-5", client.getAvailableModels().getFirst().id());
+        }
+
+        @Test
+        void currentModeUpdateRefreshesActiveModeWithoutConsumer() throws Exception {
+            TestableAcpClient client = new TestableAcpClient();
+            JsonObject params = new JsonObject();
+            JsonObject update = new JsonObject();
+            update.addProperty("sessionUpdate", "current_mode_update");
+            update.addProperty("slug", "plan");
+            params.add("update", update);
+
+            invokeHandleSessionUpdate(client, params);
+
+            assertEquals("plan", client.getCurrentModeSlug());
+        }
+
+        private void invokeHandleSessionUpdate(TestableAcpClient client, JsonObject params) throws Exception {
+            Method method = AcpClient.class.getDeclaredMethod("handleSessionUpdate", JsonObject.class);
+            method.setAccessible(true);
+            method.invoke(client, params);
         }
     }
 
