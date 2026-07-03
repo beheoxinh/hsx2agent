@@ -842,6 +842,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     // ── Session resumption helpers ───────────────────────────────────────────
 
     @Nullable String loadResumeSessionId() {
+        if (project == null) return null;
         try {
             ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
             return manager.getSettings().getResumeSessionId();
@@ -852,6 +853,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     private void persistResumeSessionId(@Nullable String sessionId) {
+        if (project == null) return;
         try {
             ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
             manager.getSettings().setResumeSessionId(sessionId);
@@ -1039,6 +1041,7 @@ public abstract class AcpClient extends AbstractAgentClient {
      * Package-private so the branch guard can be exercised in unit tests without a live platform.
      */
     void tryBranchSessionAtStartup() {
+        if (project == null) return;
         try {
             if (ActiveAgentManager.getInstance(project).isBranchSessionAtStartup()) {
                 branchCurrentSession();

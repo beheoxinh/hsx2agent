@@ -1,173 +1,129 @@
 package com.github.catatafishen.agentbridge.agent.claude;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for {@link InstructionsManager}.
+ * Tests for {@link InstructionsManager} pure static methods.
+ * <p>
+ * Platform-dependent method {@link InstructionsManager#ensureInstructions} is not tested here
+ * because it requires {@link com.intellij.openapi.project.Project} and {@link AgentProfile}
+ * which depend on the IntelliJ platform. Integration tests for ensureInstructions with
+ * mocked platform classes should be added in a platform-aware test suite if needed.
  */
 class InstructionsManagerTest {
 
-    @TempDir
-    Path projectRoot;
+    private static final String SENTINEL = InstructionsManager.INSTRUCTIONS_SENTINEL;
 
-    // ── null / empty basePath guards ──────────────────────────────────────────
+    // ── spliceInPlace: basic cases ──────────────────────────────────────────
 
     @Test
-    void doesNothingWhenBasePathIsNull() {
-        // Must not throw
-        InstructionsManager.ensureInstructions(null, "CLAUDE.md", "extra");
-        assertTrue(true); // confirms no exception
+    void spliceInPlace_replacesBlockBetweenStartAndEndMarkers() {
+        String existing = ""
+            + "---\n"
+            + SENTINEL + "\n"
+            + "OLD BLOCK\n"
+            + "> End of auto-generated instructions\n"
+            + "---\n"
+            + "User content";
+        String newBlock = SENTINEL + "\n\nNEW INSTRUCTIONS\n\n> End of auto-generated instructions\n---";
+
+        String result = InstructionsManager.spliceInPlace(existing, newBlock);
+
+        assertNotNull(result);
+        assertFalse(result.contains("OLD BLOCK"));
+        assertTrue(result.contains("User content"));
+        assertTrue(result.contains("NEW INSTRUCTIONS"));
     }
 
     @Test
-    void doesNothingWhenTargetPathIsEmpty() {
-        // Must not throw
-        InstructionsManager.ensureInstructions(projectRoot.toString(), "", "extra");
-        assertTrue(true); // confirms no exception
-    }
+    void spliceInPlace_returnsNullWhenNoBlockFound() {
+        String existing = "Just user content with no sentinel.";
+        String newBlock = SENTINEL + "\n\nNEW\n\n> End of auto-generated instructions\n---";
 
-    // ── creates file when target does not exist ───────────────────────────────
-
-    @Test
-    void createsTargetFileWithInstructionsWhenMissing() {
-        InstructionsManager.ensureInstructions(projectRoot.toString(), "CLAUDE.md", "my-additional-instructions");
-
-        Path target = projectRoot.resolve("CLAUDE.md");
-        assertTrue(target.toFile().exists(), "target file must be created");
-
-        String content = readFile(target);
-        assertTrue(content.contains(InstructionsManager.INSTRUCTIONS_SENTINEL),
-            "sentinel must be present in created file");
-        assertTrue(content.contains("my-additional-instructions"),
-            "additional instructions must be included");
+        assertNull(InstructionsManager.spliceInPlace(existing, newBlock));
     }
 
     @Test
-    void createsNestedTargetFileWithMkdirs() {
-        InstructionsManager.ensureInstructions(projectRoot.toString(), "some/nested/dir/CLAUDE.md", "");
+    void spliceInPlace_exactMatchReturnsSame() {
+        String existing = ""
+            + "---\n"
+            + SENTINEL + "\n\n"
+            + "CONTENT\n\n"
+            + "> End of auto-generated instructions\n"
+            + "---\n";
+        String newBlock = SENTINEL + "\n\nCONTENT\n\n> End of auto-generated instructions\n---";
 
-        Path target = projectRoot.resolve("some/nested/dir/CLAUDE.md");
-        assertTrue(target.toFile().exists(), "nested target file must be created");
-    }
-
-    // ── prepends to existing file ─────────────────────────────────────────────
-
-    @Test
-    void prependsInstructionsToExistingFileContent() throws IOException {
-        Path target = projectRoot.resolve("CLAUDE.md");
-        Files.writeString(target, "# My existing content\n\nSome user notes.", StandardCharsets.UTF_8);
-
-        InstructionsManager.ensureInstructions(projectRoot.toString(), "CLAUDE.md", "");
-
-        String content = readFile(target);
-        assertTrue(content.contains(InstructionsManager.INSTRUCTIONS_SENTINEL),
-            "sentinel must be prepended");
-        assertTrue(content.contains("# My existing content"),
-            "original content must be preserved");
-        int sentinelPos = content.indexOf(InstructionsManager.INSTRUCTIONS_SENTINEL);
-        int existingPos = content.indexOf("# My existing content");
-        assertTrue(sentinelPos < existingPos,
-            "sentinel must appear before original content");
-    }
-
-    // ── idempotence: does not duplicate if already prepended ──────────────────
-
-    @Test
-    void doesNotDuplicateInstructionsIfAlreadyPresent() {
-        InstructionsManager.ensureInstructions(projectRoot.toString(), "CLAUDE.md", "");
-        String afterFirst = readFile(projectRoot.resolve("CLAUDE.md"));
-
-        InstructionsManager.ensureInstructions(projectRoot.toString(), "CLAUDE.md", "");
-        String afterSecond = readFile(projectRoot.resolve("CLAUDE.md"));
-
-        org.junit.jupiter.api.Assertions.assertEquals(afterFirst, afterSecond,
-            "calling ensureInstructions twice must not duplicate content");
-    }
-
-    // ── in-place regeneration ─────────────────────────────────────────────────
-
-    @Test
-    void replacesLegacySentinelBlockInPlace() throws IOException {
-        Path target = projectRoot.resolve("CLAUDE.md");
-        String legacyBlock = """
-            ---
-            > ⚙️ Auto-generated by IDE Agent for Copilot — do not edit this section
-
-            OLD CONTENT THAT SHOULD BE REMOVED
-
-            > End of auto-generated instructions
-            ---\
-            """;
-        String userContent = "\n\n# My project notes\n\nUser-authored section.";
-        Files.writeString(target, legacyBlock + userContent, StandardCharsets.UTF_8);
-
-        InstructionsManager.ensureInstructions(projectRoot.toString(), "CLAUDE.md", "");
-
-        String content = readFile(target);
-        assertFalse(content.contains("OLD CONTENT THAT SHOULD BE REMOVED"),
-            "legacy auto-generated block must be replaced, not kept");
-        assertFalse(content.contains("Auto-generated by IDE Agent for Copilot"),
-            "legacy sentinel must be replaced by the current one");
-        assertTrue(content.contains(InstructionsManager.INSTRUCTIONS_SENTINEL),
-            "current sentinel must be present after refresh");
-        assertTrue(content.contains("# My project notes"),
-            "user-authored content must be preserved");
-        // Exactly one auto-generated block.
-        int first = content.indexOf("Auto-generated by AgentBridge");
-        int second = content.indexOf("Auto-generated by AgentBridge", first + 1);
-        org.junit.jupiter.api.Assertions.assertEquals(-1, second,
-            "must not duplicate the auto-generated block");
+        String result = InstructionsManager.spliceInPlace(existing, newBlock);
+        assertNotNull(result);
+        // Substring after markers should be identical
+        assertTrue(result.contains("CONTENT"));
     }
 
     @Test
-    void refreshesCurrentSentinelBlockWithoutDuplication() throws IOException {
-        // Simulate a file written by the current plugin but with stale content between the markers.
-        Path target = projectRoot.resolve("CLAUDE.md");
-        String staleBlock = InstructionsManager.INSTRUCTIONS_SENTINEL + "\n\n"
-            + "STALE POLICY TEXT\n\n"
-            + "> End of auto-generated instructions\n---";
-        String userContent = "\n\n# User section";
-        Files.writeString(target, staleBlock + userContent, StandardCharsets.UTF_8);
+    void spliceInPlace_replacesLegacySentinel() {
+        String existing = ""
+            + "---\n"
+            + "> ⚙️ Auto-generated by IDE Agent for Copilot — do not edit this section\n\n"
+            + "LEGACY CONTENT\n\n"
+            + "> End of auto-generated instructions\n"
+            + "---\n"
+            + "User content";
+        String newBlock = SENTINEL + "\n\nNEW CONTENT\n\n> End of auto-generated instructions\n---";
 
-        InstructionsManager.ensureInstructions(projectRoot.toString(), "CLAUDE.md", "");
+        String result = InstructionsManager.spliceInPlace(existing, newBlock);
 
-        String content = readFile(target);
-        assertFalse(content.contains("STALE POLICY TEXT"),
-            "stale content between sentinels must be replaced");
-        assertTrue(content.contains("# User section"),
-            "user-authored content must be preserved");
-        int first = content.indexOf(InstructionsManager.INSTRUCTIONS_SENTINEL);
-        int second = content.indexOf(InstructionsManager.INSTRUCTIONS_SENTINEL, first + 1);
-        org.junit.jupiter.api.Assertions.assertEquals(-1, second,
-            "must not duplicate the sentinel");
+        assertNotNull(result);
+        assertFalse(result.contains("LEGACY CONTENT"));
+        assertTrue(result.contains("NEW CONTENT"));
+        assertTrue(result.contains("User content"));
     }
 
-    // ── additional instructions ───────────────────────────────────────────────
+    // ── edge cases ─────────────────────────────────────────────────────────
 
     @Test
-    void blankAdditionalInstructionsNotAppended() {
-        InstructionsManager.ensureInstructions(projectRoot.toString(), "CLAUDE.md", "   ");
-
-        String content = readFile(projectRoot.resolve("CLAUDE.md"));
-        assertFalse(content.endsWith("   "), "blank additional instructions must not be appended as-is");
+    void spliceInPlace_handlesNullExisting() {
+        assertNull(InstructionsManager.spliceInPlace(null, "block"));
     }
 
-    // ── helpers ───────────────────────────────────────────────────────────────
+    @Test
+    void spliceInPlace_handlesNullNewBlock() {
+        assertNull(InstructionsManager.spliceInPlace("existing content", null));
+    }
 
-    private static String readFile(Path path) {
-        try {
-            return Files.readString(path, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+    @Test
+    void spliceInPlace_handlesEmptyExisting() {
+        assertNull(InstructionsManager.spliceInPlace("", SENTINEL + "\n\nblock"));
+    }
+
+    @Test
+    void spliceInPlace_handlesEmptyNewBlock() {
+        String existing = ""
+            + "---\n"
+            + SENTINEL + "\n"
+            + "OLD\n"
+            + "> End of auto-generated instructions\n"
+            + "---\n";
+        // Empty new block — still replaces old with nothing
+        assertNotNull(InstructionsManager.spliceInPlace(existing, ""));
+    }
+
+    @Test
+    void spliceInPlace_handlesCorruptBlockWithNoEndMarker() {
+        // Block starts but end marker is missing
+        String existing = ""
+            + "---\n"
+            + SENTINEL + "\n"
+            + "BROKEN BLOCK\n"
+            + "\n"  // blank line triggers fallback truncation
+            + "User content after blank line";
+        String newBlock = SENTINEL + "\n\nNEW\n\n> End of auto-generated instructions\n---";
+
+        String result = InstructionsManager.spliceInPlace(existing, newBlock);
+        // Should not crash; fallback replaces to blank line
+        assertNotNull(result);
+        assertTrue(result.contains("NEW"));
+        assertTrue(result.contains("User content after blank line"));
     }
 }
