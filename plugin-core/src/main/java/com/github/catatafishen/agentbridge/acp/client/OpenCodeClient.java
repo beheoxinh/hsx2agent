@@ -8,6 +8,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -47,6 +48,8 @@ public final class OpenCodeClient extends AcpClient {
         "grep", "glob", "ls", "read", "write", "edit", "patch", "bash",
         "lsp", "websearch", "webfetch", "codesearch", "todoread", "todowrite"
     );
+
+    private static final Logger LOG = Logger.getInstance(OpenCodeClient.class);
 
     private long lastSessionInputTokens = 0;
     private long lastSessionOutputTokens = 0;
@@ -355,6 +358,45 @@ public final class OpenCodeClient extends AcpClient {
         lastSessionOutputTokens = 0;
         latestTurnInputTokens = 0;
         latestTurnOutputTokens = 0;
+    }
+
+    /**
+     * Empties the OpenCode DB of all sessions with incomplete compaction for this project.
+     * Called when a corrupted session is detected — the stale session state prevents OpenCode
+     * from creating new sessions, even after a process restart.
+     * <p>
+     * Must only be called when the OpenCode process is NOT running (i.e. after kill, before
+     * restart), otherwise SQLite may be locked.
+     */
+    public void cleanupCorruptedSessions() {
+        String basePath = project.getBasePath();
+        if (basePath == null) return;
+        java.io.File dbFile = java.nio.file.Paths.get(
+            System.getProperty("user.home"), ".local", "share", "opencode", "opencode.db").toFile();
+        if (!dbFile.isFile()) return;
+        try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath())) {
+            // Find the project_id for this workspace directory
+            try (java.sql.PreparedStatement ps = conn.prepareStatement(
+                "SELECT project_id FROM project_directory WHERE directory = ?")) {
+                ps.setString(1, basePath);
+                try (java.sql.ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) return;
+                    String projectId = rs.getString("project_id");
+                    // Delete sessions with compaction never completed
+                    try (java.sql.PreparedStatement del = conn.prepareStatement(
+                        "DELETE FROM session WHERE project_id = ? AND time_compacting IS NULL")) {
+                        del.setString(1, projectId);
+                        int deleted = del.executeUpdate();
+                        if (deleted > 0) {
+                            LOG.info("OpenCodeClient: cleaned " + deleted
+                                + " corrupted session(s) from OpenCode DB for project " + projectId);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("OpenCodeClient: failed to clean corrupted sessions from OpenCode DB", e);
+        }
     }
 
     @Override

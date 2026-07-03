@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.acp.client.OpenCodeClient
 import com.github.catatafishen.agentbridge.acp.model.ContentBlock
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate
@@ -747,6 +748,13 @@ class PromptOrchestrator(
         agentManager.client.dropCurrentSession()
         clearLocalSessionTracking()
         callbacks.updateSessionInfo()
+
+        // If the corrupted agent is OpenCode, also clean up its on-disk session state
+        // which prevents session creation even after process restart.
+        val openCodeClient = agentManager.getClientIfRunning() as? OpenCodeClient
+        if (openCodeClient != null) {
+            openCodeClient.cleanupCorruptedSessions()
+        }
 
         // Restart the agent process to clear any in-memory corruption (e.g. OpenCode's
         // history compaction state). A fresh process + session/new avoids carrying the
