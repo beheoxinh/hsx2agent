@@ -607,6 +607,8 @@ public final class ConversationWriter {
                     error_message     = COALESCE(?, error_message),
                     category          = COALESCE(?, category),
                     display_name      = COALESCE(?, display_name),
+                    plugin_version    = COALESCE(?, plugin_version),
+                    file_path         = COALESCE(?, file_path),
                     is_mcp            = 1
                 WHERE event_id = ?
                 """)) {
@@ -617,7 +619,9 @@ public final class ConversationWriter {
                 ps.setString(5, stats.errorMessage());
                 ps.setString(6, stats.category());
                 ps.setString(7, stats.displayName());
-                ps.setString(8, stats.dbEventId());
+                ps.setString(8, stats.pluginVersion());
+                ps.setString(9, stats.filePath());
+                ps.setString(10, stats.dbEventId());
                 ps.executeUpdate();
             } catch (SQLException e) {
                 LOG.warn("ConversationWriter: failed to enrich stats for event " + stats.dbEventId(), e);

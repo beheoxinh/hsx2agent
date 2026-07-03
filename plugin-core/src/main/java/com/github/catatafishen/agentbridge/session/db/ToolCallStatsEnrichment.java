@@ -16,6 +16,8 @@ import org.jetbrains.annotations.Nullable;
  * @param errorMessage   error text on failure; null on success
  * @param category       tool category from ToolDefinition (e.g. "file", "git")
  * @param displayName    human-readable tool name for UI display
+ * @param pluginVersion  plugin version string at call time; null if unavailable
+ * @param filePath       primary file path the tool operated on; null if no file involvement
  */
 public record ToolCallStatsEnrichment(
     @NotNull String dbEventId,
@@ -25,6 +27,8 @@ public record ToolCallStatsEnrichment(
     boolean success,
     @Nullable String errorMessage,
     @Nullable String category,
-    @Nullable String displayName
+    @Nullable String displayName,
+    @Nullable String pluginVersion,
+    @Nullable String filePath
 ) {
 }

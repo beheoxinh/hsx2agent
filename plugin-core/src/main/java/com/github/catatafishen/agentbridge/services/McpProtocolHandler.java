@@ -887,9 +887,12 @@ public final class McpProtocolHandler {
         long inputSize = data.inputJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
         long outputSize = data.output() != null
             ? data.output().getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
+        String pluginVersion = BuildInfo.getVersion();
+        String filePath = extractFilePath(data.arguments());
         service.enrichToolCallStats(new ToolCallStatsEnrichment(
             dbEventId, inputSize, outputSize, data.durationMs(),
-            data.success(), data.errorMessage(), data.category(), data.displayName()));
+            data.success(), data.errorMessage(), data.category(), data.displayName(), pluginVersion,
+            filePath));
         // Only record hook stages when we have a confirmed tracker record — the FK on
         // hook_executions.tool_event_id requires the events row to already exist.
         // When callRecord is null we're falling back to a raw toolUseId that may not be
@@ -897,6 +900,51 @@ public final class McpProtocolHandler {
         if (!data.hookStages().isEmpty() && callRecord != null) {
             service.recordHookStages(dbEventId, data.hookStages());
         }
+    }
+
+    private static final java.util.List<String> FILE_PATH_KEYS = java.util.List.of("path", "file", "paths", "target", "old_str_file");
+
+    private @Nullable String extractFilePath(@NotNull JsonObject args) {
+        String basePath = project.getBasePath();
+        for (String key : FILE_PATH_KEYS) {
+            if (!args.has(key)) continue;
+            String result = extractFirstPath(args.get(key), basePath);
+            if (result != null) return result;
+        }
+        return null;
+    }
+
+    private static @Nullable String extractFirstPath(@NotNull JsonElement el, @Nullable String basePath) {
+        if (el.isJsonPrimitive()) {
+            String raw = el.getAsString();
+            if (!raw.isEmpty()) return normalizeFilePath(raw, basePath);
+        } else if (el.isJsonArray()) {
+            for (JsonElement item : el.getAsJsonArray()) {
+                if (item.isJsonPrimitive()) {
+                    String raw = item.getAsString();
+                    if (!raw.isEmpty()) return normalizeFilePath(raw, basePath);
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable String normalizeFilePath(@NotNull String raw, @Nullable String basePath) {
+        String normalized = raw.replace('\\', '/');
+        if (basePath != null) {
+            String normalizedBase = basePath.replace('\\', '/');
+            if (normalized.startsWith(normalizedBase)) {
+                String relative = normalized.substring(normalizedBase.length());
+                if (relative.startsWith("/")) relative = relative.substring(1);
+                return relative;
+            }
+            String baseWithSlash = normalizedBase.endsWith("/") ? normalizedBase : normalizedBase + "/";
+            if (normalized.startsWith(baseWithSlash)) {
+                return normalized.substring(baseWithSlash.length());
+            }
+        }
+        if (new java.io.File(normalized).isAbsolute()) return null;
+        return normalized;
     }
 
     private String sessionKey(com.intellij.openapi.project.Project proj) {

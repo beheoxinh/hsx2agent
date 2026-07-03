@@ -374,12 +374,12 @@ class ConversationWriterTest {
         ));
 
         writer.enrichToolCallStats(new ToolCallStatsEnrichment(
-            "ev-enrich", 256, 1024, 150, true, null, "file", "Read File"));
+            "ev-enrich", 256, 1024, 150, true, null, "file", "Read File", "1.2.3", "src/Main.java"));
 
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
                  "SELECT input_size_bytes, output_size_bytes, duration_ms, success, category, "
-                     + "tool_name, display_name "
+                     + "tool_name, display_name, plugin_version, file_path "
                      + "FROM tool_call_events WHERE event_id = 'ev-enrich'")) {
             assertTrue(rs.next());
             assertEquals(256, rs.getLong(1));
@@ -390,6 +390,8 @@ class ConversationWriterTest {
             // tool_name must be stripped of the ACP prefix; display_name set by enrichment
             assertEquals("read_file", rs.getString(6));
             assertEquals("Read File", rs.getString(7));
+            assertEquals("1.2.3", rs.getString(8));
+            assertEquals("src/Main.java", rs.getString(9));
         }
     }
 
@@ -402,7 +404,7 @@ class ConversationWriterTest {
         ));
 
         writer.enrichToolCallStats(new ToolCallStatsEnrichment(
-            "ev-fail", 100, 500, 3000, false, "timeout expired", "shell", null));
+            "ev-fail", 100, 500, 3000, false, "timeout expired", "shell", null, null, null));
 
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(

@@ -53,6 +53,7 @@ final class ConversationSchema {
             if (currentVersion < 3) applyV3(stmt);
             if (currentVersion < 4) applyV4(stmt);
             if (currentVersion < 5) applyV5(stmt);
+            if (currentVersion < 6) applyV6(stmt);
 
             stmt.executeUpdate(
                 "INSERT INTO schema_version (version, applied_at) VALUES ("
@@ -317,5 +318,13 @@ final class ConversationSchema {
     private static void applyV5(@NotNull Statement stmt) throws SQLException {
         stmt.execute(
             "ALTER TABLE turns ADD COLUMN is_silent INTEGER NOT NULL DEFAULT 0");
+    }
+
+    /**
+     * V6: Adds a {@code plugin_version} column to {@code tool_call_events} so each
+     * tool call record carries the plugin version that processed it.
+     */
+    private static void applyV6(@NotNull Statement stmt) throws SQLException {
+        stmt.execute("ALTER TABLE tool_call_events ADD COLUMN plugin_version TEXT");
     }
 }
