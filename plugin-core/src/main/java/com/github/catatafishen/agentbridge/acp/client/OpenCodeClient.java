@@ -369,31 +369,20 @@ public final class OpenCodeClient extends AcpClient {
      * restart), otherwise SQLite may be locked.
      */
     public void cleanupCorruptedSessions() {
-        String basePath = project.getBasePath();
-        if (basePath == null) return;
-
-        // 1. Session cleanup within OpenCode DB
+        // 1. OpenCode DB — clean ALL stale sessions across ALL projects, not just the
+        // current one. Since this DB is shared by all IntelliJ IDEs on the machine,
+        // corruption left by one IDE poisons the others.
         java.io.File dbFile = java.nio.file.Paths.get(
             System.getProperty("user.home"), ".local", "share", "opencode", "opencode.db").toFile();
         if (dbFile.isFile()) {
             try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath())) {
-                try (java.sql.PreparedStatement ps = conn.prepareStatement(
-                    "SELECT project_id FROM project_directory WHERE directory = ?")) {
-                    ps.setString(1, basePath);
-                    try (java.sql.ResultSet rs = ps.executeQuery()) {
-                        if (rs.next()) {
-                            String projectId = rs.getString("project_id");
-                            // Delete sessions with incomplete compaction
-                            try (java.sql.PreparedStatement del = conn.prepareStatement(
-                                "DELETE FROM session WHERE project_id = ? AND time_compacting IS NULL")) {
-                                del.setString(1, projectId);
-                                int deleted = del.executeUpdate();
-                                if (deleted > 0) {
-                                    LOG.info("OpenCodeClient: cleaned " + deleted
-                                        + " corrupted session(s) for project " + projectId);
-                                }
-                            }
-                        }
+                // Delete sessions whose compaction was never completed
+                try (java.sql.PreparedStatement del = conn.prepareStatement(
+                    "DELETE FROM session WHERE time_compacting IS NULL")) {
+                    int deleted = del.executeUpdate();
+                    if (deleted > 0) {
+                        LOG.info("OpenCodeClient: cleaned " + deleted
+                            + " stale session(s) from OpenCode DB");
                     }
                 }
             } catch (Exception e) {
@@ -401,22 +390,25 @@ public final class OpenCodeClient extends AcpClient {
             }
         }
 
-        // 2. Stale workspace files — OpenCode persists per-project workspace state
-        // (model selections, session references, VCS branch info). If a workspace file
-        // references a deleted session, OpenCode may try to resume it and fail.
+        // 2. Stale workspace files — OpenCode persists per-project workspace state.
+        // Each IDE has its own project, so its own workspace file. Delete ALL of them
+        // so no stale session reference survives anywhere.
         String configDir = System.getProperty("user.home") + "/.config/ai.opencode.desktop/";
         java.io.File dir = new java.io.File(configDir);
-        String projectTag = basePath.replace('/', '-').replaceAll("[^a-zA-Z0-9_-]", "");
         if (dir.isDirectory()) {
-            java.io.File[] stale = dir.listFiles((d, name) -> name.startsWith("opencode.workspace.-" + projectTag));
+            java.io.File[] stale = dir.listFiles((d, name) -> name.startsWith("opencode.workspace."));
             if (stale != null) {
                 for (java.io.File f : stale) {
+                    String content;
                     try {
-                        if (f.delete()) {
-                            LOG.info("OpenCodeClient: deleted stale workspace file: " + f.getName());
+                        content = new String(java.nio.file.Files.readAllBytes(f.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+                        if (content.contains("\"session\":{")) {
+                            if (f.delete()) {
+                                LOG.info("OpenCodeClient: deleted stale workspace file: " + f.getName());
+                            }
                         }
                     } catch (Exception e) {
-                        LOG.warn("OpenCodeClient: failed to delete workspace file " + f.getName(), e);
+                        LOG.debug("OpenCodeClient: skipped workspace file " + f.getName() + ": " + e.getMessage());
                     }
                 }
             }
@@ -455,6 +447,14 @@ public final class OpenCodeClient extends AcpClient {
     @Override
     protected boolean shouldDenyBuiltInTool(@NotNull String toolId) {
         return NATIVE_TOOLS_TO_DENY.contains(toolId.toLowerCase());
+    }
+
+    @Override
+    protected void beforeCreateSession(String cwd) {
+        // Proactive cleanup: OpenCode's per-machine DB is shared across all IntelliJ IDEs.
+        // If another IDE left a stale session/workspace state, this prevents session/new
+        // from failing with compaction errors.
+        cleanupCorruptedSessions();
     }
 
     @Override
