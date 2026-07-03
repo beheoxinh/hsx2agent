@@ -35,7 +35,28 @@ public record InitializeResponse(
     ) {
     }
 
-    public record SessionCapabilities() {
-        public static final boolean PRESENT = true;
+    public record SessionCapabilities(
+        @Nullable CapabilityPresent close,
+        @Nullable CapabilityPresent resume,
+        @Nullable CapabilityPresent list
+    ) {
+        public boolean supportsClose() {
+            return close != null;
+        }
+
+        public boolean supportsResume() {
+            return resume != null;
+        }
+
+        /**
+         * Marker for an ACP capability advertised as an empty object {@code {}}.
+         * Presence of a non-null field = supported; null = not supported.
+         */
+        public static final class CapabilityPresent {
+            @Override
+            public String toString() {
+                return "CapabilityPresent{}";
+            }
+        }
     }
 }

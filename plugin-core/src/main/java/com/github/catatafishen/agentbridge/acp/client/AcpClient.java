@@ -430,7 +430,8 @@ public abstract class AcpClient extends AbstractAgentClient {
         InitializeResponse caps = capabilities;
         if (caps == null
             || caps.agentCapabilities() == null
-            || caps.agentCapabilities().sessionCapabilities() == null) {
+            || caps.agentCapabilities().sessionCapabilities() == null
+            || !caps.agentCapabilities().sessionCapabilities().supportsClose()) {
             return;
         }
         JsonObject params = new JsonObject();
