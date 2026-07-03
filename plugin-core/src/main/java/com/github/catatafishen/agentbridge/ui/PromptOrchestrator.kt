@@ -348,6 +348,11 @@ class PromptOrchestrator(
         return sessionId
     }
 
+    private fun clearLocalSessionTracking() {
+        currentSessionId = null
+        lastInitialisedSessionId = null
+    }
+
     private fun wirePermissionListener(client: AbstractAgentClient) {
         client.setPermissionRequestListener { prompt: AbstractAgentClient.PermissionPrompt ->
             ApplicationManager.getApplication().invokeLater {
@@ -579,7 +584,7 @@ class PromptOrchestrator(
                     e
                 )
                 client.dropCurrentSession()
-                currentSessionId = null
+                clearLocalSessionTracking()
                 val newSessionId = ensureSessionCreated(client)
 
                 // When the user explicitly stopped the previous turn, silently recover from
@@ -702,7 +707,7 @@ class PromptOrchestrator(
         }
 
         // Trigger semantic memory mining (async, non-blocking)
-        val sessionId = currentSessionId
+        val sessionId = agentManager.getClientIfReady()?.activeSessionId ?: currentSessionId
         if (sessionId != null) {
             callbacks.onTurnMineEntries(sessionId, agentManager.activeProfile.displayName)
         }
@@ -740,7 +745,7 @@ class PromptOrchestrator(
         // goes through the full load/new flow instead of hitting the early-return
         // "reuse" path with the still-corrupted session.
         agentManager.client.dropCurrentSession()
-        currentSessionId = null
+        clearLocalSessionTracking()
         callbacks.updateSessionInfo()
 
         // Restart the agent process to clear any in-memory corruption (e.g. OpenCode's
@@ -1079,14 +1084,14 @@ class PromptOrchestrator(
                 // 1. getClientIfRunning() returns null (dead process)
                 // 2. agentManager.client would force-start a new client just to clear it
                 // 3. restart() creates everything from scratch
-                currentSessionId = null
+                clearLocalSessionTracking()
                 ApplicationManager.getApplication().executeOnPooledThread {
                     agentManager.restartFresh()
                 }
             } else if (c.isNetworkTimeoutOrZombie) {
                 log.info("Network timeout or zombie process detected — restarting agent to recover ...")
                 agentManager.getClientIfRunning()?.dropCurrentSession()
-                currentSessionId = null
+                clearLocalSessionTracking()
                 ApplicationManager.getApplication().executeOnPooledThread {
                     agentManager.restartFresh()
                 }
@@ -1095,7 +1100,7 @@ class PromptOrchestrator(
                 // Drop the session so the next createSession() sends a fresh
                 // session/new rather than reusing a dead session.
                 agentManager.getClientIfRunning()?.dropCurrentSession()
-                currentSessionId = null
+                clearLocalSessionTracking()
             }
             callbacks.updateSessionInfo()
         }
@@ -1117,6 +1122,7 @@ class PromptOrchestrator(
     private fun reconnectAfterError() {
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
+                clearLocalSessionTracking()
                 agentManager.clearSessionResumeState()
                 agentManager.restartFresh()
                 ApplicationManager.getApplication().invokeLater {
@@ -1199,7 +1205,7 @@ class PromptOrchestrator(
 
     private fun getModelMultiplier(modelId: String): String? =
         try {
-            agentManager.client.getModelMultiplier(modelId)
+            agentManager.getClientIfReady()?.getModelMultiplier(modelId)
         } catch (_: Exception) {
             null
         }
