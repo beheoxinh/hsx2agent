@@ -1823,8 +1823,10 @@ public abstract class AcpClient extends AbstractAgentClient {
 
         if (update instanceof SessionUpdate.SessionInfoChanged sessionInfoChanged
             && sessionInfoChanged.title() != null
-            && !sessionInfoChanged.title().isBlank()) {
-            LOG.debug(displayName() + ": session_info_update title='" + sessionInfoChanged.title() + "'");
+            && !sessionInfoChanged.title().isBlank()
+            && currentSessionId != null) {
+            String sessionId = currentSessionId;
+            ConversationService.getInstance(project).updateSessionTitle(sessionId, sessionInfoChanged.title());
         }
 
         Consumer<SessionUpdate> consumer = updateConsumer;

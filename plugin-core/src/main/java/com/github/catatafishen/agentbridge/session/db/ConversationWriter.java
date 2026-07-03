@@ -322,6 +322,26 @@ public final class ConversationWriter {
         }
     }
 
+    /**
+     * Overwrites the display_name of the given session with the agent-pushed title.
+     * Unlike {@link #updateSessionDisplayName} (which only sets when NULL), this call
+     * unconditionally overrides the current display_name so agent-pushed titles
+     * (from {@code session_info_update}) always appear in the session history list.
+     */
+    public void updateSessionTitle(@NotNull String sessionId, @NotNull String title) {
+        try (Connection conn = database.getConnection()) {
+            String truncated = title.length() > 60 ? title.substring(0, 60) : title;
+            try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE sessions SET display_name = ? WHERE id = ?")) {
+                ps.setString(1, truncated);
+                ps.setString(2, sessionId);
+                ps.executeUpdate();
+            }
+        } catch (SQLException e) {
+            LOG.warn("Failed to update session title for " + sessionId, e);
+        }
+    }
+
     private void finaliseTurn(
         @NotNull Connection conn,
         @NotNull String sessionId,
