@@ -125,6 +125,7 @@ public abstract class AbstractAgentClient {
      * </p>
      */
     public void dropCurrentSession() {
+        currentSessionId = null;
     }
 
     // ─── Prompts ─────────────────────────────────────
@@ -138,6 +139,22 @@ public abstract class AbstractAgentClient {
      */
     public abstract PromptResponse sendPrompt(PromptRequest request,
                                               Consumer<SessionUpdate> onUpdate) throws Exception; // NOSONAR java:S112 — see start()
+
+    /**
+     * Clears any post-turn background-update state retained after the main prompt response.
+     * Default: no-op for clients that do not support post-turn streaming.
+     */
+    public void clearPostTurnState() {
+        // no-op
+    }
+
+    /**
+     * Registers a one-shot callback for the first post-turn background update.
+     * Default: no-op for clients that do not support post-turn streaming.
+     */
+    public void setFirstPostTurnCallback(@Nullable Runnable callback) {
+        // no-op
+    }
 
     // ─── Modes (built-in interaction modes, e.g. default/agent/plan/autopilot) ──
 
@@ -237,6 +254,25 @@ public abstract class AbstractAgentClient {
      */
     public @Nullable String getCurrentModelId() {
         return null;
+    }
+
+    /**
+     * The ID of the currently active session/conversation, or {@code null} when none is active.
+     */
+    protected volatile String currentSessionId;
+
+    /**
+     * Records the active session/conversation ID for generic UI/session management flows.
+     */
+    protected void setCurrentSession(@Nullable String sessionId) {
+        this.currentSessionId = sessionId;
+    }
+
+    /**
+     * Returns the active session ID without creating a new session.
+     */
+    public @Nullable String getActiveSessionId() {
+        return currentSessionId;
     }
 
     /**

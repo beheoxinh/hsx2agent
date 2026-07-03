@@ -59,6 +59,12 @@ public final class ActiveAgentManager implements Disposable {
     private GenericSettings cachedSettings;
     private GenericAgentUiSettings cachedUiSettings;
     private volatile boolean started;
+    /**
+     * Reference count of in-flight prompts. Used to suppress lazy auto-restart while a turn
+     * is still unwinding after an agent-side failure.
+     */
+    private final java.util.concurrent.atomic.AtomicInteger inFlightPromptCount =
+        new java.util.concurrent.atomic.AtomicInteger(0);
 
     public ActiveAgentManager(@NotNull Project project) {
         this.project = project;
@@ -253,10 +259,47 @@ public final class ActiveAgentManager implements Disposable {
         if (ApplicationManager.getApplication().isDispatchThread()) {
             LOG.warn("getClient() called on EDT — may cause UI freeze if agent startup is triggered", new Throwable());
         }
-        if (!started || acpClient == null || !acpClient.isHealthy()) {
+        boolean needStart = !started || acpClient == null
+            || (!acpClient.isHealthy() && inFlightPromptCount.get() == 0);
+        if (needStart) {
             start();
         }
         return acpClient;
+    }
+
+    /**
+     * Returns the agent client only if already started and healthy.
+     * Does NOT trigger lazy start — returns {@code null} if the client is not ready.
+     */
+    @Nullable
+    public AbstractAgentClient getClientIfReady() {
+        AbstractAgentClient client = acpClient;
+        if (!started || client == null || !client.isHealthy()) {
+            return null;
+        }
+        return client;
+    }
+
+    /**
+     * Mark a prompt as in flight. Suppresses automatic agent restart in {@link #getClient()}
+     * until the matching {@link #endPrompt()} call.
+     */
+    public void beginPrompt() {
+        inFlightPromptCount.incrementAndGet();
+    }
+
+    /**
+     * Mark an in-flight prompt as finished. Re-enables automatic agent restart once all
+     * prompts have completed.
+     */
+    public void endPrompt() {
+        int remaining = inFlightPromptCount.updateAndGet(v -> Math.max(0, v - 1));
+        if (remaining == 0) {
+            AbstractAgentClient client = acpClient;
+            if (client != null && !client.isHealthy()) {
+                LOG.info("In-flight prompt finished; agent client is unhealthy and will be restarted on next access");
+            }
+        }
     }
 
     /**
@@ -362,7 +405,7 @@ public final class ActiveAgentManager implements Disposable {
 
             LOG.info(profile.getDisplayName() + " agent client started");
         } catch (Exception e) {
-            LOG.warn("Failed to start agent client", e);
+            LOG.error("Failed to start " + getActiveProfileId() + " agent client: " + e.getMessage(), e);
             String message = e.getMessage();
             if (e.getCause() != null && e.getCause().getMessage() != null) {
                 message = e.getCause().getMessage();

@@ -114,7 +114,6 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     private @Nullable Process agentProcess;
     private @Nullable InitializeResponse capabilities;
-    private @Nullable String currentSessionId;
 
     protected @Nullable String getCurrentSessionId() {
         return currentSessionId;
@@ -1410,6 +1409,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         String resolvedPath = new AcpClientBinaryResolver(agentId(), binaryName, alternates).resolve();
         if (resolvedPath != null && !resolvedPath.isEmpty()) {
             resolvedPath = tryResolveBareName(resolvedPath);
+            resolvedPath = normalizeResolvedBinaryPath(resolvedPath, launchCwd != null ? launchCwd : "");
             List<String> resolved = new ArrayList<>(command);
             resolved.set(0, resolvedPath);
             return resolved;
@@ -1433,6 +1433,14 @@ public abstract class AcpClient extends AbstractAgentClient {
                 return absolutePath;
             }
         }
+        return resolvedPath;
+    }
+
+    /**
+     * Gives agent-specific clients one last chance to rewrite a resolved binary path before
+     * launch. Used for wrappers that need to be replaced with platform-native executables.
+     */
+    protected @NotNull String normalizeResolvedBinaryPath(@NotNull String resolvedPath, @NotNull String cwd) {
         return resolvedPath;
     }
 

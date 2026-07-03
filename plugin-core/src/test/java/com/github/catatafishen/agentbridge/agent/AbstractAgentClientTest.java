@@ -61,6 +61,7 @@ class AbstractAgentClientTest {
 
         @Override
         public String createSession(String cwd) {
+            setCurrentSession("test-session-1");
             return "test-session-1";
         }
 
@@ -241,6 +242,27 @@ class AbstractAgentClientTest {
     }
 
     // Default no-ops
+
+    @Nested
+    class SessionTracking {
+        @Test
+        void activeSessionIdStartsNull() {
+            assertNull(client.getActiveSessionId());
+        }
+
+        @Test
+        void createSessionRecordsActiveSessionId() {
+            assertEquals("test-session-1", client.createSession("/tmp"));
+            assertEquals("test-session-1", client.getActiveSessionId());
+        }
+
+        @Test
+        void dropCurrentSessionClearsActiveSessionId() {
+            client.createSession("/tmp");
+            client.dropCurrentSession();
+            assertNull(client.getActiveSessionId());
+        }
+    }
 
     @Nested
     class DefaultNoOps {

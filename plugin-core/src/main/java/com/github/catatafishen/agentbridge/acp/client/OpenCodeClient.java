@@ -11,14 +11,17 @@ import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Stream;
 
 /**
  * OpenCode ACP client.
@@ -143,6 +146,12 @@ public final class OpenCodeClient extends AcpClient {
         return buildPermissionConfig();
     }
 
+    @Override
+    protected @NotNull String normalizeResolvedBinaryPath(@NotNull String resolvedPath, @NotNull String cwd) {
+        String bundled = resolveBundledUnixOpenCodePath(resolvedPath);
+        return bundled != null ? bundled : resolvedPath;
+    }
+
     /**
      * Builds the OPENCODE_CONFIG_CONTENT environment variable denying native tools.
      *
@@ -161,6 +170,90 @@ public final class OpenCodeClient extends AcpClient {
         JsonObject config = new JsonObject();
         config.add("permission", permission);
         return Map.of("OPENCODE_CONFIG_CONTENT", new Gson().toJson(config));
+    }
+
+    /**
+     * Rewrites the npm launcher shim to the real Unix binary bundled under the package.
+     * The shim throws "postinstall script was not run" when package managers skip scripts,
+     * but the native binary is often already present and works.
+     */
+    @Nullable
+    static String resolveBundledUnixOpenCodePath(@Nullable String launcherPath) {
+        if (SystemInfo.isWindows || launcherPath == null || launcherPath.isBlank()) {
+            return null;
+        }
+        Path launcher = Path.of(launcherPath);
+        if (!"opencode.exe".equals(launcher.getFileName().toString())) {
+            return null;
+        }
+        Path binDir = launcher.getParent();
+        if (binDir == null || !"bin".equals(binDir.getFileName().toString())) {
+            return null;
+        }
+        Path packageRoot = binDir.getParent();
+        if (packageRoot == null) {
+            return null;
+        }
+        Path nodeModules = packageRoot.resolve("node_modules");
+        if (!Files.isDirectory(nodeModules)) {
+            return null;
+        }
+
+        for (String packageName : preferredUnixPackageNames()) {
+            Path candidate = nodeModules.resolve(packageName).resolve("bin").resolve("opencode");
+            if (Files.isRegularFile(candidate)) {
+                return candidate.toString();
+            }
+        }
+
+        try (Stream<Path> children = Files.list(nodeModules)) {
+            return children
+                .filter(Files::isDirectory)
+                .filter(path -> path.getFileName().toString().startsWith("opencode-"))
+                .sorted(Comparator
+                    .comparingInt((Path path) -> unixPackageRank(path.getFileName().toString()))
+                    .thenComparing(path -> path.getFileName().toString()))
+                .map(path -> path.resolve("bin").resolve("opencode"))
+                .filter(Files::isRegularFile)
+                .map(Path::toString)
+                .findFirst()
+                .orElse(null);
+        } catch (IOException ignored) {
+            return null;
+        }
+    }
+
+    private static List<String> preferredUnixPackageNames() {
+        String arch = System.getProperty("os.arch", "").toLowerCase();
+        if (SystemInfo.isLinux) {
+            if (arch.contains("arm64") || arch.contains("aarch64")) {
+                return List.of("opencode-linux-arm64", "opencode-linux-arm64-musl");
+            }
+            return List.of(
+                "opencode-linux-x64",
+                "opencode-linux-x64-baseline",
+                "opencode-linux-x64-musl",
+                "opencode-linux-x64-baseline-musl"
+            );
+        }
+        if (SystemInfo.isMac) {
+            if (arch.contains("arm64") || arch.contains("aarch64")) {
+                return List.of("opencode-darwin-arm64");
+            }
+            return List.of("opencode-darwin-x64", "opencode-darwin-x64-baseline");
+        }
+        return List.of();
+    }
+
+    private static int unixPackageRank(String packageName) {
+        int rank = 0;
+        if (packageName.contains("baseline")) {
+            rank += 10;
+        }
+        if (packageName.contains("musl")) {
+            rank += 20;
+        }
+        return rank;
     }
 
     @Override
