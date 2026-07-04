@@ -64,6 +64,22 @@ public class BinaryDetector {
             return version;
         }
 
+        // Phase 1B: try each path from OS-native tools (whereis/where.exe)
+        for (String path : findUsingNativeTools(binaryName)) {
+            output = runCommand(
+                isWindows()
+                    ? List.of("cmd.exe", "/c", path + VERSION_FLAG)
+                    : List.of("sh", "-c", path + VERSION_FLAG),
+                5
+            );
+            if (output == null) continue;
+            String version = parseVersion(output);
+            if (version != null) {
+                LOG.info("Detected " + binaryName + " version: " + version + " at " + path);
+                return version;
+            }
+        }
+
         // Phase 2: try each path from findAllBinaryPaths (handles mise, custom prefixes, etc.)
         for (String path : findAllBinaryPaths(binaryName)) {
             output = runCommand(
@@ -89,9 +105,10 @@ public class BinaryDetector {
      * <p>Resolution order:</p>
      * <ol>
      *   <li>{@code command -v} via login shell</li>
+     *   <li>OS-native tools ({@code whereis -b} on Unix, {@code where} on Windows)</li>
+     *   <li>{@code mise bin-paths} (version-manager-managed tools)</li>
      *   <li>Scan {@code PATH} directories directly</li>
      *   <li>Scan common system locations ({@code /usr/local/bin}, {@code /opt/homebrew/bin}, …)</li>
-     *   <li>OS-native tools: {@code whereis -b} and {@code which -a}</li>
      * </ol>
      *
      * <p>On Windows, scans the {@code PATH} directories directly using Java's {@link File}
@@ -108,7 +125,7 @@ public class BinaryDetector {
             return findBinaryOnWindowsPath(binaryName);
         }
 
-        // Phase 1: command -v via login shell (fast, covers PATH)
+        // Phase 1: command -v via shell (fast, covers standard PATH)
         List<String> cmd = List.of("sh", "-c", "command -v " + binaryName);
         String output = runCommand(cmd, 3);
         if (output != null && !output.isBlank()) {
@@ -117,7 +134,24 @@ public class BinaryDetector {
             return path;
         }
 
-        // Phase 2: fall back to findAllBinaryPaths and return the first match
+        // Phase 1B: OS-native tools (whereis on Unix, where on Windows)
+        // These search standard system dirs independently of the shell's PATH.
+        List<String> nativePaths = findUsingNativeTools(binaryName);
+        if (!nativePaths.isEmpty()) {
+            String path = nativePaths.getFirst();
+            logFound(binaryName, path);
+            return path;
+        }
+
+        // Phase 1C: mise bin-paths (handles tools installed in mise-managed locations)
+        List<String> misePaths = findUsingMise(binaryName);
+        if (!misePaths.isEmpty()) {
+            String path = misePaths.getFirst();
+            logFound(binaryName, path);
+            return path;
+        }
+
+        // Phase 2: fall back to findAllBinaryPaths (scans PATH + common system dirs)
         List<String> allPaths = findAllBinaryPaths(binaryName);
         if (!allPaths.isEmpty()) {
             String path = allPaths.getFirst();
@@ -139,14 +173,20 @@ public class BinaryDetector {
     public static List<String> findAllBinaryPaths(@NotNull String binaryName) {
         List<String> results = new java.util.ArrayList<>();
 
-        // 1. Scan PATH
+        // 1. OS-native tools (whereis on Unix, where on Windows)
+        // Fast search independent of the user's shell PATH configuration.
+        results.addAll(findUsingNativeTools(binaryName));
+
+        // 2. mise bin-paths (handles tools from mise version manager)
+        // Also works on Windows if mise is installed.
+        results.addAll(findUsingMise(binaryName));
+
+        // 3. Scan PATH directories directly
         results.addAll(findOnPath(binaryName));
 
-        // 2. Scan hardcoded system locations (non-Windows)
+        // 4. Scan hardcoded system locations (Unix)
         if (!isWindows()) {
             results.addAll(findInCommonSystemLocations(binaryName));
-            results.addAll(findUsingNativeTools(binaryName));
-            results.addAll(findUsingMise(binaryName));
         }
 
         // Deduplicate results by canonical path
