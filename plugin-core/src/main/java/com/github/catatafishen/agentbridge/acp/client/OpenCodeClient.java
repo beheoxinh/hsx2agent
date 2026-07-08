@@ -376,14 +376,25 @@ public final class OpenCodeClient extends AcpClient {
             System.getProperty("user.home"), ".local", "share", "opencode", "opencode.db").toFile();
         if (dbFile.isFile()) {
             try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath())) {
-                // Delete sessions whose compaction was never completed
+                // Delete sessions whose compaction was never started (time_compacting IS NULL)
+                // OR whose compaction started but never completed (time_compacting IS NOT NULL
+                // AND time_completed IS NULL). OpenCode records time_compacting at the start of
+                // compaction and time_completed when done — if compaction crashes or is
+                // interrupted, time_completed is never set and the session stays locked forever.
+                int deleted;
                 try (java.sql.PreparedStatement del = conn.prepareStatement(
-                    "DELETE FROM session WHERE time_compacting IS NULL")) {
-                    int deleted = del.executeUpdate();
-                    if (deleted > 0) {
-                        LOG.info("OpenCodeClient: cleaned " + deleted
-                            + " stale session(s) from OpenCode DB");
-                    }
+                    "DELETE FROM session WHERE time_compacting IS NULL " +
+                    "OR (time_compacting IS NOT NULL AND time_completed IS NULL)")) {
+                    deleted = del.executeUpdate();
+                }
+                // Also delete all rows from the TOTP table — stale TOTP entries can cause
+                // authentication loops even after a fresh session/new.
+                try (java.sql.Statement clearTotp = conn.createStatement()) {
+                    clearTotp.execute("DELETE FROM totp");
+                }
+                if (deleted > 0) {
+                    LOG.info("OpenCodeClient: cleaned " + deleted
+                        + " stale session(s) from OpenCode DB");
                 }
             } catch (Exception e) {
                 LOG.warn("OpenCodeClient: failed to clean OpenCode DB", e);
@@ -392,20 +403,18 @@ public final class OpenCodeClient extends AcpClient {
 
         // 2. Stale workspace files — OpenCode persists per-project workspace state.
         // Each IDE has its own project, so its own workspace file. Delete ALL of them
-        // so no stale session reference survives anywhere.
+        // so no stale session reference survives anywhere. Previously we filtered by
+        // content.contains("\"session\":{") but this missed edge cases where the key
+        // was serialized differently or the file referenced a now-deleted session.
         String configDir = System.getProperty("user.home") + "/.config/ai.opencode.desktop/";
         java.io.File dir = new java.io.File(configDir);
         if (dir.isDirectory()) {
             java.io.File[] stale = dir.listFiles((d, name) -> name.startsWith("opencode.workspace."));
             if (stale != null) {
                 for (java.io.File f : stale) {
-                    String content;
                     try {
-                        content = new String(java.nio.file.Files.readAllBytes(f.toPath()), java.nio.charset.StandardCharsets.UTF_8);
-                        if (content.contains("\"session\":{")) {
-                            if (f.delete()) {
-                                LOG.info("OpenCodeClient: deleted stale workspace file: " + f.getName());
-                            }
+                        if (f.delete()) {
+                            LOG.info("OpenCodeClient: deleted stale workspace file: " + f.getName());
                         }
                     } catch (Exception e) {
                         LOG.debug("OpenCodeClient: skipped workspace file " + f.getName() + ": " + e.getMessage());

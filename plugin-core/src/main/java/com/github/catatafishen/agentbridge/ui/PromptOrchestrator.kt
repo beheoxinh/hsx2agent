@@ -742,29 +742,30 @@ class PromptOrchestrator(
         codeChangeListener = null
         pendingBanner = null
 
-        // Drop the ACP client's cached session ID too, so the next createSession()
-        // goes through the full load/new flow instead of hitting the early-return
-        // "reuse" path with the still-corrupted session.
+        // Drop the ACP client's cached session ID so the next createSession()
+        // goes through the full load/new flow instead of the early-return "reuse" path.
         agentManager.client.dropCurrentSession()
         clearLocalSessionTracking()
         callbacks.updateSessionInfo()
 
-        // If the corrupted agent is OpenCode, also clean up its on-disk session state
-        // which prevents session creation even after process restart.
+        // ── Kill the process BEFORE on-disk cleanup ──────────────────────────────
+        // cleanupCorruptedSessions() touches OpenCode's SQLite DB. If OpenCode is
+        // still running it holds an exclusive WAL lock — the DELETE silently fails
+        // and the stale compaction record survives, re-poisoning the next session.
+        // We call restartFresh() (which calls stop() → destroyProcess()) first so
+        // the process is dead before we touch the DB.
         val openCodeClient = agentManager.getClientIfRunning() as? OpenCodeClient
-        if (openCodeClient != null) {
-            openCodeClient.cleanupCorruptedSessions()
+        try {
+            agentManager.restartFresh()
+        } catch (ex: Exception) {
+            log.warn("Failed to restart agent after session corruption", ex)
         }
 
-        // Restart the agent process to clear any in-memory corruption (e.g. OpenCode's
-        // history compaction state). A fresh process + session/new avoids carrying the
-        // broken state into the next turn.
-        ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                agentManager.restartFresh()
-            } catch (ex: Exception) {
-                log.warn("Failed to restart agent after session corruption", ex)
-            }
+        // Now that the process is dead, clean up stale on-disk session state.
+        // OpenCode's per-machine SQLite DB is shared across all IntelliJ IDEs —
+        // stale compaction records from one IDE prevent session creation in all others.
+        if (openCodeClient != null) {
+            openCodeClient.cleanupCorruptedSessions()
         }
 
         consolePanel().cancelAllRunning()
