@@ -99,11 +99,19 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     /**
      * Claude Code built-in tools that bypass the IDE and must be suppressed when the profile
      * enables {@code excludeAgentBuiltInTools}. These are passed to the CLI via
-     * {@code --disallowedTools}. WebFetch and WebSearch are intentionally omitted because they
-     * have no MCP equivalent and should remain available.
+     * {@code --disallowedTools}.
+     *
+     * <p>Only tools that the current Claude CLI version actually recognizes are listed here.
+     * Unknown tool names produce "matches no known tool" warnings on stderr (noisy but
+     * harmless). {@code WebSearchTool}, {@code LS}, {@code NotebookRead}, and
+     * {@code NotebookEdit} were removed because they don't exist in Claude CLI as of
+     * 2026-07-08 — keep them removed unless Anthropic adds them back.
+     *
+     * <p>WebFetch and WebSearch are intentionally omitted because they have no MCP equivalent
+     * and should remain available.
      */
     static final java.util.List<String> DISABLED_BUILT_IN_TOOLS = java.util.List.of(
-        "Bash", "Edit", "Read", "Write", "WebSearchTool", "LS", "Glob", "Grep", "NotebookRead", "NotebookEdit"
+        "Bash", "Edit", "Read", "Write", "Glob", "Grep"
     );
 
     @NotNull
