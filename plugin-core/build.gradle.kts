@@ -370,6 +370,34 @@ val generateHookHashes by tasks.registering {
     }
 }
 
+// Resolve plugin version:
+//   Priority: PLUGIN_VERSION env > gradle property > git commit count > timestamp fallback
+val pluginVersion: String by lazy {
+    providers.environmentVariable("PLUGIN_VERSION").orNull?.takeIf { it.isNotBlank() }
+        ?: providers.gradleProperty("overridePluginVersion").orNull?.takeIf { it.isNotBlank() }
+        ?: resolveGitCommitVersion()
+}
+
+fun resolveGitCommitVersion(): String {
+    val base = providers.gradleProperty("pluginBaseVersion").orNull ?: "0.0"
+    return try {
+        val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+            .directory(project.rootProject.projectDir)
+            .redirectErrorStream(true)
+            .start()
+        val count = process.inputStream.bufferedReader().readText().trim()
+        if (process.waitFor() == 0 && count.isNotBlank()) {
+            "$base.$count"
+        } else {
+            "$base.${System.currentTimeMillis()}"
+        }
+    } catch (_: Exception) {
+        "$base.${System.currentTimeMillis()}"
+    }
+}
+
+version = pluginVersion
+
 // Also include in the distribution ZIP
 tasks.named<Zip>("buildPlugin") {
     archiveBaseName.set("hsx2agent")
@@ -379,44 +407,17 @@ tasks.named<Zip>("buildPlugin") {
         into("lib")
         rename { "mcp-server.jar" }
     }
-    doFirst {
-        val parts = readPluginVersion().split(".")
-        val newVersion = parts.dropLast(1).joinToString(".") + "." + ((parts.lastOrNull()?.toIntOrNull() ?: 0) + 1)
-        writePluginVersion(newVersion)
-        project.version = newVersion
-        archiveVersion = newVersion
-    }
     doLast {
         val latestFile = layout.buildDirectory.file("distributions/hsx2agent-latest.zip")
         archiveFile.get().asFile.copyTo(latestFile.get().asFile, overwrite = true)
     }
 }
 
-tasks.register("incrementPluginVersion") {
-    doLast {
-        val parts = readPluginVersion().split(".")
-        val newVersion = parts.dropLast(1).joinToString(".") + "." + ((parts.lastOrNull()?.toIntOrNull() ?: 0) + 1)
-        writePluginVersion(newVersion)
-        println("Version bumped to $newVersion")
-    }
-}
-
-
 sourceSets {
     main {
         resources.srcDir(layout.buildDirectory.dir("generated/buildinfo"))
     }
 }
-
-val pluginVersionFile = file("version.txt")
-
-fun readPluginVersion(): String = pluginVersionFile.readText().trim()
-
-fun writePluginVersion(version: String) {
-    pluginVersionFile.writeText("$version\n")
-}
-
-version = readPluginVersion()
 
 intellijPlatform {
     pluginConfiguration {
