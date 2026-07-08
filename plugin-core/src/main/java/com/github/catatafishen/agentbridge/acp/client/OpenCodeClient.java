@@ -369,11 +369,22 @@ public final class OpenCodeClient extends AcpClient {
      * restart), otherwise SQLite may be locked.
      */
     public void cleanupCorruptedSessions() {
+        cleanupCorruptedSessions(
+            java.nio.file.Paths.get(System.getProperty("user.home"), ".local", "share", "opencode", "opencode.db"),
+            System.getProperty("user.home") + "/.config/ai.opencode.desktop/"
+        );
+    }
+
+    /**
+     * Package-private overload for testing. Allows injecting custom DB path and workspace
+     * config directory so tests don't depend on the real {@code ~/.local/share/opencode/}
+     * or {@code ~/.config/ai.opencode.desktop/} paths.
+     */
+    void cleanupCorruptedSessions(java.nio.file.Path dbPath, String workspaceConfigDir) {
         // 1. OpenCode DB — clean ALL stale sessions across ALL projects, not just the
         // current one. Since this DB is shared by all IntelliJ IDEs on the machine,
         // corruption left by one IDE poisons the others.
-        java.io.File dbFile = java.nio.file.Paths.get(
-            System.getProperty("user.home"), ".local", "share", "opencode", "opencode.db").toFile();
+        java.io.File dbFile = dbPath.toFile();
         if (dbFile.isFile()) {
             try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath())) {
                 // Delete sessions whose compaction was never started (time_compacting IS NULL)
@@ -388,9 +399,15 @@ public final class OpenCodeClient extends AcpClient {
                     deleted = del.executeUpdate();
                 }
                 // Also delete all rows from the TOTP table — stale TOTP entries can cause
-                // authentication loops even after a fresh session/new.
-                try (java.sql.Statement clearTotp = conn.createStatement()) {
-                    clearTotp.execute("DELETE FROM totp");
+                // authentication loops even after a fresh session/new. Check table
+                // existence first since it is only created by OpenCode at first auth.
+                try (java.sql.ResultSet rs = conn.getMetaData().getTables(null, null, "totp", null)) {
+                    if (rs.next()) {
+                        try (java.sql.Statement clearTotp = conn.createStatement()) {
+                            int cnt = clearTotp.executeUpdate("DELETE FROM totp");
+                            LOG.info("OpenCodeClient: cleared " + cnt + " stale TOTP entry(ies)");
+                        }
+                    }
                 }
                 if (deleted > 0) {
                     LOG.info("OpenCodeClient: cleaned " + deleted
@@ -406,8 +423,7 @@ public final class OpenCodeClient extends AcpClient {
         // so no stale session reference survives anywhere. Previously we filtered by
         // content.contains("\"session\":{") but this missed edge cases where the key
         // was serialized differently or the file referenced a now-deleted session.
-        String configDir = System.getProperty("user.home") + "/.config/ai.opencode.desktop/";
-        java.io.File dir = new java.io.File(configDir);
+        java.io.File dir = new java.io.File(workspaceConfigDir);
         if (dir.isDirectory()) {
             java.io.File[] stale = dir.listFiles((d, name) -> name.startsWith("opencode.workspace."));
             if (stale != null) {

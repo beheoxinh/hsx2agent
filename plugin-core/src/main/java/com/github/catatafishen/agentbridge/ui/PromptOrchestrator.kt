@@ -728,6 +728,24 @@ class PromptOrchestrator(
      * [handlePromptError], which would show a misleading "Reconnect" banner implying a
      * connection failure.
      */
+    /**
+     * Handles the case where the agent returned end_turn with zero content blocks
+     * (no text, no tool calls, no thoughts). The most common cause is OpenCode's
+     * history compaction state machine getting stuck, which persists across process
+     * restarts because the stale compaction record lives in the shared SQLite DB.
+     *
+     * Recovery sequence (MUST be in this order):
+     * 1. Drop in-memory session tracking so the next turn starts fresh
+     * 2. Kill the agent process (stop) — releases any SQLite WAL locks
+     * 3. Wipe stale compaction records from the shared OpenCode DB
+     * 4. Start a fresh agent process — reads the now-clean DB
+     * 5. Restore the user's prompt text so they can retry
+     *
+     * ⚠️  The process must be DEAD before touching the SQLite DB (step 3).
+     * OpenCode uses WAL mode but holds an exclusive write lock during compaction.
+     * If the DELETE runs while OpenCode is alive, it silently fails — the stale
+     * compaction record survives and immediately re-poison the fresh process.
+     */
     private fun handleSessionCorrupted() {
         val agentName = agentManager.activeProfile.displayName
         log.warn("$agentName: empty turn — session state corrupted, resetting session")
@@ -742,32 +760,50 @@ class PromptOrchestrator(
         codeChangeListener = null
         pendingBanner = null
 
+        // ── Phase 1: Clear in-memory session tracking ──────────────────────
         // Drop the ACP client's cached session ID so the next createSession()
-        // goes through the full load/new flow instead of the early-return "reuse" path.
+        // goes through the full load/new flow rather than hitting the "reuse" path
+        // with the still-corrupted session.
         agentManager.client.dropCurrentSession()
         clearLocalSessionTracking()
         callbacks.updateSessionInfo()
 
-        // ── Kill the process BEFORE on-disk cleanup ──────────────────────────────
-        // cleanupCorruptedSessions() touches OpenCode's SQLite DB. If OpenCode is
-        // still running it holds an exclusive WAL lock — the DELETE silently fails
-        // and the stale compaction record survives, re-poisoning the next session.
-        // We call restartFresh() (which calls stop() → destroyProcess()) first so
-        // the process is dead before we touch the DB.
+        // ── Phase 2: Capture OpenCode reference BEFORE stop ────────────────
+        // After stop(), agentManager.client/agentManager.getClientIfRunning()
+        // return null, so we must grab the reference while the client is alive.
         val openCodeClient = agentManager.getClientIfRunning() as? OpenCodeClient
-        try {
-            agentManager.restartFresh()
-        } catch (ex: Exception) {
-            log.warn("Failed to restart agent after session corruption", ex)
-        }
 
-        // Now that the process is dead, clean up stale on-disk session state.
-        // OpenCode's per-machine SQLite DB is shared across all IntelliJ IDEs —
-        // stale compaction records from one IDE prevent session creation in all others.
+        // ── Phase 3: Kill the agent process ────────────────────────────────
+        // stop() closes the transport and destroys the process tree.
+        // After this, no process holds SQLite WAL locks.
+        agentManager.clearSessionResumeState()
+        agentManager.stop()
+
+        // ── Phase 4: Wipe stale on-disk state (process is DEAD) ─────────────
+        // Deletes sessions with incomplete compaction (time_compacting set but
+        // time_completed never written) from OpenCode's shared SQLite DB, plus
+        // stale workspace files that reference now-deleted sessions.
+        //
+        // This must happen AFTER stop() — a live OpenCode process holds an
+        // exclusive write lock during compaction, silently swallowing our DELETE.
+        // The stale record would then be re-read by the fresh process on startup,
+        // immediately reproducing the corruption.
         if (openCodeClient != null) {
             openCodeClient.cleanupCorruptedSessions()
         }
 
+        // ── Phase 5: Start a fresh agent process ───────────────────────────
+        // start() creates a new AbstractAgentClient, launches the process, and
+        // goes through initialization/auth. If it fails (e.g. binary not found),
+        // the error is logged and the user sees a banner — the next interaction
+        // will retry.
+        try {
+            agentManager.start()
+        } catch (ex: Exception) {
+            log.warn("Failed to start agent after session corruption cleanup", ex)
+        }
+
+        // ── Phase 6: Show error UI ─────────────────────────────────────────
         consolePanel().cancelAllRunning()
         consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
         callbacks.appendNewEntries()
