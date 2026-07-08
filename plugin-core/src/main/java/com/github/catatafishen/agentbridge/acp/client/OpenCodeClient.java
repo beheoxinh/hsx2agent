@@ -381,37 +381,57 @@ public final class OpenCodeClient extends AcpClient {
      * or {@code ~/.config/ai.opencode.desktop/} paths.
      */
     void cleanupCorruptedSessions(java.nio.file.Path dbPath, String workspaceConfigDir) {
-        // 1. OpenCode DB — clean ALL stale sessions across ALL projects, not just the
+        // 1. OpenCode DB — delete ALL sessions across ALL projects, not just the
         // current one. Since this DB is shared by all IntelliJ IDEs on the machine,
         // corruption left by one IDE poisons the others.
+        //
+        // During corruption recovery (after the process was killed), ALL sessions
+        // in the DB are stale. The stuck compaction state is on a session that has
+        // time_compacting set but was never completed — but OpenCode's schema has
+        // NO time_completed column (only time_compacting INTEGER), so we cannot
+        // distinguish "compaction completed" from "compaction stuck". The only
+        // reliable fix is to delete every session and let the fresh OpenCode
+        // process create new ones.
+        //
+        // ⚠️  This affects OTHER projects on the same machine too — but since the
+        // DB is shared, a single stuck compaction blocks ALL projects. Deleting
+        // everything is the safe choice.
         java.io.File dbFile = dbPath.toFile();
         if (dbFile.isFile()) {
-            try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath())) {
-                // Delete sessions whose compaction was never started (time_compacting IS NULL)
-                // OR whose compaction started but never completed (time_compacting IS NOT NULL
-                // AND time_completed IS NULL). OpenCode records time_compacting at the start of
-                // compaction and time_completed when done — if compaction crashes or is
-                // interrupted, time_completed is never set and the session stays locked forever.
-                int deleted;
-                try (java.sql.PreparedStatement del = conn.prepareStatement(
-                    "DELETE FROM session WHERE time_compacting IS NULL " +
-                    "OR (time_compacting IS NOT NULL AND time_completed IS NULL)")) {
-                    deleted = del.executeUpdate();
+            try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+                 java.sql.Statement stmt = conn.createStatement()) {
+
+                // Step A: Delete in FK order (part → message → session) because
+                // SQLite does not enforce foreign keys by default — CASCADE would
+                // not fire without PRAGMA foreign_keys = ON.
+                // Check table existence first since older OpenCode DBs may not
+                // have all tables (the exporter creates them on export).
+                int deletedParts = 0, deletedMessages = 0, deletedSessions = 0;
+                try (java.sql.ResultSet tables = conn.getMetaData()
+                    .getTables(null, null, "part", null)) {
+                    if (tables.next()) deletedParts = stmt.executeUpdate("DELETE FROM part");
                 }
-                // Also delete all rows from the TOTP table — stale TOTP entries can cause
-                // authentication loops even after a fresh session/new. Check table
-                // existence first since it is only created by OpenCode at first auth.
+                try (java.sql.ResultSet tables = conn.getMetaData()
+                    .getTables(null, null, "message", null)) {
+                    if (tables.next()) deletedMessages = stmt.executeUpdate("DELETE FROM message");
+                }
+                try (java.sql.ResultSet tables = conn.getMetaData()
+                    .getTables(null, null, "session", null)) {
+                    if (tables.next()) deletedSessions = stmt.executeUpdate("DELETE FROM session");
+                }
+                if (deletedSessions > 0 || deletedMessages > 0 || deletedParts > 0) {
+                    LOG.info("OpenCodeClient: cleaned " + deletedSessions
+                        + " session(s), " + deletedMessages + " message(s), "
+                        + deletedParts + " part(s) from OpenCode DB");
+                }
+
+                // Step B: Delete stale TOTP cache entries. Check table existence first
+                // since the table is only created by OpenCode at first auth.
                 try (java.sql.ResultSet rs = conn.getMetaData().getTables(null, null, "totp", null)) {
                     if (rs.next()) {
-                        try (java.sql.Statement clearTotp = conn.createStatement()) {
-                            int cnt = clearTotp.executeUpdate("DELETE FROM totp");
-                            LOG.info("OpenCodeClient: cleared " + cnt + " stale TOTP entry(ies)");
-                        }
+                        int deletedTotp = stmt.executeUpdate("DELETE FROM totp");
+                        LOG.info("OpenCodeClient: cleared " + deletedTotp + " stale TOTP entry(ies)");
                     }
-                }
-                if (deleted > 0) {
-                    LOG.info("OpenCodeClient: cleaned " + deleted
-                        + " stale session(s) from OpenCode DB");
                 }
             } catch (Exception e) {
                 LOG.warn("OpenCodeClient: failed to clean OpenCode DB", e);
@@ -420,9 +440,7 @@ public final class OpenCodeClient extends AcpClient {
 
         // 2. Stale workspace files — OpenCode persists per-project workspace state.
         // Each IDE has its own project, so its own workspace file. Delete ALL of them
-        // so no stale session reference survives anywhere. Previously we filtered by
-        // content.contains("\"session\":{") but this missed edge cases where the key
-        // was serialized differently or the file referenced a now-deleted session.
+        // so no stale session reference survives. The fresh process will recreate them.
         java.io.File dir = new java.io.File(workspaceConfigDir);
         if (dir.isDirectory()) {
             java.io.File[] stale = dir.listFiles((d, name) -> name.startsWith("opencode.workspace."));

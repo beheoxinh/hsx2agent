@@ -780,9 +780,10 @@ class PromptOrchestrator(
         agentManager.stop()
 
         // ── Phase 4: Wipe stale on-disk state (process is DEAD) ─────────────
-        // Deletes sessions with incomplete compaction (time_compacting set but
-        // time_completed never written) from OpenCode's shared SQLite DB, plus
-        // stale workspace files that reference now-deleted sessions.
+        // Deletes ALL sessions from OpenCode's shared SQLite DB, plus stale
+        // workspace files. OpenCode's schema has no time_completed column, so
+        // there is no way to distinguish "compaction completed" from "compaction
+        // stuck" at the SQL level. The only reliable fix is DELETE FROM session.
         //
         // This must happen AFTER stop() — a live OpenCode process holds an
         // exclusive write lock during compaction, silently swallowing our DELETE.
