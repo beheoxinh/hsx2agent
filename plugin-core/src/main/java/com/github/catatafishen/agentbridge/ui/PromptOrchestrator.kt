@@ -222,9 +222,8 @@ class PromptOrchestrator(
             .getInstance(project).clearMessageQueue()
 
         val client = agentManager.getClientIfRunning() ?: return
-        val watchdog = Thread({
+        com.intellij.util.concurrency.AppExecutorUtil.getAppScheduledExecutorService().schedule({
             try {
-                Thread.sleep(3000)
                 if (stopped && thread != null && thread.isAlive) {
                     log.warn("stop(): prompt thread still alive after 3 s — killing transport")
                     agentManager.clearSessionResumeState()
@@ -240,12 +239,10 @@ class PromptOrchestrator(
                     log.info("stop(): transport killed — auto-restarting agent")
                     reconnectAfterError()
                 }
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
+            } catch (_: Exception) {
+                // Ignore — watchdog is best-effort cleanup
             }
-        }, "stop-watchdog")
-        watchdog.isDaemon = true
-        watchdog.start()
+        }, 3, java.util.concurrent.TimeUnit.SECONDS)
     }
 
     /** Returns true if [stop] was called for the current turn and [execute] has not reset it. */

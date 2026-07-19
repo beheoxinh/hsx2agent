@@ -132,9 +132,16 @@ class AcpConnectPanel(
         stopStatsTimer()
     }
 
+    /**
+     * Status check timer. Uses a 10-second interval to reduce EDT pressure
+     * during idle periods (connect panel is often visible for minutes while
+     * the user reads agent output or is away from IDE). The check itself
+     * just queries UI component state (profile combo, status icon) and is
+     * latency-tolerant — a few seconds of staleness is invisible.
+     */
     private fun startProfileStatusTimer() {
         if (profileStatusTimer == null) {
-            profileStatusTimer = javax.swing.Timer(1000) {
+            profileStatusTimer = javax.swing.Timer(10_000) {
                 if (isShowing) {
                     updateProfileStatus()
                 }

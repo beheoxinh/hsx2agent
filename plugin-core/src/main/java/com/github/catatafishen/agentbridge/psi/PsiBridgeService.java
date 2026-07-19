@@ -622,8 +622,9 @@ public final class PsiBridgeService implements Disposable {
      * Checks if the AgentBridge chat tool window is currently active (has focus).
      * <p>
      * Thread-safe: on the EDT the check is performed synchronously (no stale cache).
-     * Off the EDT, a blocking {@code invokeLater} with a short timeout is used so callers
-     * get a fresh value rather than one that may lag by several tool calls.
+     * Off the EDT, the cached value is used directly (may lag by at most one tool call
+     * — acceptable for focus-restoration heuristics). The cache is refreshed
+     * asynchronously via {@code invokeLater} so the calling thread is never blocked.
      */
     public static boolean isChatToolWindowActive(@NotNull Project project) {
         PsiBridgeService service = getInstance(project);
@@ -633,19 +634,10 @@ public final class PsiBridgeService implements Disposable {
         if (app.isDispatchThread()) {
             refreshChatToolWindowCache(project, service);
         } else {
-            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-            app.invokeLater(() -> {
-                refreshChatToolWindowCache(project, service);
-                latch.countDown();
-            });
-            try {
-                boolean completed = latch.await(100, java.util.concurrent.TimeUnit.MILLISECONDS);
-                if (!completed) {
-                    LOG.debug("isChatToolWindowActive: EDT did not refresh cache within 100ms; returning stale value");
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            // Non-blocking: refresh cache asynchronously. Accept a stale value
+            // for this call — the next call will have fresher data. This avoids
+            // blocking the calling thread on EDT (100ms per tool call).
+            app.invokeLater(() -> refreshChatToolWindowCache(project, service));
         }
         return service.chatToolWindowActiveCache;
     }

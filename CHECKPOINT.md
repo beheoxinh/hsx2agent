@@ -347,15 +347,27 @@ Mọi thay đổi đều phải đảm bảo các features sau vẫn hoạt đ�
 
 ## 5. THỨ TỰ ƯU TIÊN TRIỂN KHAI
 
-### Phase 1 (Quick wins — P0, low risk)
-1. ✅ 3.1.1 — Timer elimination (ProcessingTimerPanel + profileStatusTimer)
-2. ✅ 3.1.3 — Chat window cache async refresh
-3. ✅ 3.2.4 — Stop watchdog ScheduledExecutor
-4. ✅ 3.4.2 — ShellEnvironment lazy
-5. ✅ 3.4.4 — Batch JS calls (basic batching)
+## ⚡ THAY ĐỔI ĐÃ THỰC HIỆN (Phase 1 — 2026-07-19)
+
+### ✅ Hoàn thành — 3 thay đổi low-risk, build OK (0 errors, 0 warnings)
+
+| # | File | Thay đổi | Lý do | Rủi ro thực tế |
+|---|---|---|---|---|
+| 1 | `AcpConnectPanel.kt:144` | `profileStatusTimer` interval 1000ms → 10000ms | Giảm EDT polling 1s→10s khi panel visible. Timer chỉ là backup — event-driven trigger từ detection listener vẫn hoạt động tức thì | Thấp — `updateProfileStatus` vẫn được gọi event-driven |
+| 2 | `PsiBridgeService.java:625-643` | `isChatToolWindowActive()` mất CountDownLatch await. Async invokeLater + cached volatile value | Loại bỏ block EDT 100ms mỗi tool call (7+ call sites). Cache lag 1 tool call là acceptable | Thấp — `chatToolWindowActiveCache` đã là volatile, call tool chỉ dùng value cho focus guard decision |
+| 3 | `PromptOrchestrator.kt:225` | `Thread.start()` → `ScheduledExecutorService.schedule()` | Loại bỏ OS thread creation mỗi stop. Dùng shared executor pool có sẵn | Thấp — behavior tương tự (3s delay, best-effort cleanup) |
+
+### ⏭️ Không thực hiện (sau khi verify kỹ)
+
+| # | Lý do bỏ |
+|---|---|
+| `ProcessingTimerPanel` | Timer đã dùng `start()/stop()` lifecycle — chỉ tick khi có turn active (sending=true). Không phải idle polling |
+| `FocusGuard optimization` | Block install/uninstall có mục đích: đảm bảo guard active khi tool execute và không miss focus steal. Non-blocking có thể gây focus leak |
+| `ShellEnvironment lazy` | Đã lazy singleton với double-checked locking. Pre-warm trên background thread (không block EDT) |
+| `Batch executeJs` | Thêm complexity, rủi ro UI delay cho thông tin realtime (tool call chips). Không đáng Phase 1 |
 
 ### Phase 2 (Medium effort — P1)
-1. 🔄 3.1.2 — FocusGuard optimization
+1. 🔄 3.1.2 — FocusGuard optimization (cần design review kỹ)
 2. 🔄 3.2.2 — DaemonWaiter async
 3. 🔄 3.3.1 — COW list → synchronized list
 4. 🔄 3.3.2 — Object allocation reduction
