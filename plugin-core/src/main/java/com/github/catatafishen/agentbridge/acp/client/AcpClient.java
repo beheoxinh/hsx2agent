@@ -946,8 +946,10 @@ public abstract class AcpClient extends AbstractAgentClient {
         try {
             long turnStartNanos = System.nanoTime();
             lastActivityNanos = turnStartNanos;
-            PromptRequest effectiveRequest = beforeSendPrompt(request);
+            // Reset post-turn state from the previous turn before starting a new one.
+            clearPostTurnState();
             updateConsumer = onUpdate;
+            PromptRequest effectiveRequest = beforeSendPrompt(request);
             JsonObject params = gson.toJsonTree(effectiveRequest).getAsJsonObject();
             LOG.debug(displayName() + ": sending session/prompt, sessionId=" + request.sessionId());
             future = transport.sendRequest("session/prompt", params);
@@ -1001,7 +1003,6 @@ public abstract class AcpClient extends AbstractAgentClient {
      * augment the request (e.g. prepend corrective guidance). Default: returns unchanged.
      */
     protected PromptRequest beforeSendPrompt(PromptRequest request) {
-        clearPostTurnState();
         return request;
     }
 
