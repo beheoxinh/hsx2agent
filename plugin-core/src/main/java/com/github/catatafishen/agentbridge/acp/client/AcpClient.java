@@ -946,8 +946,8 @@ public abstract class AcpClient extends AbstractAgentClient {
         try {
             long turnStartNanos = System.nanoTime();
             lastActivityNanos = turnStartNanos;
-            updateConsumer = onUpdate;
             PromptRequest effectiveRequest = beforeSendPrompt(request);
+            updateConsumer = onUpdate;
             JsonObject params = gson.toJsonTree(effectiveRequest).getAsJsonObject();
             LOG.debug(displayName() + ": sending session/prompt, sessionId=" + request.sessionId());
             future = transport.sendRequest("session/prompt", params);
