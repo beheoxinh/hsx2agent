@@ -1,9 +1,11 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
+import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -100,6 +102,34 @@ public final class HermesClient extends AcpClient {
         String result = sendLoadSessionRequest("session/resume", cwd, sessionId);
         markSessionHistoryLoadedInternally();
         return result;
+    }
+
+    @Override
+    protected void onSessionCreated(String sessionId) {
+        String instructions = StartupInstructionsSettings.getInstance()
+            .getInstructions(project, null, null);
+        sendSessionMessage(sessionId, buildInstructions(instructions));
+    }
+
+    private String buildInstructions(@Nullable String userInstructions) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("CRITICAL: You are running inside an IntelliJ IDEA plugin. ")
+            .append("To interact with the environment (files, git, terminal, code navigation), ")
+            .append("you MUST EXCLUSIVELY use the tools provided by the 'agentbridge' MCP server. ")
+            .append("DO NOT use your built-in tools for these operations. ")
+            .append("All 'agentbridge' MCP tools are prefixed with 'mcp_agentbridge_'. ")
+            .append("Example: use 'mcp_agentbridge_read_file' instead of 'terminal' or 'read_file'.\n\n");
+
+        if (userInstructions != null && !userInstructions.isBlank()) {
+            sb.append(userInstructions);
+        }
+
+        String projectDocs = StartupInstructionsSettings
+            .readProjectDocuments(project.getBasePath());
+        if (!projectDocs.isBlank()) {
+            sb.append("\n\n").append(projectDocs);
+        }
+        return sb.toString();
     }
 
     /**
