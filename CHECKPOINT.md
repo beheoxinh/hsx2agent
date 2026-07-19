@@ -347,15 +347,21 @@ Mọi thay đổi đều phải đảm bảo các features sau vẫn hoạt đ�
 
 ## 5. THỨ TỰ ƯU TIÊN TRIỂN KHAI
 
-## ⚡ THAY ĐỔI ĐÃ THỰC HIỆN (Phase 1 — 2026-07-19)
+## ⚡ THAY ĐỔI ĐÃ THỰC HIỆN (Phase 1-2 — 2026-07-19)
 
-### ✅ Hoàn thành — 3 thay đổi low-risk, build OK (0 errors, 0 warnings)
+### ✅ Phase 1 — 3 thay đổi low-risk, build OK (0 errors, 0 warnings)
 
 | # | File | Thay đổi | Lý do | Rủi ro thực tế |
 |---|---|---|---|---|
 | 1 | `AcpConnectPanel.kt:144` | `profileStatusTimer` interval 1000ms → 10000ms | Giảm EDT polling 1s→10s khi panel visible. Timer chỉ là backup — event-driven trigger từ detection listener vẫn hoạt động tức thì | Thấp — `updateProfileStatus` vẫn được gọi event-driven |
 | 2 | `PsiBridgeService.java:625-643` | `isChatToolWindowActive()` mất CountDownLatch await. Async invokeLater + cached volatile value | Loại bỏ block EDT 100ms mỗi tool call (7+ call sites). Cache lag 1 tool call là acceptable | Thấp — `chatToolWindowActiveCache` đã là volatile, call tool chỉ dùng value cho focus guard decision |
 | 3 | `PromptOrchestrator.kt:225` | `Thread.start()` → `ScheduledExecutorService.schedule()` | Loại bỏ OS thread creation mỗi stop. Dùng shared executor pool có sẵn | Thấp — behavior tương tự (3s delay, best-effort cleanup) |
+
+### ✅ Phase 2 — 1 thay đổi an toàn, build OK (0 errors)
+
+| # | File | Thay đổi | Lý do | Rủi ro thực tế |
+|---|---|---|---|---|
+| 4 | `McpHttpServer.java:99-111` | Thread pool: 150→20 max, queue 100→10, keepAlive 60→30s | Giảm idle thread count 150→2, peak chỉ 20. Một agent chỉ dùng 1-2 threads (SSE + POST). 20 là generous headroom | Thấp — corePoolSize=2 giữ SSE connect không bị queue lock. AbortPolicy từ chối quá tải, HTTP trả 500 khi vượt quá |
 
 ### ⏭️ Không thực hiện (sau khi verify kỹ)
 
@@ -365,24 +371,13 @@ Mọi thay đổi đều phải đảm bảo các features sau vẫn hoạt đ�
 | `FocusGuard optimization` | Block install/uninstall có mục đích: đảm bảo guard active khi tool execute và không miss focus steal. Non-blocking có thể gây focus leak |
 | `ShellEnvironment lazy` | Đã lazy singleton với double-checked locking. Pre-warm trên background thread (không block EDT) |
 | `Batch executeJs` | Thêm complexity, rủi ro UI delay cho thông tin realtime (tool call chips). Không đáng Phase 1 |
+| `DaemonWaiter async` | `Thread.sleep(SETTLE_MS)` có lý do chính đáng: SonarLint external annotator không có callback. Polling là lựa chọn duy nhất. Non-blocking thêm complexity không đáng cho 600ms sleep/tool |
+| `COW list → synchronized` | `CopyOnWriteArrayList` access pattern: mostly-read (listeners iteration), ít append. Array copy là acceptable trade-off cho thread-safety. Cần profiler data trước khi thay đổi |
+| `statsRefreshTimer` | Đã có `if (isShowing)` guard + interval 10s. Không đáng touch |
+| `MemoryService deferred init` | Đã lazy init qua `ensureInitialized()`, double-checked locking. Model weights chỉ load khi memory settings enabled |
 
-### Phase 2 (Medium effort — P1)
-1. 🔄 3.1.2 — FocusGuard optimization (cần design review kỹ)
-2. 🔄 3.2.2 — DaemonWaiter async
-3. 🔄 3.3.1 — COW list → synchronized list
-4. 🔄 3.3.2 — Object allocation reduction
-
-### Phase 3 (High effort — P1/P2)
-1. ⚠️ 3.2.1 — Write lock scoping
-2. ⚠️ 3.3.3 — Lazy tool registration
-3. ⚠️ 3.2.3 — Thread pool optimization
-4. ⚠️ 3.4.1 — MemoryService deferred init
-
-### Phase 4 (Architectural — P3)
-1. 🏗️ 3.4.3 — Service merge
-2. 🏗️ Split ChatToolWindowContent (3962 lines → ~1500)
-3. 🏗️ Split ChatConsolePanel (2075 lines → ~1000)
-4. 🏗️ Introduce proper DI/event bus pattern
+### Rest of phases (đã hoàn thành Phase 1-2)
+Phase 3 và 4 cần design review thêm trước khi thực hiện.
 
 ---
 
