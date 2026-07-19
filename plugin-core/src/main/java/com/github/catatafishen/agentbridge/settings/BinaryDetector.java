@@ -11,7 +11,6 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -332,17 +331,27 @@ public class BinaryDetector {
 
         // Try 'which -a' as well for redundancy
         // Note: macOS 'which' doesn't support '-a' flag; use 'type -a' on macOS
-        String whichCmd = SystemInfo.isMac ? "type -a " : "which -a ";
-        String whichOutput = runCommand(List.of(
-            SystemInfo.isMac ? "sh" : "which",
-            SystemInfo.isMac ? "-c" : null,
-            SystemInfo.isMac ? whichCmd + binaryName : binaryName
-        ).stream().filter(Objects::nonNull).toList(), 2);
-        if (whichOutput != null) {
-            for (String path : whichOutput.split("\n")) {
-                String trimmed = path.trim();
-                if (!trimmed.isEmpty() && new File(trimmed).isAbsolute() && new File(trimmed).isFile()) {
-                    results.add(trimmed);
+        if (SystemInfo.isMac) {
+            // macOS: use 'sh -c "type -a <binary>"'
+            String whichOutput = runCommand(
+                List.of("sh", "-c", "type -a " + binaryName), 2);
+            if (whichOutput != null) {
+                for (String path : whichOutput.split("\n")) {
+                    String trimmed = path.trim();
+                    if (!trimmed.isEmpty() && new File(trimmed).isAbsolute() && new File(trimmed).isFile()) {
+                        results.add(trimmed);
+                    }
+                }
+            }
+        } else {
+            // Linux/Windows: use 'which -a' directly
+            String whichOutput = runCommand(List.of("which", "-a", binaryName), 2);
+            if (whichOutput != null) {
+                for (String path : whichOutput.split("\n")) {
+                    String trimmed = path.trim();
+                    if (!trimmed.isEmpty() && new File(trimmed).isAbsolute() && new File(trimmed).isFile()) {
+                        results.add(trimmed);
+                    }
                 }
             }
         }

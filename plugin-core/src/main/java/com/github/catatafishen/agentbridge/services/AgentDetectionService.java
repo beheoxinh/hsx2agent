@@ -404,6 +404,10 @@ public final class AgentDetectionService implements Disposable {
 
     // ── Multi-Platform Binary Discovery ──
 
+    // Cache for WSL paths to avoid spawning multiple WSL processes in parallel
+    private static volatile List<String> cachedWslPaths = null;
+    private static final Object wslCacheLock = new Object();
+
     /**
      * Finds ALL absolute paths to a binary across PATH, OS-native tools,
      * package managers, and platform-specific locations.
@@ -431,15 +435,12 @@ public final class AgentDetectionService implements Disposable {
 
         if (os.contains("windows")) {
             addWindowsPaths(results, binaryName);
+            // WSL interop — cached to avoid parallel WSL subprocess contention
+            addCachedWslPaths(results, binaryName);
         } else if (os.contains("mac")) {
             addMacPaths(results, binaryName);
         } else {
             addLinuxPaths(results, binaryName);
-        }
-
-        // WSL interop (when running on Windows)
-        if (os.contains("windows")) {
-            addWslPaths(results, binaryName);
         }
 
         return results;
@@ -517,58 +518,90 @@ public final class AgentDetectionService implements Disposable {
     }
 
     /**
-     * Queries WSL distros for a binary.
-     * Only available when running on Windows with WSL installed.
+     * Adds WSL paths from the cached WSL detection, refreshing the cache if empty.
      */
-    private static void addWslPaths(@NotNull List<String> results, @NotNull String binaryName) {
+    private static void addCachedWslPaths(@NotNull List<String> results, @NotNull String binaryName) {
+        if (cachedWslPaths == null) {
+            synchronized (wslCacheLock) {
+                if (cachedWslPaths == null) {
+                    cachedWslPaths = detectWslPaths();
+                }
+            }
+        }
+        // For each known WSL distro, check if the binary exists inside it
+        for (String wslPathEntry : cachedWslPaths) {
+            if (wslPathEntry.startsWith("DISTRO:")) {
+                String distro = wslPathEntry.substring(7);
+                String found = findBinaryInWslDistro(distro, binaryName);
+                if (found != null && !results.contains(found)) {
+                    results.add(found);
+                }
+            }
+        }
+    }
+
+    /**
+     * Detects available WSL distros (called once, cached).
+     */
+    private static List<String> detectWslPaths() {
+        List<String> distros = new ArrayList<>();
         try {
-            // Check if WSL is available
             ProcessBuilder checkPb = new ProcessBuilder("wsl", "--status");
             checkPb.redirectErrorStream(true);
             Process checkProcess = checkPb.start();
             boolean wslAvailable = checkProcess.waitFor(3, TimeUnit.SECONDS) && checkProcess.exitValue() == 0;
-            if (!wslAvailable) return;
+            if (!wslAvailable) return distros;
 
-            // Get list of WSL distros
             ProcessBuilder listPb = new ProcessBuilder("wsl", "-l", "--quiet");
             listPb.redirectErrorStream(true);
             Process listProcess = listPb.start();
-            if (!listProcess.waitFor(5, TimeUnit.SECONDS) || listProcess.exitValue() != 0) return;
+            if (!listProcess.waitFor(5, TimeUnit.SECONDS) || listProcess.exitValue() != 0) return distros;
 
-            String distroOutput = new String(listProcess.getInputStream().readAllBytes(),
+            String output = new String(listProcess.getInputStream().readAllBytes(),
                 java.nio.charset.StandardCharsets.UTF_8);
-            for (String distro : distroOutput.split("\n")) {
-                distro = distro.trim();
-                if (distro.isEmpty() || distro.contains(" ")) continue;
-
-                // Find binary in the WSL distro
-                ProcessBuilder findPb = new ProcessBuilder(
-                    "wsl", "-d", distro, "sh", "-c",
-                    "command -v " + binaryName + " 2>/dev/null || which " + binaryName + " 2>/dev/null || true"
-                );
-                findPb.redirectErrorStream(true);
-                Process findProcess = findPb.start();
-                if (!findProcess.waitFor(5, TimeUnit.SECONDS) || findProcess.exitValue() != 0) continue;
-
-                String wslPath = new String(findProcess.getInputStream().readAllBytes(),
-                    java.nio.charset.StandardCharsets.UTF_8).trim();
-                if (wslPath.isEmpty() || !wslPath.startsWith("/")) continue;
-
-                // Convert WSL Linux path to Windows path
-                ProcessBuilder convertPb = new ProcessBuilder("wslpath", "-w", wslPath);
-                convertPb.redirectErrorStream(true);
-                Process convertProcess = convertPb.start();
-                if (convertProcess.waitFor(3, TimeUnit.SECONDS) && convertProcess.exitValue() == 0) {
-                    String winPath = new String(convertProcess.getInputStream().readAllBytes(),
-                        java.nio.charset.StandardCharsets.UTF_8).trim();
-                    if (!winPath.isEmpty() && !results.contains(winPath)) {
-                        results.add(winPath + " [WSL:" + distro + "]");
-                    }
+            for (String line : output.split("\n")) {
+                String d = line.trim();
+                if (!d.isEmpty() && !d.contains(" ")) {
+                    distros.add("DISTRO:" + d);
                 }
             }
         } catch (Exception e) {
-            LOG.debug("WSL binary detection failed (WSL may not be installed): " + e.getMessage());
+            LOG.debug("WSL detection failed: " + e.getMessage());
         }
+        return distros;
+    }
+
+    /**
+     * Finds a binary inside a specific WSL distro.
+     */
+    @Nullable
+    private static String findBinaryInWslDistro(@NotNull String distro, @NotNull String binaryName) {
+        try {
+            ProcessBuilder findPb = new ProcessBuilder(
+                "wsl", "-d", distro, "sh", "-c",
+                "command -v " + binaryName + " 2>/dev/null || true"
+            );
+            findPb.redirectErrorStream(true);
+            Process findProcess = findPb.start();
+            if (!findProcess.waitFor(5, TimeUnit.SECONDS) || findProcess.exitValue() != 0) return null;
+
+            String wslPath = new String(findProcess.getInputStream().readAllBytes(),
+                java.nio.charset.StandardCharsets.UTF_8).trim();
+            if (!wslPath.startsWith("/")) return null;
+
+            // Convert WSL Linux path to Windows path
+            ProcessBuilder convertPb = new ProcessBuilder("wslpath", "-w", wslPath);
+            convertPb.redirectErrorStream(true);
+            Process convertProcess = convertPb.start();
+            if (convertProcess.waitFor(3, TimeUnit.SECONDS) && convertProcess.exitValue() == 0) {
+                String winPath = new String(convertProcess.getInputStream().readAllBytes(),
+                    java.nio.charset.StandardCharsets.UTF_8).trim();
+                return !winPath.isEmpty() ? winPath + " [WSL:" + distro + "]" : null;
+            }
+        } catch (Exception e) {
+            LOG.debug("Failed to find binary in WSL distro '" + distro + "': " + e.getMessage());
+        }
+        return null;
     }
 
     private static void addIfExists(@NotNull List<String> results, @NotNull String path) {
@@ -590,7 +623,7 @@ public final class AgentDetectionService implements Disposable {
 
     // ── Helpers ──
 
-    private void updateProfileFromResult(@NotNull AgentProfile profile, @NotNull DetectionResult result) {
+    private synchronized void updateProfileFromResult(@NotNull AgentProfile profile, @NotNull DetectionResult result) {
         if (result.source() == AgentProfile.DetectionSource.AUTO_DETECTED) {
             profile.setDetectedBinaryPath(result.path() != null ? result.path() : "");
             profile.setDetectionSource(result.isFound()
