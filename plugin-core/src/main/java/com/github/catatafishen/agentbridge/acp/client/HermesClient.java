@@ -7,6 +7,10 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -18,6 +22,7 @@ import java.util.concurrent.TimeoutException;
  * Command: {@code hermes acp --accept-hooks}
  * Tool prefix: {@code mcp_agentbridge_read_file} → strip {@code mcp_agentbridge_}
  * MCP: HTTP via {@code mcpServers} in {@code session/new}
+ * Instructions: injected via {@code .hermes.md} (Hermes auto-loads from cwd → git root)
  * References: requires inline (no ACP resource blocks)
  * <p>
  * Hermes Agent is an open-source AI agent framework by Nous Research.
@@ -37,6 +42,9 @@ public final class HermesClient extends AcpClient {
      */
     private static final String TOOL_PREFIX = "mcp_agentbridge_";
     private static final String KEY_MCP_SERVERS = "mcpServers";
+
+    private static final com.intellij.openapi.diagnostic.Logger LOG =
+        com.intellij.openapi.diagnostic.Logger.getInstance(HermesClient.class);
 
     public HermesClient(Project project) {
         super(project);
@@ -72,7 +80,9 @@ public final class HermesClient extends AcpClient {
      */
     @Override
     protected void customizeNewSession(String cwd, int mcpPort, JsonObject params) {
-        addMcpServerConfig(mcpPort, params);
+        if (mcpPort > 0) {
+            addMcpServerConfig(mcpPort, params);
+        }
     }
 
     /**
@@ -96,40 +106,63 @@ public final class HermesClient extends AcpClient {
         params.add(KEY_MCP_SERVERS, servers);
     }
 
+    /**
+     * Hermes auto-loads {@code .hermes.md} (cwd walk to git root) into the system prompt.
+     * Write it before launch so the agent sees the IDE instructions on first turn.
+     * <p>
+     * The file is left in the project directory — it's a standard Hermes convention
+     * and subsequent sessions will pick it up automatically. It is overwritten
+     * on each launch with current instructions.
+     */
+    @Override
+    protected void beforeLaunch(String cwd, int mcpPort) throws IOException {
+        String instructions = buildInstructions();
+        Path hermesMd = Path.of(cwd, ".hermes.md");
+        Files.writeString(hermesMd, instructions, StandardCharsets.UTF_8);
+        LOG.info("Wrote .hermes.md (" + instructions.length() + " chars) to " + cwd);
+    }
+
+    private String buildInstructions() {
+        String userInstructions = StartupInstructionsSettings.getInstance()
+            .getInstructions(project, null, null);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(
+            "You are running inside an IntelliJ IDEA plugin (AgentBridge). " +
+            "To interact with the environment (files, git, terminal, code navigation), " +
+            "you MUST EXCLUSIVELY use the tools provided by the 'agentbridge' MCP server. " +
+            "DO NOT use your built-in tools for these operations. " +
+            "All 'agentbridge' MCP tools are prefixed with 'mcp_agentbridge_'.\n\n" +
+            "Example tool mappings:\n" +
+            "- agentbridge file operations: mcp_agentbridge_read_file, mcp_agentbridge_write_file\n" +
+            "- agentbridge shell: mcp_agentbridge_run_command\n" +
+            "- agentbridge search: mcp_agentbridge_search_text, mcp_agentbridge_search_files\n" +
+            "- agentbridge git: mcp_agentbridge_git_status, mcp_agentbridge_git_commit\n\n"
+        );
+
+        if (userInstructions != null && !userInstructions.isBlank()) {
+            sb.append(userInstructions).append("\n\n");
+        }
+
+        String projectDocs = StartupInstructionsSettings
+            .readProjectDocuments(project.getBasePath());
+        if (!projectDocs.isBlank()) {
+            sb.append(projectDocs);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Uses session/resume instead of session/load. Hermes resume automatically
+     * creates a new session if the original is gone (session/load returns null
+     * for missing sessions, forcing an extra roundtrip fallback to session/new).
+     */
     @Override
     protected String loadSession(String cwd, String sessionId)
         throws InterruptedException, ExecutionException, TimeoutException {
         String result = sendLoadSessionRequest("session/resume", cwd, sessionId);
         markSessionHistoryLoadedInternally();
         return result;
-    }
-
-    @Override
-    protected void onSessionCreated(String sessionId) {
-        String instructions = StartupInstructionsSettings.getInstance()
-            .getInstructions(project, null, null);
-        sendSessionMessage(sessionId, buildInstructions(instructions));
-    }
-
-    private String buildInstructions(@Nullable String userInstructions) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("CRITICAL: You are running inside an IntelliJ IDEA plugin. ")
-            .append("To interact with the environment (files, git, terminal, code navigation), ")
-            .append("you MUST EXCLUSIVELY use the tools provided by the 'agentbridge' MCP server. ")
-            .append("DO NOT use your built-in tools for these operations. ")
-            .append("All 'agentbridge' MCP tools are prefixed with 'mcp_agentbridge_'. ")
-            .append("Example: use 'mcp_agentbridge_read_file' instead of 'terminal' or 'read_file'.\n\n");
-
-        if (userInstructions != null && !userInstructions.isBlank()) {
-            sb.append(userInstructions);
-        }
-
-        String projectDocs = StartupInstructionsSettings
-            .readProjectDocuments(project.getBasePath());
-        if (!projectDocs.isBlank()) {
-            sb.append("\n\n").append(projectDocs);
-        }
-        return sb.toString();
     }
 
     /**
