@@ -79,7 +79,7 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     private static final Logger LOG = Logger.getInstance(AcpClient.class);
 
-    private static final long INITIALIZE_TIMEOUT_SECONDS = 30;
+    private static final long INITIALIZE_TIMEOUT_SECONDS = 90;
     private static final long SESSION_TIMEOUT_SECONDS = 30;
     private static final long AUTH_TIMEOUT_SECONDS = 30;
     private static final long STOP_TIMEOUT_SECONDS = 5;
@@ -141,7 +141,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     private @Nullable String currentModelId = null;
     private @Nullable String currentAgentSlug = null;
     private final List<AbstractAgentClient.AgentConfigOption> availableConfigOptions = new ArrayList<>();
-    private volatile @Nullable Consumer<SessionUpdate> updateConsumer;
+    private final AtomicReference<Consumer<SessionUpdate>> updateConsumer = new AtomicReference<>();
 
     /**
      * True after a turn has completed but ACP updates are still arriving.
@@ -421,7 +421,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             pendingPermissionRequests.clear();
             terminalHandler.releaseAll();
             loadedSessionHistory = null;
-            updateConsumer = null;
+            updateConsumer.set(null);
         }
     }
 
@@ -786,7 +786,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         // Buffer session/update notifications that arrive during session/load.
         // Per ACP spec, the agent replays conversation history via these notifications.
         List<SessionUpdate> loadBuffer = new ArrayList<>();
-        updateConsumer = loadBuffer::add;
+        updateConsumer.set(loadBuffer::add);
         restoringHistory = true;
         LOG.info(displayName() + ": attempting " + method + " for " + sessionId);
         try {
@@ -802,7 +802,7 @@ public abstract class AcpClient extends AbstractAgentClient {
                 processSessionResponse(response);
             }
         } finally {
-            updateConsumer = null;
+            updateConsumer.set(null);
             restoringHistory = false;
         }
 
@@ -949,7 +949,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             lastActivityNanos = turnStartNanos;
             // Reset post-turn state from the previous turn before starting a new one.
             clearPostTurnState();
-            updateConsumer = onUpdate;
+            updateConsumer.set(onUpdate);
             PromptRequest effectiveRequest = beforeSendPrompt(request);
             JsonObject params = gson.toJsonTree(effectiveRequest).getAsJsonObject();
             LOG.debug(displayName() + ": sending session/prompt, sessionId=" + request.sessionId());
@@ -1025,7 +1025,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (future != null) {
             future.cancel(false);
         }
-        updateConsumer = null;
+        updateConsumer.set(null);
     }
 
     @Override
@@ -1857,7 +1857,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             ConversationService.getInstance(project).updateSessionTitle(sessionId, sessionInfoChanged.title());
         }
 
-        Consumer<SessionUpdate> consumer = updateConsumer;
+        Consumer<SessionUpdate> consumer = updateConsumer.get();
         if (consumer == null) {
             LOG.debug("Session update received but no consumer registered");
             return;
@@ -2055,7 +2055,7 @@ public abstract class AcpClient extends AbstractAgentClient {
                 // Copilot CLI does not send tool_call_update completion events for approved built-in
                 // tools. Synthesize one so the tool chip clears its spinner immediately.
                 // Not needed for denied tools — handleAutoDeniedBuiltInTool already sends FAILED.
-                Consumer<SessionUpdate> builtInConsumer = updateConsumer;
+                Consumer<SessionUpdate> builtInConsumer = updateConsumer.get();
                 if (builtInConsumer != null && !toolCallId.isEmpty()) {
                     touchActivity();
                     builtInConsumer.accept(new SessionUpdate.ToolCallUpdate(
@@ -2077,7 +2077,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         String reason = "Tool '" + toolId + "' is blocked by the current agent profile (excludeAgentBuiltInTools=true).";
         LOG.warn(displayName() + ": " + reason);
 
-        Consumer<SessionUpdate> consumer = updateConsumer;
+        Consumer<SessionUpdate> consumer = updateConsumer.get();
         if (consumer != null && !toolCallId.isEmpty()) {
             touchActivity();
             consumer.accept(new SessionUpdate.ToolCallUpdate(
@@ -2098,7 +2098,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             + " instead. All agentbridge-* MCP tools are available.";
         LOG.warn(displayName() + ": auto-denying native tool '" + toolId + "'");
 
-        Consumer<SessionUpdate> consumer = updateConsumer;
+        Consumer<SessionUpdate> consumer = updateConsumer.get();
         if (consumer != null && !toolCallId.isEmpty()) {
             touchActivity();
             consumer.accept(new SessionUpdate.ToolCallUpdate(

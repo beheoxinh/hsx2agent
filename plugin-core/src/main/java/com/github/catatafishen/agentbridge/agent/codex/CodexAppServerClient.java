@@ -11,6 +11,7 @@ import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
+import com.github.catatafishen.agentbridge.custommcp.CustomMcpRegistrar;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.PromptUserTool;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
@@ -310,6 +311,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     @Override
     public @NotNull String createSession(@Nullable String cwd) {
+        CustomMcpRegistrar.getInstance(project).syncRegistrations();
         String sessionId = UUID.randomUUID().toString();
         sessionCancelled.put(sessionId, new AtomicBoolean(false));
         if (cwd != null) sessionCwd.put(sessionId, cwd);
@@ -498,14 +500,15 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         cmd.add(binaryPath);
         cmd.add("app-server");
 
+        // Disable native shell execution tools; model must use MCP tools instead
         cmd.add(CMD_CONFIG);
-        cmd.add("sandboxMode=danger-full-access");
+        cmd.add("features.shell_tool=false");
+        cmd.add(CMD_CONFIG);
+        cmd.add("features.unified_exec=false");
 
         if (mcpPort > 0) {
             cmd.add(CMD_CONFIG);
             cmd.add("mcp_servers.agentbridge.url=http://localhost:" + mcpPort + "/mcp");
-            cmd.add(CMD_CONFIG);
-            cmd.add("mcp_servers.agentbridge.default_tools_approval_mode=auto");
         }
 
         return cmd;

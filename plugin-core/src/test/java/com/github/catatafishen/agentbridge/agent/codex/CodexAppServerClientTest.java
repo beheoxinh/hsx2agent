@@ -337,10 +337,19 @@ class CodexAppServerClientTest {
         }
 
         @Test
-        void alwaysIncludesSandboxDangerFullAccess() {
+        void disablesNativeShellTools() {
             List<String> cmd = CodexAppServerClient.buildServerCommandStatic("/bin/codex", 0);
-            assertTrue(cmd.contains("sandboxMode=danger-full-access"),
-                "Should include sandboxMode=danger-full-access");
+            assertTrue(cmd.contains("features.shell_tool=false"),
+                "Should disable native shell tool");
+            assertTrue(cmd.contains("features.unified_exec=false"),
+                "Should disable unified exec");
+        }
+
+        @Test
+        void doesNotIncludeSandboxDangerFullAccess() {
+            List<String> cmd = CodexAppServerClient.buildServerCommandStatic("/bin/codex", 0);
+            assertTrue(cmd.stream().noneMatch(s -> s.contains("sandboxMode")),
+                "Should not include sandboxMode flag");
         }
     }
 
