@@ -9,11 +9,13 @@ import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.messages.Topic;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,6 +37,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
 
     public static final Topic<AgentProfileListener> TOPIC =
         Topic.create("Agent Profile Updates", AgentProfileListener.class);
+
+    private static final Logger LOG = Logger.getInstance(AgentProfileManager.class);
 
     public interface AgentProfileListener {
         void profileChanged(@NotNull String profileId);
@@ -242,6 +246,18 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             if (!profiles.containsKey(id)) {
                 AgentProfile profile = createDefaultProfile(id);
                 if (profile != null) profiles.put(id, profile);
+            }
+        }
+        // Migration: If a customBinaryPath was set by the old SmartAgentDetector (auto-detect)
+        // but the binary no longer exists on disk, clear it so AgentDetectionService can
+        // re-detect from scratch.
+        for (AgentProfile profile : profiles.values()) {
+            String customPath = profile.getCustomBinaryPath();
+            if (!customPath.isEmpty() && !new File(customPath).exists()) {
+                LOG.info("Migration: clearing stale customBinaryPath '" + customPath
+                    + "' for " + profile.getDisplayName() + " — binary no longer exists");
+                profile.setCustomBinaryPath("");
+                profile.resetDetectionState();
             }
         }
     }

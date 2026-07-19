@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.BuildInfo
-import com.github.catatafishen.agentbridge.bridge.TransportType
 import com.github.catatafishen.agentbridge.memory.MemoryService
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.*
@@ -38,6 +37,7 @@ import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.*
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.*
@@ -118,6 +118,7 @@ class AcpConnectPanel(
     private val binaryStateCache = mutableMapOf<String, BinaryState>()
     private var binaryScanCursor = 0
     private lateinit var toggleMissingBinaryVisibilityButton: InplaceButton
+    private var detectionFuture: CompletableFuture<*>? = null
 
     override fun addNotify() {
         super.addNotify()
@@ -267,18 +268,79 @@ class AcpConnectPanel(
         subscribeToBridgeEvents()
         refreshMcpState()
 
-        // If autostart is enabled and the server hasn't started yet, show a loading indicator
-        // so the user can't click "Start server" while it's already being auto-started.
+        // Auto-start MCP server if configured
         val mcpSettings = McpServerSettings.getInstance(project)
         val mcpServerControl = McpServerControl.getInstance(project)
         if (mcpSettings.isAutoStart && mcpServerControl != null && !mcpServerControl.isRunning) {
             showAutoStartLoading()
+            ApplicationManager.getApplication().executeOnPooledThread {
+                try {
+                    mcpServerControl.start(mcpSettings.port)
+                    // After MCP server starts, run agent detection
+                    AgentDetectionService.getInstance().detectAllInBackground()
+                } catch (e: Exception) {
+                    LOG.warn("Auto-start MCP server failed", e)
+                } finally {
+                    ApplicationManager.getApplication().invokeLater { refreshMcpState() }
+                }
+            }
+        } else if (mcpServerControl != null && mcpServerControl.isRunning) {
+            // MCP already running — run detection immediately
+            AgentDetectionService.getInstance().detectAllInBackground()
         }
 
-        // Smart agent binary detection on first run
+        // Subscribe to MCP server status for detection on start
+        project.messageBus.connect().subscribe(
+            McpHttpServer.STATUS_TOPIC,
+            McpHttpServer.StatusListener {
+                val mcpSrv = McpServerControl.getInstance(project)
+                if (mcpSrv != null && mcpSrv.isRunning) {
+                    // Run detection after MCP server starts
+                    AgentDetectionService.getInstance().detectAllInBackground()
+                }
+            }
+        )
+
+        // Smart agent binary detection on first run — delegates to AgentDetectionService
+        // which also handles periodic re-detection and stale path validation.
+        val detectionService = AgentDetectionService.getInstance()
+        detectionService.addListener(object : AgentDetectionService.DetectionListener {
+            override fun onDetectionComplete(profileIds: MutableSet<String>) {
+                ApplicationManager.getApplication().invokeLater {
+                    refreshProfileCombo()
+                    updateProfileStatus()
+                }
+            }
+
+            override fun onStatusChanged(profileId: String, result: AgentDetectionService.DetectionResult) {
+                ApplicationManager.getApplication().invokeLater {
+                    // Update local cache
+                    val bs = if (result.isFound) BinaryState.FOUND else BinaryState.MISSING
+                    binaryStateCache[profileId] = bs
+                    // If this is the selected profile, update the status icon
+                    val currentProfile = profileCombo.selectedItem as? AgentProfile
+                    if (currentProfile?.id == profileId) {
+                        if (result.isFound) {
+                            profileStatusIcon.icon = AllIcons.General.InspectionsOK
+                            profileStatusIcon.toolTipText = "Binary found: ${result.path}"
+                        } else {
+                            profileStatusIcon.icon = AllIcons.General.Error
+                            profileStatusIcon.toolTipText = "Binary not found"
+                        }
+                    }
+                }
+            }
+        })
+
         if (!AgentBridgeStorageSettings.getInstance().state.isAgentBinaryDetectionRun) {
-            SmartAgentDetector(project).detectAllInBackground(false)
+            detectionFuture = detectionService.detectAllInBackground()
+        } else {
+            // Even if detection has run before, validate cached results are not stale
+            detectionService.detectAllInBackground()
         }
+
+        // Start periodic re-detection to catch newly installed agents
+        detectionService.startPeriodicDetection()
     }
 
     // ── Section builders ──
@@ -789,7 +851,7 @@ class AcpConnectPanel(
 
         val searchButton = InplaceButton("Search for installed agents", AllIcons.Actions.Download) {
             ShellEnvironment.refresh()
-            SmartAgentDetector(project).detectAllInBackground(true)
+            detectionFuture = AgentDetectionService.getInstance().detectAllInBackground()
         }.apply {
             accessibleContext.accessibleName = "Search for installed agents"
             preferredSize = Dimension(btnSize, btnSize)
@@ -865,24 +927,16 @@ class AcpConnectPanel(
         binaryScanCursor = (binaryScanCursor + 1) % max(allProfiles.size, 1)
 
         val profileId = target.id
-        val binaryName = target.binaryName
-        val alternates = target.alternateNames.toTypedArray()
 
+        // Use AgentDetectionService cached result
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val resolver = when (target.transportType) {
-                    TransportType.CLAUDE_CLI -> ClaudeAgentBinaryResolver()
-                    else -> AcpClientBinaryResolver(profileId, binaryName, *alternates)
-                }
+                val detectionService = AgentDetectionService.getInstance()
+                val cachedResult = detectionService.getResult(profileId)
+                val result = if (cachedResult != null) cachedResult
+                else detectionService.detectSingleSync(profileId)
 
-                var resolvedPath = resolver.resolve()
-                if (resolvedPath != null && !resolvedPath.contains("/") && !resolvedPath.contains("\\")) {
-                    resolvedPath = BinaryDetector.findBinaryPath(resolvedPath)
-                }
-
-                val newState = if (resolvedPath != null && java.io.File(resolvedPath)
-                        .exists()
-                ) BinaryState.FOUND else BinaryState.MISSING
+                val newState = if (result.isFound) BinaryState.FOUND else BinaryState.MISSING
                 val oldState = binaryStateCache[profileId] ?: BinaryState.UNKNOWN
                 val changed = oldState != newState
                 binaryStateCache[profileId] = newState
@@ -891,7 +945,7 @@ class AcpConnectPanel(
                     if (selectedId == profileId) {
                         if (newState == BinaryState.FOUND) {
                             profileStatusIcon.icon = AllIcons.General.InspectionsOK
-                            profileStatusIcon.toolTipText = "Binary found: $resolvedPath"
+                            profileStatusIcon.toolTipText = "Binary found: ${result.path}"
                         } else {
                             profileStatusIcon.icon = AllIcons.General.Error
                             profileStatusIcon.toolTipText =
@@ -1441,6 +1495,38 @@ class AcpConnectPanel(
 
         val profileId = selectedProfile.id
 
+        // Wait for initial detection to complete if still running
+        val detectionService = AgentDetectionService.getInstance()
+        if (detectionFuture != null && !detectionFuture!!.isDone) {
+            statusBanner.showInfo("Waiting for agent detection to complete...")
+        }
+
+        // Run synchronous detection + validation before connecting
+        val result = detectionService.detectSingleSync(profileId)
+
+        if (!result.isFound) {
+            val hint = selectedProfile.installHint
+            if (hint.isNotBlank()) {
+                statusBanner.showError("${selectedProfile.displayName} CLI not found. $hint")
+            } else {
+                statusBanner.showError("${selectedProfile.displayName} CLI not found. Ensure it is installed and on your PATH, or configure the path in Settings.")
+            }
+            return
+        }
+
+        // Validate the resolved binary actually exists on disk
+        val resolvedPath = result.path
+        if (resolvedPath != null && !resolvedPath.contains("/") && !resolvedPath.contains("\\")) {
+            val absolutePath = BinaryDetector.findBinaryPath(resolvedPath)
+            if (absolutePath == null) {
+                statusBanner.showError("${selectedProfile.displayName} not found on PATH.")
+                return
+            }
+        } else if (resolvedPath != null && !java.io.File(resolvedPath).exists()) {
+            statusBanner.showError("${selectedProfile.displayName} binary not found at: $resolvedPath")
+            return
+        }
+
         val cmd = agentManager.getCustomAcpCommandFor(profileId)
         if (cmd.isBlank()) {
             statusBanner.showError("No start command configured for ${selectedProfile.displayName} — check Settings.")
@@ -1454,7 +1540,7 @@ class AcpConnectPanel(
         isConnectingAgent = true
         statusBanner.dismissCurrent()
         connectButton.isEnabled = false
-        connectButton.text = "Connecting\u2026"
+        connectButton.text = "Connecting…"
         cancelConnectButton.isVisible = true
         connectSpinner.isVisible = true
 

@@ -22,6 +22,7 @@ import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import com.github.catatafishen.agentbridge.bridge.McpServerJarLocator;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
+import com.github.catatafishen.agentbridge.services.AgentDetectionService;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.InFlightMcpToolRegistry;
 import com.github.catatafishen.agentbridge.services.McpServerControl;
@@ -1532,12 +1533,21 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (binaryName.startsWith("/") || binaryName.startsWith("./")
             || (binaryName.length() > 1 && binaryName.charAt(1) == ':')) return command;
 
-        // Use AgentBinaryResolver — the same resolution logic used by the settings page.
-        // This ensures binary detection is consistent between settings and connect.
+        // 1. Try AgentDetectionService (central cache + multi-platform detection)
+        String resolvedPath = AgentDetectionService.getInstance().resolveBinary(agentId());
+        if (resolvedPath != null && !resolvedPath.isEmpty()) {
+            resolvedPath = tryResolveBareName(resolvedPath);
+            resolvedPath = normalizeResolvedBinaryPath(resolvedPath, launchCwd != null ? launchCwd : "");
+            List<String> resolved = new ArrayList<>(command);
+            resolved.set(0, resolvedPath);
+            return resolved;
+        }
+
+        // 2. Fallback: use AgentBinaryResolver directly
         var profile = AgentProfileManager.getInstance().getProfile(agentId());
         String[] alternates = profile != null ? profile.getAlternateNames().toArray(new String[0]) : new String[0];
 
-        String resolvedPath = new AcpClientBinaryResolver(agentId(), binaryName, alternates).resolve();
+        resolvedPath = new AcpClientBinaryResolver(agentId(), binaryName, alternates).resolve();
         if (resolvedPath != null && !resolvedPath.isEmpty()) {
             resolvedPath = tryResolveBareName(resolvedPath);
             resolvedPath = normalizeResolvedBinaryPath(resolvedPath, launchCwd != null ? launchCwd : "");

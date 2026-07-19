@@ -55,10 +55,46 @@ public final class AgentProfile {
 
     // ── Binary Discovery ─────────────────────────────────────────────────────
 
+    /**
+     * Source of the currently effective binary path.
+     */
+    public enum DetectionSource {
+        /** Detection has not been run for this agent. */
+        UNKNOWN,
+        /** No binary was found during detection. */
+        NOT_FOUND,
+        /** Binary was auto-detected via PATH scanning / platform detection. */
+        AUTO_DETECTED,
+        /** User has explicitly configured a custom binary path. */
+        USER_CONFIGURED
+    }
+
     private String binaryName;
     private List<String> alternateNames;
     private String installHint;
-    private String customBinaryPath;
+
+    /**
+     * User-configured custom binary path. Takes priority over auto-detection.
+     * Empty string means "use auto-detection". This field is persisted as a user override.
+     */
+    private String customBinaryPath = "";
+
+    /**
+     * Auto-detected binary path found by {@code AgentDetectionService}.
+     * Only used when {@code customBinaryPath} is empty.
+     * This field is NOT persisted — it is recomputed on each detection run.
+     */
+    private volatile String detectedBinaryPath = "";
+
+    /**
+     * The source of the currently active binary path.
+     */
+    private volatile DetectionSource detectionSource = DetectionSource.UNKNOWN;
+
+    /**
+     * ISO-8601 timestamp of the last successful detection, or null if never detected.
+     */
+    private volatile String lastDetectedAt = null;
 
     // ── Command Building ─────────────────────────────────────────────────────
 
@@ -160,6 +196,9 @@ public final class AgentProfile {
         copy.alternateNames = new ArrayList<>(alternateNames);
         copy.installHint = installHint;
         copy.customBinaryPath = customBinaryPath;
+        copy.detectedBinaryPath = detectedBinaryPath;
+        copy.detectionSource = detectionSource;
+        copy.lastDetectedAt = lastDetectedAt;
         copy.acpArgs = new ArrayList<>(acpArgs);
         copy.mcpMethod = mcpMethod;
         copy.mcpConfigTemplate = mcpConfigTemplate;
@@ -196,6 +235,9 @@ public final class AgentProfile {
         copy.alternateNames = new ArrayList<>(alternateNames);
         copy.installHint = installHint;
         copy.customBinaryPath = customBinaryPath;
+        copy.detectedBinaryPath = detectedBinaryPath;
+        copy.detectionSource = detectionSource;
+        copy.lastDetectedAt = lastDetectedAt;
         copy.acpArgs = new ArrayList<>(acpArgs);
         copy.mcpMethod = mcpMethod;
         copy.mcpConfigTemplate = mcpConfigTemplate;
@@ -366,6 +408,76 @@ public final class AgentProfile {
 
     public void setCustomBinaryPath(@NotNull String customBinaryPath) {
         this.customBinaryPath = customBinaryPath;
+    }
+
+    /**
+     * Returns the auto-detected binary path, or empty string if not detected.
+     * Only used when {@link #getCustomBinaryPath()} is empty.
+     */
+    @NotNull
+    public String getDetectedBinaryPath() {
+        return detectedBinaryPath;
+    }
+
+    /**
+     * Sets the auto-detected binary path. Called by {@code AgentDetectionService}.
+     */
+    public void setDetectedBinaryPath(@NotNull String detectedBinaryPath) {
+        this.detectedBinaryPath = detectedBinaryPath;
+    }
+
+    /**
+     * Returns the effective binary path: custom path if set, otherwise detected path.
+     */
+    @NotNull
+    public String getEffectiveBinaryPath() {
+        return !customBinaryPath.isEmpty() ? customBinaryPath : detectedBinaryPath;
+    }
+
+    /**
+     * Returns the source of the current binary path.
+     */
+    @NotNull
+    public DetectionSource getDetectionSource() {
+        return detectionSource;
+    }
+
+    /**
+     * Sets the detection source.
+     */
+    public void setDetectionSource(@NotNull DetectionSource source) {
+        this.detectionSource = source;
+    }
+
+    /**
+     * Returns true if this agent's binary has been detected or configured.
+     */
+    public boolean isBinaryAvailable() {
+        return !getEffectiveBinaryPath().isEmpty();
+    }
+
+    /**
+     * Returns the ISO-8601 timestamp of the last detection, or null.
+     */
+    @Nullable
+    public String getLastDetectedAt() {
+        return lastDetectedAt;
+    }
+
+    /**
+     * Sets the detection timestamp.
+     */
+    public void setLastDetectedAt(@Nullable String lastDetectedAt) {
+        this.lastDetectedAt = lastDetectedAt;
+    }
+
+    /**
+     * Resets all auto-detection state. Does NOT clear customBinaryPath.
+     */
+    public void resetDetectionState() {
+        this.detectedBinaryPath = "";
+        this.detectionSource = DetectionSource.UNKNOWN;
+        this.lastDetectedAt = null;
     }
 
     @NotNull

@@ -338,17 +338,30 @@ class ChatToolWindowContent(
         if (agentManager.isAutoConnect) {
             // Show "Connecting…" state and trigger auto-connect flow
             connectPanel.showConnecting()
-            loadModelsAsync(
-                onSuccess = { models ->
-                    loadedModels = models
-                    buildAndShowChatPanel()
-                    restoreModelSelection(models)
-                    statusBanner?.showInfo("Connected to ${agentManager.activeProfile.displayName}")
-                },
-                onFailure = { error ->
-                    connectPanel.showError(error.message ?: "Auto-connect failed")
+
+            // Wait for agent binary detection to complete before auto-connecting
+            // This ensures we don't try to connect if the agent is not installed.
+            ApplicationManager.getApplication().executeOnPooledThread {
+                try {
+                    AgentDetectionService.getInstance().awaitInitialDetection(15_000)
+                } catch (_: Exception) {
+                    // Timeout — proceed anyway
                 }
-            )
+
+                ApplicationManager.getApplication().invokeLater {
+                    loadModelsAsync(
+                        onSuccess = { models ->
+                            loadedModels = models
+                            buildAndShowChatPanel()
+                            restoreModelSelection(models)
+                            statusBanner?.showInfo("Connected to ${agentManager.activeProfile.displayName}")
+                        },
+                        onFailure = { error ->
+                            connectPanel.showError(error.message ?: "Auto-connect failed")
+                        }
+                    )
+                }
+            }
         }
     }
 

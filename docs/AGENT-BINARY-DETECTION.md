@@ -1,5 +1,9 @@
 # Agent Binary Detection — Phân Tích & Kế Hoạch Nâng Cấp
 
+> **Status cập nhật: ĐÃ TRIỂN KHAI** (2026-07-19)
+>
+> Xem phần cuối tài liệu để biết chi tiết những gì đã implement.
+
 > **Mục tiêu:** Phân tích toàn bộ luồng phát hiện (detect) Agent binary đã cài đặt trên
 > máy người dùng, từ đó chỉ ra các lỗ hổng, điểm mù, rủi ro và đề xuất giải pháp nâng cấp
 > hoàn chỉnh, bền vững, đa nền tảng.
@@ -688,3 +692,70 @@ Hiện tại có 5+ nơi implement detection khác nhau, kết quả lưu vào t
 
 **Rủi ro lớn nhất:** Core refactor có thể break detection hiện tại nếu migration không cẩn thận. 
 Cần test coverage đầy đủ trước khi merge.
+
+---
+
+## 11. Implementation Status (2026-07-19)
+
+### Đã triển khai
+
+#### 🟢 `AgentDetectionService` (service mới)
+- **File:** `services/AgentDetectionService.java`
+- **Vai trò:** Central singleton — single source of truth cho detection status
+- **API public:**
+  - `isInstalled(profileId)` — query cached or fallback sync
+  - `getInstalledProfiles()` — returns chỉ profiles có binary
+  - `resolveBinary(profileId)` — custom > detected > null
+  - `resolveBinary(AgentProfile)` — static version, no instance needed
+  - `detectAllInBackground()` — async detection cho tất cả profiles
+  - `detectSingleSync(profileId)` — synchronous cho 1 profile
+  - `awaitInitialDetection(timeoutMs)` — block cho auto-connect
+  - `startPeriodicDetection()` — schedule 5-min re-detection
+  - `validateAndResetIfStale(profile)` — check binary tồn tại, reset nếu mất
+
+#### 🟢 `AgentProfile` extensions
+- **Field mới:** `detectedBinaryPath`, `detectionSource`, `lastDetectedAt`
+- **Enum mới:** `DetectionSource.UNKNOWN | NOT_FOUND | AUTO_DETECTED | USER_CONFIGURED`
+- **Method mới:** `getEffectiveBinaryPath()`, `isBinaryAvailable()`, `resetDetectionState()`
+- **Phân biệt rõ:** `customBinaryPath` (user override) ≠ `detectedBinaryPath` (auto-detect)
+
+#### 🟢 `AgentProfileManager` migration
+- `ensureDefaults()` kiểm tra và xoá `customBinaryPath` nếu file không còn tồn tại
+- Giúp clear các stale path do SmartAgentDetector cũ set
+
+#### 🟢 `AcpConnectPanel.kt` — UI integration
+- **Init:** gọi `AgentDetectionService.detectAllInBackground()` khi panel mở
+- **Listener:** `DetectionListener` → auto-update profile combo + status icon
+- **MCP start:** trigger detection sau khi MCP server start
+- **Connect:** `doConnect()` gọi `detectSingleSync()` + validate binary before connect
+- **Search button:** gọi `detectAllInBackground()` thay vì `SmartAgentDetector`
+- **Periodic detection:** `startPeriodicDetection()` — 5 phút/lần
+
+#### 🟢 `ChatToolWindowContent.kt` — Auto-connect
+- Auto-connect chờ `awaitInitialDetection(15s)` trước khi load models
+- Không còn connect khi detection chưa hoàn thành
+
+#### 🟢 `AcpClient.resolveCommand()` + `ProfileBasedAgentConfig.findAgentBinary()`
+- Đều ưu tiên gọi `AgentDetectionService.resolveBinary()` trước
+- Fallback về resolver cũ nếu service chưa có cache
+
+#### 🟢 `BinaryDetector` — Multi-platform fixes
+- macOS: fix `which -a` không support → dùng `type -a` qua `sh -c`
+- `findUsingNativeTools()` thêm `Objects` import cho null-safe filter
+
+#### 🟢 AgentDetectionService multi-platform paths
+- **Windows:** scoop, chocolatey, nvm-windows, winget, bun
+- **macOS:** `brew --prefix` dynamic (Intel + Apple Silicon), cellar + standard paths
+- **Linux:** snap, flatpak, linuxbrew, ~/.local/bin, ~/.cargo/bin
+- **WSL:** `wsl --status` check → `wsl -d <distro> command -v` → `wslpath -w` convert
+- **Tất cả:** dedup với existing paths từ `BinaryDetector.findAllBinaryPaths()`
+
+### 📋 Chưa triển khai (Phase tiếp theo)
+
+| Feature | Priority | Lý do |
+|---------|----------|-------|
+| UI filter "Show only installed agents" | MEDIUM | Cần UI settings page update |
+| Render icon per profile (installed/not) | LOW | Nice-to-have, logic đã có |
+| File watcher on PATH dirs | LOW | WatchService phức tạp, periodic detection đã đủ |
+| Merge ClientBinaryDetector + AgentBinaryResolver | LOW | Deprecated nhưng chưa xoá, backward compat |
+| Remove SmartAgentDetector | N/A | Không còn được reference, chờ cleanup |

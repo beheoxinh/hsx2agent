@@ -159,11 +159,20 @@ public class ProfileBasedAgentConfig implements AgentConfig {
                 resolvedBinaryPath = customPath;
                 return customPath;
             }
-            throw new AgentException(profile.getDisplayName() + " binary not found at: " + customPath,
-                null, false);
+            // Custom path exists but file is gone — fall through to auto-detection
+            LOG.info("Custom path '" + customPath + "' for " + profile.getDisplayName()
+                + " no longer exists. Falling back to auto-detection.");
+            profile.setDetectedBinaryPath("");
         }
 
-        // 2. Auto-detect primary binary name and alternates
+        // 2. Use AgentDetectionService (central, multi-platform, cached)
+        String resolved = com.github.catatafishen.agentbridge.services.AgentDetectionService.resolveBinary(profile);
+        if (resolved != null) {
+            resolvedBinaryPath = resolved;
+            return resolved;
+        }
+
+        // 3. Try auto-detect via ProfileBinaryDetector as fallback
         ProfileBinaryDetector detector =
             new ProfileBinaryDetector(profile);
         String binaryName = profile.getBinaryName();
