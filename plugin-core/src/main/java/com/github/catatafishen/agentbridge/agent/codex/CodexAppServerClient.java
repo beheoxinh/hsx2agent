@@ -500,11 +500,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         cmd.add(binaryPath);
         cmd.add("app-server");
 
-        // Disable native shell execution tools; model must use MCP tools instead
         cmd.add(CMD_CONFIG);
-        cmd.add("features.shell_tool=false");
-        cmd.add(CMD_CONFIG);
-        cmd.add("features.unified_exec=false");
+        cmd.add("sandboxMode=danger-full-access");
 
         if (mcpPort > 0) {
             cmd.add(CMD_CONFIG);
