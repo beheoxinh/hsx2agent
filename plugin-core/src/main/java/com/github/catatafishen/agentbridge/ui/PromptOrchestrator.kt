@@ -804,6 +804,17 @@ class PromptOrchestrator(
             log.warn("Failed to start agent after session corruption cleanup", ex)
         }
 
+        // ── Phase 5.5: Suppress session persistence ────────────────────────
+        // start() → eagerFetchModels() → createSession() → persistResumeSessionId(newSessionId)
+        // persists the recovery session ID in PropertiesComponent. If this session
+        // is also corrupted (e.g. OpenCode compaction, Hermes stale LLM thread),
+        // the next IDE restart would resume it and hit the same empty-turn error.
+        //
+        // Clear the ID so every fresh start is truly fresh. The current session
+        // remains alive for the user's next prompt — it just won't be resumed
+        // after a plugin restart.
+        agentManager.clearSessionResumeState()
+
         // ── Phase 6: Show error UI ─────────────────────────────────────────
         consolePanel().cancelAllRunning()
         consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
