@@ -316,14 +316,14 @@ class CodexAppServerClientTest {
     class BuildServerCommandStatic {
 
         @Test
-        void positiveMcpPort_includesMcpConfig() {
+        void includesMcpConfigWhenPortPositive() {
             List<String> cmd = CodexAppServerClient.buildServerCommandStatic("/usr/bin/codex", 8080);
             assertTrue(cmd.contains("mcp_servers.agentbridge.url=http://localhost:8080/mcp"),
                 "Expected MCP config entry");
         }
 
         @Test
-        void zeroMcpPort_excludesMcpConfig() {
+        void excludesMcpConfigWhenPortZero() {
             List<String> cmd = CodexAppServerClient.buildServerCommandStatic("/usr/bin/codex", 0);
             assertTrue(cmd.stream().noneMatch(s -> s.contains("mcp_servers")),
                 "Should not contain MCP config when port is 0");
@@ -337,19 +337,19 @@ class CodexAppServerClientTest {
         }
 
         @Test
-        void alwaysIncludesSandboxDangerFullAccess() {
+        void disablesNativeShellTools() {
             List<String> cmd = CodexAppServerClient.buildServerCommandStatic("/bin/codex", 0);
-            assertTrue(cmd.contains("sandboxMode=danger-full-access"),
-                "Should include sandboxMode=danger-full-access");
+            assertTrue(cmd.contains("features.shell_tool=false"),
+                "Should disable native shell tool");
+            assertTrue(cmd.contains("features.unified_exec=false"),
+                "Should disable unified exec");
         }
 
         @Test
-        void doesNotDisableShellTools() {
+        void doesNotUseSandboxModeConfig() {
             List<String> cmd = CodexAppServerClient.buildServerCommandStatic("/bin/codex", 0);
-            assertFalse(cmd.contains("features.shell_tool=false"),
-                "Should not disable shell tools");
-            assertFalse(cmd.contains("features.unified_exec=false"),
-                "Should not disable unified exec");
+            assertTrue(cmd.stream().noneMatch(s -> s.startsWith("sandboxMode") || s.contains("sandbox")),
+                "Should not include sandbox config");
         }
     }
 
