@@ -532,9 +532,8 @@ class ChatToolWindowContent(
         ++modelLoadGeneration
 
         // Reset UI state immediately on EDT so the user sees the connect panel right away.
-        // The potentially slow agentManager.stop() (process kill + waitFor up to 5 s)
-        // runs on a pooled thread to avoid freezing the EDT — which previously caused the
-        // IDE to become unresponsive after network outages, requiring a full restart.
+        // The potentially slow agentManager.stop() (process kill + waitFor)
+        // runs on a pooled thread to avoid freezing the EDT.
         // Keep resumeSessionId and persisted session files intact so the next connect can
         // resume the same session via session/load. Only resetSession() (user-initiated
         // "New Conversation") should wipe these — a disconnect is not a session reset.
@@ -562,10 +561,6 @@ class ChatToolWindowContent(
         restartSessionGroup?.updateIconForDisconnect()
         notifyWebServerDisconnected()
 
-        // Clear all resume state so the next connect starts fresh even if the
-        // previous client already died before disconnect ran.
-        agentManager.clearSessionResumeState()
-
         // Reset MCP-side state so the next connect starts with a clean slate:
         // - Pause state: prevent tool calls from blocking on a stale pause.
         // - Pending popup: prevent popup gate from blocking tool calls with
@@ -577,8 +572,13 @@ class ChatToolWindowContent(
         // implies the user does not want to resume the previous session.
         connectPanel.selectFreshSession()
 
+        // Stop + clear resume state on pooled thread so the synchronous operations
+        // (process kill, session state reset) don't block the EDT.
+        // clearSessionResumeState() is synchronized in ActiveAgentManager so it is
+        // safe to call from the pooled thread alongside stop()/start().
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
+                agentManager.clearSessionResumeState()
                 agentManager.stop()
             } catch (e: Exception) {
                 LOG.warn("Error stopping agent during disconnect", e)
@@ -3893,15 +3893,23 @@ class ChatToolWindowContent(
         // Wait for any in-progress session export to complete before starting the agent.
         // Without this, createSession() reads a stale or missing resumeSessionId because
         // the export from the previous agent runs concurrently on a pooled thread.
-        SessionSwitchService.getInstance(project).awaitPendingExport(10_000)
+        SessionSwitchService.getInstance(project).awaitPendingExport(3_000)
 
         var lastError: Exception? = null
         for (attempt in 1..3) {
             if (attempt > 1) {
-                // Antipattern (DESIGN-PRINCIPLES.md): Thread.sleep blocks a thread. Kept here because
-                // this retry backoff runs on a pooled thread (executeOnPooledThread), not EDT.
-                // An Alarm or coroutine delay would add complexity without benefit for a simple retry loop.
-                Thread.sleep(2000L)
+                // Sleep in 500ms increments, checking generation between each.
+                // This lets disconnect() abort the retry promptly instead of
+                // blocking the pooled thread for a full 2s sleep.
+                for (i in 0 until 4) {
+                    if (modelLoadGeneration != generation) return emptyList()
+                    try {
+                        Thread.sleep(500L)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return emptyList()
+                    }
+                }
             }
             // If the user disconnected (clicked X), abort rather than starting/restarting the agent.
             if (modelLoadGeneration != generation) return emptyList()

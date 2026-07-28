@@ -264,7 +264,17 @@ public final class ActiveAgentManager implements Disposable {
         if (needStart) {
             start();
         }
-        return acpClient;
+        // Capture local var — a concurrent stop() could set acpClient = null
+        // after start() returns but before the volatile read here.
+        AbstractAgentClient client = acpClient;
+        if (client == null) {
+            // stop() raced with us — caller will see a healthy null? Not possible
+            // since stop() sets started=false, so next call to getClient() starts fresh.
+            // Throw a clear message instead of NPE deep in caller code.
+            throw new IllegalStateException(
+                "Agent client was stopped concurrently — retry the operation");
+        }
+        return client;
     }
 
     /**
@@ -321,17 +331,21 @@ public final class ActiveAgentManager implements Disposable {
      *
      * <p>Use this on user-driven flows like Stop, Disconnect, Reconnect, and New Conversation
      * so the next session always starts fresh even if the previous agent process already died.</p>
+     *
+     * <p>Synchronized to prevent races with {@link #stop()} and {@link #start()} which
+     * mutate the {@link #acpClient} reference concurrently.</p>
      */
     public synchronized void clearSessionResumeState() {
         getSettings().setResumeSessionId(null);
-        if (acpClient != null) {
+        AbstractAgentClient client = acpClient;
+        if (client != null) {
             try {
-                acpClient.dropCurrentSession();
+                client.dropCurrentSession();
             } catch (Exception e) {
                 LOG.warn("Failed to drop current session while clearing resume state", e);
             }
             try {
-                acpClient.clearPersistedSession();
+                client.clearPersistedSession();
             } catch (Exception e) {
                 LOG.warn("Failed to clear persisted session while clearing resume state", e);
             }
@@ -360,7 +374,9 @@ public final class ActiveAgentManager implements Disposable {
         // Wait for any pending session export to finish before the ACP client starts.
         // CopilotClient.buildCommand() reads resumeSessionId to build the --resume CLI
         // flag, so the export must complete before the process is launched.
-        sessionSwitchService.awaitPendingExport(10_000);
+        // 3s timeout: exports are typically <100ms for same-agent restarts; 10s blocked
+        // the pooled thread unnecessarily if SQLite or filesystem is slow.
+        sessionSwitchService.awaitPendingExport(3_000);
 
         try {
             String agentId = getActiveProfileId();
