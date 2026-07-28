@@ -146,7 +146,17 @@ public final class OpenCodeClient extends AcpClient {
 
     @Override
     protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
-        return buildPermissionConfig();
+        Map<String, String> env = new java.util.HashMap<>(buildPermissionConfig());
+        // MISE_CD tells mise which directory to use as its "current directory" for
+        // resolving tasks and config. Without it, the mise shim inherits CWD from
+        // ProcessBuilder (the project dir), crashes if the project has no mise.toml:
+        //   "mise ERROR no tasks defined in /path/to/project"
+        // Setting MISE_CD to the user home lets mise find ~/.config/mise/config.toml.
+        String home = System.getProperty("user.home");
+        if (home != null && !home.isEmpty()) {
+            env.put("MISE_CD", home);
+        }
+        return env;
     }
 
     @Override
