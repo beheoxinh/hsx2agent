@@ -100,8 +100,29 @@ public final class DbRetentionService implements Disposable {
             long originalSize = getDatabaseSizeBytes();
             LOG.info("DbRetentionService: purged sessions older than " + days
                 + " days. DB size: " + formatSize(originalSize));
+            // Reclaim free pages after purging old data
+            compactIfNeeded();
         } catch (Exception e) {
             LOG.warn("DbRetentionService: purge failed", e);
+        }
+    }
+
+    /**
+     * Requests the SQLite incremental vacuum to reclaim free pages after a purge.
+     * Uses a limited number of pages per call to avoid long-running operations.
+     */
+    private void compactIfNeeded() {
+        try {
+            ConversationDatabase db = ConversationDatabase.getInstance(project);
+            db.withConnection(conn -> {
+                try (Statement stmt = conn.createStatement()) {
+                    // Run incremental vacuum with a page limit so it does not
+                    // block concurrent reads for too long.
+                    stmt.execute("PRAGMA incremental_vacuum(512)");
+                }
+                return null;
+            });
+        } catch (Exception ignored) {
         }
     }
 

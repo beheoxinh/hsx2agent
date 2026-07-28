@@ -98,6 +98,7 @@ public final class ConversationDatabase implements Disposable {
             stmt.execute("PRAGMA journal_mode = WAL");
             stmt.execute("PRAGMA synchronous = NORMAL");
             stmt.execute("PRAGMA foreign_keys = ON");
+            stmt.execute("PRAGMA auto_vacuum = INCREMENTAL");
         }
         ConversationSchema.createOrMigrate(conn);
         this.connection = conn;

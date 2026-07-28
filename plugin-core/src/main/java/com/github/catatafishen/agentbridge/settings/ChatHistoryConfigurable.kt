@@ -189,8 +189,8 @@ class ChatHistoryConfigurable(private val project: Project) :
                 if (result != Messages.YES) return
                 val toDelete = tableModel.entries
                     .filter { !it.isCurrentSession }
-                    .map { it.path }
-                deleteFiles(toDelete)
+                    .map { it.sessionId }
+                deleteSessionsFromDb(toDelete)
                 loadConversations()
             }
 
@@ -232,38 +232,44 @@ class ChatHistoryConfigurable(private val project: Project) :
             project, message, "Delete Conversations", Messages.getWarningIcon()
         )
         if (result != Messages.YES) return
-        val toDelete = selectedRows.map { tableModel.getEntryAt(it).path }
-        deleteFiles(toDelete)
+        val toDelete = selectedRows.map { tableModel.getEntryAt(it).sessionId }
+        deleteSessionsFromDb(toDelete)
         loadConversations()
     }
 
-    private fun deleteFiles(paths: List<Path>) {
+    private fun deleteSessionsFromDb(sessionIds: List<String>) {
+        val service = ConversationService.getInstance(project)
         val failures = mutableListOf<String>()
-        for (path in paths) {
+        for (sid in sessionIds) {
             try {
-                Files.deleteIfExists(path)
-            } catch (e: IOException) {
-                LOG.warn("Failed to delete conversation file: $path", e)
-                failures.add(path.fileName.toString())
+                service.deleteSession(sid)
+            } catch (e: Exception) {
+                LOG.warn("Failed to delete session $sid", e)
+                failures.add(sid.take(8) + "...")
             }
         }
         if (failures.isNotEmpty()) {
-            NotificationGroupManager.getInstance()
+            com.intellij.notification.NotificationGroupManager.getInstance()
                 .getNotificationGroup("Hsx2Agent Notifications")
                 .createNotification(
-                    "Failed to delete ${failures.size} file(s): ${failures.joinToString(", ")}",
-                    NotificationType.WARNING
+                    "Failed to delete ${failures.size} session(s): ${failures.joinToString(", ")}",
+                    com.intellij.notification.NotificationType.WARNING
                 )
                 .notify(project)
         }
     }
 
+    /**
+     * Loads the session list from the unified SQLite database.
+     * Replaces the legacy JSONL file-system scan which became inconsistent
+     * after the JSONL-to-SQLite migration.
+     */
     private fun loadConversations() {
         table.emptyText.text = "Loading…"
         tableModel.setEntries(emptyList())
         updateSummary(emptyList())
         ApplicationManager.getApplication().executeOnPooledThread {
-            val entries = scanConversations().sortedByDescending { it.dateMillis }
+            val entries = scanSessionsFromDb()
             ApplicationManager.getApplication().invokeLater {
                 tableModel.setEntries(entries)
                 updateSummary(entries)
@@ -276,81 +282,24 @@ class ChatHistoryConfigurable(private val project: Project) :
         }
     }
 
-    private fun scanConversations(): List<ConversationEntry> {
-        val sessionsDir = ExportUtils.sessionsDir(project).toPath()
-        if (!Files.isDirectory(sessionsDir)) return emptyList()
-        val currentSessionId = runCatching {
-            Files.readString(sessionsDir.resolve(".current-session-id")).trim()
-        }.getOrNull()
-        val indexFile = sessionsDir.resolve("sessions-index.json")
-        return if (Files.isRegularFile(indexFile))
-            scanFromIndex(sessionsDir, indexFile, currentSessionId)
-        else
-            scanFromDirectory(sessionsDir, currentSessionId)
-    }
-
-    private fun scanFromIndex(sessionsDir: Path, indexFile: Path, currentSessionId: String?): List<ConversationEntry> {
-        val normalizedDir = sessionsDir.normalize()
-        return try {
-            val array = JsonParser.parseString(Files.readString(indexFile)).asJsonArray
-            val entries = mutableListOf<ConversationEntry>()
-            for (el in array) {
-                try {
-                    val obj = el.asJsonObject
-                    val id = obj.get("id")?.asString ?: continue
-                    val jsonlPath = obj.get("jsonlPath")?.asString ?: "$id.jsonl"
-                    val updatedAt = obj.get("updatedAt")?.asLong ?: 0L
-                    val jsonlFile = sessionsDir.resolve(jsonlPath).normalize()
-                    if (!jsonlFile.startsWith(normalizedDir)) continue  // path traversal guard
-                    if (!Files.isRegularFile(jsonlFile)) continue
-                    val size = runCatching { Files.size(jsonlFile) }.getOrDefault(0L)
-                    val turnCount = obj.get("turnCount")?.takeIf { !it.isJsonNull }?.asInt
-                    val messageCount = turnCount ?: ConversationFileUtils.countJsonlLines(jsonlFile)
-                    val isCurrentSession = id == currentSessionId
-                    val displayName = if (isCurrentSession) CURRENT_SESSION_LABEL
-                    else ConversationFileUtils.formatDateMillis(updatedAt)
-                    entries.add(
-                        ConversationEntry(
-                            jsonlFile,
-                            displayName,
-                            messageCount,
-                            size,
-                            updatedAt,
-                            isCurrentSession
-                        )
-                    )
-                } catch (e: Exception) {
-                    LOG.warn("Skipping malformed session index entry: $el", e)
-                }
-            }
-            entries
-        } catch (e: Exception) {
-            LOG.warn("Failed to parse sessions index: $indexFile", e)
-            emptyList()
+    private fun scanSessionsFromDb(): List<ConversationEntry> {
+        val service = ConversationService.getInstance(project)
+        val currentSessionId = service.getCurrentSessionId(project.basePath)
+        val idFile = ExportUtils.sessionsDir(project).toPath().resolve(".current-session-id")
+        val fileSessionId = runCatching { Files.readString(idFile).trim() }.getOrNull()
+        val sessions = service.listSessions().map { sr ->
+            val isCurrent = sr.id() == currentSessionId || sr.id() == fileSessionId
+            ConversationEntry(
+                sessionId = sr.id(),
+                displayName = if (isCurrent) CURRENT_SESSION_LABEL
+                else ConversationFileUtils.formatDateMillis(sr.updatedAt()),
+                messageCount = sr.turnCount(),
+                size = 0L, // DB storage not tracked per-session
+                dateMillis = sr.updatedAt(),
+                isCurrentSession = isCurrent
+            )
         }
-    }
-
-    private fun scanFromDirectory(sessionsDir: Path, currentSessionId: String?): List<ConversationEntry> {
-        return runCatching {
-            Files.list(sessionsDir).use { stream ->
-                stream.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".jsonl") }
-                    .map { file ->
-                        val id = file.fileName.toString().removeSuffix(".jsonl")
-                        val size = runCatching { Files.size(file) }.getOrDefault(0L)
-                        val dateMillis = runCatching { Files.getLastModifiedTime(file).toMillis() }.getOrDefault(0L)
-                        val messageCount = ConversationFileUtils.countJsonlLines(file)
-                        val isCurrentSession = id == currentSessionId
-                        val displayName = if (isCurrentSession) CURRENT_SESSION_LABEL
-                        else ConversationFileUtils.formatDateMillis(dateMillis)
-                        ConversationEntry(file, displayName, messageCount, size, dateMillis, isCurrentSession)
-                    }
-                    .sorted(Comparator.comparingLong<ConversationEntry> { it.dateMillis }.reversed())
-                    .toList()
-            }
-        }.getOrElse { e ->
-            LOG.warn("Failed to scan sessions directory: $sessionsDir", e)
-            emptyList()
-        }
+        return sessions
     }
 
     private fun updateSummary(entries: List<ConversationEntry>) {
@@ -365,7 +314,7 @@ class ChatHistoryConfigurable(private val project: Project) :
 
     @JvmRecord
     data class ConversationEntry(
-        val path: Path,
+        val sessionId: String,
         val displayName: String,
         val messageCount: Int,
         val size: Long,
@@ -385,7 +334,7 @@ class ChatHistoryConfigurable(private val project: Project) :
             return when (columnIndex) {
                 0 -> entry.displayName
                 1 -> if (entry.messageCount >= 0) entry.messageCount.toString() else "—"
-                2 -> ConversationFileUtils.formatFileSize(entry.size)
+                2 -> if (entry.size > 0) ConversationFileUtils.formatFileSize(entry.size) else ""
                 3 -> ConversationFileUtils.formatDateMillis(entry.dateMillis)
                 else -> ""
             }

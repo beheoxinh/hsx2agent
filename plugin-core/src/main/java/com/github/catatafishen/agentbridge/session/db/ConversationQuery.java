@@ -173,7 +173,15 @@ public final class ConversationQuery {
             Connection conn = database.getConnection();
             if (conn == null) return List.of();
             try {
-                return queryInternal(conn, params);
+                long start = 0;
+                if (LOG.isDebugEnabled()) start = System.nanoTime();
+                List<TurnSummary> result = queryInternal(conn, params);
+                if (LOG.isDebugEnabled()) {
+                    long elapsed = (System.nanoTime() - start) / 1_000_000;
+                    LOG.debug("ConversationQuery executed in " + elapsed + " ms, returned "
+                        + result.size() + " turns");
+                }
+                return result;
             } catch (SQLException e) {
                 LOG.warn("ConversationQuery: query failed", e);
                 return List.of();

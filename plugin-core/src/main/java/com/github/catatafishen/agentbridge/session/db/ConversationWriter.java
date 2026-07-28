@@ -753,6 +753,20 @@ public final class ConversationWriter {
         }
     }
 
+    public void deleteSession(@NotNull String sessionId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement("DELETE FROM sessions WHERE id = ?")) {
+                ps.setString(1, sessionId);
+                ps.executeUpdate();
+                LOG.info("ConversationWriter: deleted session " + sessionId);
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to delete session " + sessionId, e);
+            }
+        }
+    }
+
     public void deleteOtherSessions(@NotNull String currentSessionId) {
         synchronized (database) {
             Connection conn = database.getConnection();

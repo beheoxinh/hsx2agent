@@ -533,6 +533,16 @@ public final class ConversationService implements Disposable {
     }
 
     /**
+     * Deletes a single session by its ID and all associated turns/events.
+     */
+    public void deleteSession(@NotNull String sessionId) {
+        ConversationWriter writer = getOrCreateWriter();
+        if (writer == null) return;
+        writer.deleteSession(sessionId);
+        notifyHistoryChanged(false);
+    }
+
+    /**
      * Deletes all sessions except the current one.
      */
     public void deleteOtherSessions(@Nullable String basePath) {
