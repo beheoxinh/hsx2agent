@@ -574,9 +574,11 @@ class ChatToolWindowContent(
         McpPauseService.getInstance(project).setPaused(false)
         PendingPopupService.getInstance().cancelAndClear(null)
 
-        // Switch the session combo to "None (fresh session)" — disconnecting
-        // implies the user does not want to resume the previous session.
-        connectPanel.selectFreshSession()
+        // Keep the current session choice intact — removing selectFreshSession() here
+        // ensures disconnect does NOT delete .current-session-id, so the next reconnect
+        // (including auto-reconnect) can restore the full conversation history.
+        // Users who want a genuinely fresh session use "Clear and Restart" (resetSession).
+        // connectPanel.selectFreshSession() — deliberately removed; see b/2864.
 
         // Stop + clear resume state on pooled thread so the synchronous operations
         // (process kill, session state reset) don't block the EDT.
@@ -3499,6 +3501,14 @@ class ChatToolWindowContent(
      *
      * Fire-and-forget: schedules an async write on a pooled thread. Does NOT block EDT.
      * For synchronous flush (disconnect, reset), use [flushNewEntriesSync] instead.
+     *
+     * IMPORTANT: [persistedEntryCount] is incremented BEFORE the async write completes.
+     * This means a failed write causes those entries to be silently dropped (they will
+     * never be retried). This is acceptable because:
+     * - Normal streaming: the 30s throttle catches up in the next cycle
+     * - Turn completion: the in-memory entries survive the current IDE session
+     * - Only risk is IDE crash between this call and write completion — mitigated by
+     *   the periodic throttle and by [flushNewEntriesSync] for critical moments.
      */
     private fun appendNewEntries() {
         ApplicationManager.getApplication().invokeLater {
@@ -3533,6 +3543,10 @@ class ChatToolWindowContent(
      *
      * Safe to call from EDT — [awaitPendingSave] catches all exceptions internally
      * and never propagates, so a timeout does not crash the UI.
+     *
+     * Unlike [appendNewEntries], this method only advances [persistedEntryCount] AFTER
+     * the write is confirmed (via [awaitPendingSave]). This ensures that even if the
+     * write fails, the entries will be retried on the next call rather than silently dropped.
      */
     private fun flushNewEntriesSync() {
         val allEntries = conversationReplayer.deferredEntries() + chatConsolePanel.getEntries()
@@ -3541,6 +3555,8 @@ class ChatToolWindowContent(
         lastIncrementalSaveMs = System.currentTimeMillis()
         conversationStore.appendEntriesAsync(project.basePath, newEntries)
         conversationStore.awaitPendingSave(3000)
+        // Only advance persistedEntryCount AFTER the write is confirmed so we do not
+        // silently drop entries if the write times out or fails.
         persistedEntryCount = allEntries.size
         persistTurnCountCheckpoint()
     }
@@ -3592,6 +3608,20 @@ class ChatToolWindowContent(
             var result = conversationStore.loadRecentEntries(project.basePath)
             var entries = result?.entries() ?: emptyList()
             var hasMoreOnDisk = result?.hasMoreOnDisk() ?: false
+
+        // Warn if any turn has only a user prompt but no agent events (Text, Thinking,
+        // ToolCall, SubAgent) next it. Means agent responses were not persisted
+        // before disconnect or crash — entries may have been saved mid-stream
+        // after prompt but before agent finished responding.
+        val orphanPromptCount = entries.filterIsInstance<EntryData.Prompt>().count { prompt ->
+            val idx = entries.indexOf(prompt)
+            idx >= 0 && idx + 1 < entries.size
+                && entries[idx + 1] !is EntryData.Text
+                && entries[idx + 1] !is EntryData.Thinking
+                && entries[idx + 1] !is EntryData.ToolCall
+                && entries[idx + 1] !is EntryData.SubAgent
+        }
+        LOG.info("restoreConversation: loaded ${entries.size} entries, $orphanPromptCount orphan prompt(s)")
             // Fallback: only when the session file exists but references a now-deleted session
             // (e.g. crash recovery after deleteAllHistory). Do NOT fallback when the file was
             // explicitly deleted — that means the user chose "None (fresh session)".
@@ -3639,6 +3669,7 @@ class ChatToolWindowContent(
             }
         }
     }
+
 
     private fun restoreEntries(entries: List<EntryData>, hasMoreOnDisk: Boolean) {
         if (entries.isEmpty()) return
