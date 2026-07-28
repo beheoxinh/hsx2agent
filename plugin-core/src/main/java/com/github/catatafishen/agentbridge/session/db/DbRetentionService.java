@@ -10,8 +10,10 @@ import com.intellij.openapi.project.Project;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Periodically purges sessions older than a configurable threshold from the
@@ -34,6 +36,7 @@ public final class DbRetentionService implements Disposable {
 
     private final Project project;
     private final AtomicBoolean scheduled = new AtomicBoolean(false);
+    private final AtomicReference<ScheduledFuture<?>> periodicTask = new AtomicReference<>(null);
 
     @SuppressWarnings("unused") // instantiated by IntelliJ service container
     public DbRetentionService(@NotNull Project project) {
@@ -70,15 +73,22 @@ public final class DbRetentionService implements Disposable {
 
     /**
      * Schedules recurring purges every 24 hours. Also triggers an immediate run.
-     * Idempotent.
+     * Idempotent — cancels any previous periodic task before scheduling a new one,
+     * so repeated calls (e.g. on reconnect) do not accumulate stale tasks.
      */
     public void startPeriodic() {
+        // Cancel any previously scheduled periodic task to prevent accumulation
+        ScheduledFuture<?> existing = periodicTask.getAndSet(null);
+        if (existing != null && !existing.isDone()) {
+            existing.cancel(false);
+        }
         scheduleOnce();
-        AppExecutorUtil.getAppScheduledExecutorService()
+        ScheduledFuture<?> task = AppExecutorUtil.getAppScheduledExecutorService()
             .scheduleWithFixedDelay(
                 this::purgeIfEnabled,
                 SCHEDULE_INTERVAL_HOURS, SCHEDULE_INTERVAL_HOURS,
                 TimeUnit.HOURS);
+        periodicTask.set(task);
     }
 
     private void purgeIfEnabled() {

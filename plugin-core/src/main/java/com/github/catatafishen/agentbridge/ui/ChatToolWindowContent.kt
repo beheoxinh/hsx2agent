@@ -3609,18 +3609,24 @@ class ChatToolWindowContent(
             // Detect crash recovery: compare the last checkpointed turn count (from PropertiesComponent,
             // which survives process crashes) with the actual count in the restored session.
             // If fewer turns were recovered than expected, the user had unsaved entries.
+            // Read the checkpoint BEFORE invokeLater — PropertiesComponent is thread-safe
+            // and the value must not change between read and the UI callback.
             val lastKnownTurnCount = com.intellij.ide.util.PropertiesComponent.getInstance(project)
                 .getInt(PREF_LAST_PERSISTED_TURN_COUNT, 0)
-            val actualPromptCount = conversationReplayer.totalPromptCount()
 
             ApplicationManager.getApplication().invokeLater {
                 if (entries.isNotEmpty()) {
                     restoreEntries(entries, hasMoreOnDisk)
                     updateSessionInfo()
                 }
-                // Show crash recovery warning if data was lost
-                if (lastKnownTurnCount > 0 && actualPromptCount < lastKnownTurnCount) {
-                    val lost = lastKnownTurnCount - actualPromptCount
+                // Crash recovery detection: compare last checkpoint (survives crash via
+                // PropertiesComponent) with the PROPERLY restored turn count.
+                // IMPORTANT: this must run AFTER restoreEntries() above, which populates
+                // conversationReplayer.totalPromptCount(). Computing it earlier would
+                // always return 0 and falsely trigger the warning on every session restore.
+                val restoredPromptCount = conversationReplayer.totalPromptCount()
+                if (lastKnownTurnCount > 0 && restoredPromptCount < lastKnownTurnCount) {
+                    val lost = lastKnownTurnCount - restoredPromptCount
                     val msg = if (lost == 1) "1 turn may have been lost in the last session due to an unexpected shutdown."
                     else "$lost turns may have been lost in the last session due to an unexpected shutdown."
                     if (::statusBanner.isInitialized) statusBanner?.showWarning(msg)
