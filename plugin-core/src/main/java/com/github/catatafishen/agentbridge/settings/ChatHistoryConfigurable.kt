@@ -284,11 +284,10 @@ class ChatHistoryConfigurable(private val project: Project) :
 
     private fun scanSessionsFromDb(): List<ConversationEntry> {
         val service = ConversationService.getInstance(project)
-        val currentSessionId = service.getCurrentSessionId(project.basePath)
         val idFile = ExportUtils.sessionsDir(project).toPath().resolve(".current-session-id")
         val fileSessionId = runCatching { Files.readString(idFile).trim() }.getOrNull()
         val sessions = service.listSessions().map { sr ->
-            val isCurrent = sr.id() == currentSessionId || sr.id() == fileSessionId
+            val isCurrent = sr.id() == fileSessionId
             ConversationEntry(
                 sessionId = sr.id(),
                 displayName = if (isCurrent) CURRENT_SESSION_LABEL
@@ -307,9 +306,16 @@ class ChatHistoryConfigurable(private val project: Project) :
             summaryLabel.text = " "
             return
         }
-        val totalSize = entries.sumOf { it.size }
         val countText = if (entries.size == 1) "1 conversation" else "${entries.size} conversations"
-        summaryLabel.text = "$countText using ${ConversationFileUtils.formatFileSize(totalSize)}"
+        // Show the actual on-disk size of conversation.db rather than per-session sizes
+        val dbSize = try {
+            val dbDir = com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings.getInstance()
+                .getProjectStorageDir(project)
+            val dbPath = dbDir.resolve("conversation.db")
+            if (java.nio.file.Files.exists(dbPath)) ConversationFileUtils.formatFileSize(java.nio.file.Files.size(dbPath))
+            else null
+        } catch (_: Exception) { null }
+        summaryLabel.text = if (dbSize != null) "$countText (DB: $dbSize)" else countText
     }
 
     @JvmRecord
