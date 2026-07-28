@@ -618,12 +618,12 @@ class AcpConnectPanel(
     private fun clearToolStatistics() {
         val db = ConversationDatabase.getInstance(project)
         db.withConnection { conn ->
-            conn.createStatement().executeUpdate("DELETE FROM tool_call_events")
-            conn.createStatement().executeUpdate(
-                """
-                DELETE FROM events WHERE event_type = 'tool_call'
-            """
-            )
+            val stmt = conn.createStatement()
+            // Delete hook execution records first (FK dependency on tool_call_events via tool_event_id,
+            // no ON DELETE CASCADE at the application level)
+            stmt.executeUpdate("DELETE FROM hook_executions WHERE tool_event_id IN (SELECT event_id FROM tool_call_events)")
+            stmt.executeUpdate("DELETE FROM tool_call_events")
+            stmt.executeUpdate("DELETE FROM events WHERE event_type = 'tool_call'")
             null
         }
     }
@@ -649,14 +649,13 @@ class AcpConnectPanel(
         val db = ConversationDatabase.getInstance(project)
         db.withConnection { conn ->
             val stmt = conn.createStatement()
-            stmt.executeUpdate("DELETE FROM text_events")
-            stmt.executeUpdate("DELETE FROM thinking_events")
-            stmt.executeUpdate("DELETE FROM nudge_events")
-            stmt.executeUpdate(
-                """
-                DELETE FROM events WHERE event_type IN ('text', 'thinking', 'nudge')
-            """
-            )
+            // Delete hook_executions first — no ON DELETE CASCADE from events
+            stmt.executeUpdate("DELETE FROM hook_executions")
+            // Delete all events — ON DELETE CASCADE handles all subtype tables
+            // (text_events, thinking_events, nudge_events, tool_call_events, sub_agent_events)
+            // Turns and sessions are preserved so session structure remains intact.
+            stmt.executeUpdate("DELETE FROM events")
+            stmt.executeUpdate("DELETE FROM turn_context_files")
             null
         }
     }

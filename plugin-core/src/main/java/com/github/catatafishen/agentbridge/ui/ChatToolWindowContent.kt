@@ -531,6 +531,10 @@ class ChatToolWindowContent(
         // or apply stale model results after the user has explicitly disconnected.
         ++modelLoadGeneration
 
+        // Persist any un-flushed entries before clearing in-memory state,
+        // so the next "resume" can restore the full conversation history.
+        if (::consolePanel.isInitialized) flushNewEntriesSync()
+
         // Reset UI state immediately on EDT so the user sees the connect panel right away.
         // The potentially slow agentManager.stop() (process kill + waitFor)
         // runs on a pooled thread to avoid freezing the EDT.
@@ -3492,13 +3496,26 @@ class ChatToolWindowContent(
      */
     private fun appendNewEntries() {
         ApplicationManager.getApplication().invokeLater {
-            lastIncrementalSaveMs = System.currentTimeMillis()
-            val allEntries = conversationReplayer.deferredEntries() + chatConsolePanel.getEntries()
-            val newEntries = allEntries.drop(persistedEntryCount)
-            if (newEntries.isEmpty()) return@invokeLater
-            conversationStore.appendEntriesAsync(project.basePath, newEntries)
-            persistedEntryCount = allEntries.size
+            flushNewEntriesSync()
         }
+    }
+
+    /**
+     * Synchronously collects and persists all un-persisted entries without EDT scheduling.
+     * Blocks until the async write completes (up to 3s timeout).
+     * Designed for infrequent operations (disconnect, reset) where we must guarantee
+     * data is saved before clearing in-memory state.
+     *
+     * Safe to call from EDT — the write is async (pooled thread), only the wait is synchronous.
+     */
+    private fun flushNewEntriesSync() {
+        val allEntries = conversationReplayer.deferredEntries() + chatConsolePanel.getEntries()
+        val newEntries = allEntries.drop(persistedEntryCount)
+        if (newEntries.isEmpty()) return
+        lastIncrementalSaveMs = System.currentTimeMillis()
+        conversationStore.appendEntriesAsync(project.basePath, newEntries)
+        conversationStore.awaitPendingSave(3000)
+        persistedEntryCount = allEntries.size
     }
 
     /**
@@ -3713,6 +3730,15 @@ class ChatToolWindowContent(
     fun resetSession() {
         // Clear all resume state so the next session/new is always fresh.
         agentManager.clearSessionResumeState()
+
+        // Persist all un-flushed entries BEFORE clearing in-memory state,
+        // so the turn data survives the reset and appears in history.
+        if (::consolePanel.isInitialized) flushNewEntriesSync()
+
+        // Mine entries into semantic memory BEFORE clearing — archiveConversation()
+        // reads from chatConsolePanel.getEntries() which must still be populated.
+        archiveConversation()
+
         resetSessionState()
         // Clear the LiveToolCallService FIRST to prevent its change listener (which calls
         // pushAllEntries) from re-populating the MCP tool call list after clearToolCalls().
@@ -3725,7 +3751,6 @@ class ChatToolWindowContent(
         // Clear the DiffPanel — the user acknowledged the destructive nature via the warning dialog.
         AgentEditSession.getInstance(project).clearSession()
         updateSessionInfo()
-        archiveConversation()
         // Delete .current-session-id so the next save creates a brand-new v2 session.
         // This is separate from archive() because archive() must NOT delete the ID during
         // agent switches — doExport still needs the session ID for subsequent export steps.

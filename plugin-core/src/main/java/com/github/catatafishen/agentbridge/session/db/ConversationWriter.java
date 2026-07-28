@@ -329,16 +329,20 @@ public final class ConversationWriter {
      * (from {@code session_info_update}) always appear in the session history list.
      */
     public void updateSessionTitle(@NotNull String sessionId, @NotNull String title) {
-        try (Connection conn = database.getConnection()) {
-            String truncated = title.length() > 60 ? title.substring(0, 60) : title;
-            try (PreparedStatement ps = conn.prepareStatement(
-                "UPDATE sessions SET display_name = ? WHERE id = ?")) {
-                ps.setString(1, truncated);
-                ps.setString(2, sessionId);
-                ps.executeUpdate();
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try {
+                String truncated = title.length() > 60 ? title.substring(0, 60) : title;
+                try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE sessions SET display_name = ? WHERE id = ?")) {
+                    ps.setString(1, truncated);
+                    ps.setString(2, sessionId);
+                    ps.executeUpdate();
+                }
+            } catch (SQLException e) {
+                LOG.warn("Failed to update session title for " + sessionId, e);
             }
-        } catch (SQLException e) {
-            LOG.warn("Failed to update session title for " + sessionId, e);
         }
     }
 
