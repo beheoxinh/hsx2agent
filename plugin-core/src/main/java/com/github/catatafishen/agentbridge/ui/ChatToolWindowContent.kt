@@ -3629,7 +3629,7 @@ class ChatToolWindowContent(
                     val lost = lastKnownTurnCount - restoredPromptCount
                     val msg = if (lost == 1) "1 turn may have been lost in the last session due to an unexpected shutdown."
                     else "$lost turns may have been lost in the last session due to an unexpected shutdown."
-                    if (::statusBanner.isInitialized) statusBanner?.showWarning(msg)
+                    if (statusBanner != null) statusBanner?.showWarning(msg)
                 }
                 // Reset checkpoint so subsequent sessions don't show stale warnings
                 com.intellij.ide.util.PropertiesComponent.getInstance(project)

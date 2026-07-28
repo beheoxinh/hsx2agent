@@ -42,7 +42,7 @@ public final class ConversationService implements Disposable {
     private static final Logger LOG = Logger.getInstance(ConversationService.class);
     private static final String DB_INIT_FAILED = "ConversationDatabase initialization failed: ";
 
-    static final String CURRENT_SESSION_FILE = ".current-session-id";
+    public static final String CURRENT_SESSION_FILE = ".current-session-id";
     private static final int MAX_SESSION_NAME_LENGTH = 60;
 
     private final Project project;
