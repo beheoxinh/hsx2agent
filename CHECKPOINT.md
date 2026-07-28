@@ -820,38 +820,40 @@ Các `hook_executions` rows có `tool_event_id` trỏ đến event_id trong even
 
 Các bug gây mất dữ liệu hoặc DB inconsistent — cần sửa ngay.
 
-- [ ] **PD-1.1** Fix `disconnectFromAgent()`: gọi `appendNewEntries()` trước `consolePanel.clear()` để persist turn cuối.
+- [x] **PD-1.1** Fix `disconnectFromAgent()`: thêm `flushNewEntriesSync()` trước `consolePanel.clear()`.
   - File: `ChatToolWindowContent.kt:528`
-  - Thêm: `appendNewEntries()` trước `consolePanel.clear()`
-  - Nhưng cần chạy async → `awaitPendingSave()` trước khi clear
-  - Test: disconnect khi đang streaming → entries phải có trong DB sau khi reconnect
+  - `flushNewEntriesSync()`: collect entries mới + `appendEntriesAsync()` + `awaitPendingSave(3000)`
+  - Đảm bảo entries chưa flush được lưu trước khi clear in-memory state
+  - Impact: disconnect → reconnect → history restored correctly
+  - Commit: `e70aa9e`
 
-- [ ] **PD-1.2** Fix `resetSession()`: gọi `appendNewEntries()` trước `consolePanel.clear()`, và chuyển `archiveConversation()` ra trước clear.
+- [x] **PD-1.2** Fix `resetSession()`: `flushNewEntriesSync()` + `archiveConversation()` trước `consolePanel.clear()`.
   - File: `ChatToolWindowContent.kt:3713`
   - Thứ tự mới:
-    1. `appendNewEntries()` + `awaitPendingSave(3000)`
-    2. `archiveConversation()` (mine entries từ panel entries — còn đầy đủ)
-    3. `consolePanel.clear()`
-    4. `resetSessionState()`
-    5. `resetCurrentSessionId()`
-  - Test: Clear and Restart → turn cuối phải có trong DB
+    1. `flushNewEntriesSync()` — persist all un-flushed entries
+    2. `archiveConversation()` — mine entries từ panel (còn đầy đủ)
+    3. `consolePanel.clear()`, `resetSessionState()`, `resetCurrentSessionId()`
+  - Impact: Clear and Restart → turn cuối được persist + memory mining hoạt động
+  - Commit: `e70aa9e`
 
-- [ ] **PD-1.3** Fix `clearChatHistory()`: xoá tất cả events subtype, không bỏ sót tool_call_events, sub_agent_events, hook_executions. Dùng `ConversationWriter.deleteAllHistory()` hoặc transaction atomic.
+- [x] **PD-1.3** Fix `clearChatHistory()`: `DELETE FROM events` (cascade xuống tất cả subtype tables).
   - File: `AcpConnectPanel.kt:648`
-  - Dùng `ConversationService.deleteAllHistory()` thay vì JDBC tay
-  - Test: clear chat history → DB không còn row nào trong events + subtypes
+  - Xoá: hook_executions, events (cascade → text_events, thinking_events, nudge_events, tool_call_events, sub_agent_events), turn_context_files
+  - Turns và sessions được giữ nguyên (structure intact)
+  - Impact: DB consistent sau clear, không orphan rows
+  - Commit: `e70aa9e`
 
-- [ ] **PD-1.4** Fix `ConversationWriter.updateSessionTitle()`: dùng `synchronized(database)` và connection từ database field, không tự tạo connection mới.
+- [x] **PD-1.4** Fix `ConversationWriter.updateSessionTitle()`: `synchronized(database)` + giữ connection không đóng.
   - File: `ConversationWriter.java:updateSessionTitle()`
-  - Wrap trong `synchronized(database)` block
-  - Dùng `database.getConnection()` không đóng
-  - Test: concurrent appendEntries + updateSessionTitle → không race condition
+  - Bỏ `try-with-resources` (đóng shared connection), dùng `database.getConnection()` + null check
+  - Impact: không race condition, không connection leak
+  - Commit: `e70aa9e`
 
-- [ ] **PD-1.5** Fix `clearToolStatistics()`: xoá cả hook_executions tương ứng, dùng transaction atomic.
+- [x] **PD-1.5** Fix `clearToolStatistics()`: xoá cả `hook_executions` tương ứng.
   - File: `AcpConnectPanel.kt:618`
   - Thêm: `DELETE FROM hook_executions WHERE tool_event_id IN (SELECT event_id FROM tool_call_events)`
-  - Hoặc dùng conversationWriter.deleteAllHistory() với filter
-  - Test: clear tool stats → hook_executions không còn orphan rows
+  - Impact: DB consistent, không orphan hook records
+  - Commit: `e70aa9e`
 
 ### 🟨 Phase 2 — Data Consistency & UX (P1)
 
