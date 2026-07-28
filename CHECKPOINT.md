@@ -812,6 +812,32 @@ Các `hook_executions` rows có `tool_event_id` trỏ đến event_id trong even
 
 **Vấn đề**: Step 3 tạo session mới, step 4 không tìm thấy history → OK cho mục đích "fresh session". Nhưng archiveConversation() được gọi với session ID vừa tạo (empty) — memory mining có thể bỏ qua. Không có hại, nhưng logic hơi lộn xộn. Quan trọng hơn: `archiveConversation()` chạy TRƯỚC khi restore → waste computation.
 
+### 16.16. [BUG] `disconnectFromAgent()` → `selectFreshSession()` → lịch sử chat không được khôi phục khi reconnect
+
+**Mô tả**: `disconnectFromAgent()` gọi `selectFreshSession()` đặt `forceFreshSession = true`.
+Khi user reconnect, `resetConnectButton()` chọn `SessionChoice.None` trong session combo.
+`applySessionChoice(None)` gọi `resetCurrentSessionId()` → xoá `.current-session-id`.
+Sau đó `restoreConversation()` không tìm thấy `.current-session-id` → chỉ load user prompts
+từ fallback session (nếu có) → agent responses (Text, Thinking, ToolCall, SubAgent) biến mất.
+
+**Impact**: Cao. User reconnect luôn mất lịch sử agent response sau disconnect.
+**Code path**: `disconnectFromAgent()` (line 577-579) → `selectFreshSession()` → `applySessionChoice(None)` → `resetCurrentSessionId()`
+
+**Fix**: Xoá `connectPanel.selectFreshSession()` khỏi `disconnectFromAgent()`.
+Giữ nguyên `.current-session-id` qua disconnect để reconnect có thể khôi phục đầy đủ history.
+User muốn session mới dùng "Clear and Restart" (`resetSession()`) thay vì disconnect.
+- Commit: `e84c899`
+
+### 16.17. [ENHANCEMENT] Restore detect orphan prompts — log warning khi Prompt không có agent events
+
+**Mô tả**: Thêm detection trong `restoreConversation()` để phát hiện các turn chỉ có
+user prompt mà không có agent events (Text, Thinking, ToolCall, SubAgent) kế tiếp.
+Log warning với số lượng orphan prompts + tổng số entries loaded.
+Giúp debug các trường hợp agent responses không được persist do lỗi write hoặc
+disconnect mid-stream.
+
+**Commit**: `e84c899`
+
 ---
 
 ## 17. KẾ HOẠCH CẢI THIỆN (ROADMAP)
