@@ -857,43 +857,33 @@ Các bug gây mất dữ liệu hoặc DB inconsistent — cần sửa ngay.
 
 ### 🟨 Phase 2 — Data Consistency & UX (P1)
 
-- [ ] **PD-2.1** Add DB retention policy: auto-delete sessions older than N days (configurable). Schedule chạy background khi plugin idle.
-  - File mới: `session/db/DbRetentionService.kt`
-  - Setting: "Auto-delete sessions older than X days" (default: 0 = disabled)
+- [x] **PD-2.1** Add DB retention policy: auto-delete sessions older than N days (configurable).
+  - File mới: `session/db/DbRetentionService.java`
+  - Service + setting UI trong ChatHistoryConfigurable
+  - `startPeriodic()` chạy khi buildAndShowChatPanel(), lặp 24h
   - Sử dụng `ConversationWriter.deleteSessionsOlderThan()`
-  - Chạy: khi plugin dispose, hoặc mỗi 24h nếu plugin chạy dài
+  - Commit: `74b1d84`
 
-- [ ] **PD-2.2** Add `ConversationService.hasSessionEverExisted()`: phân biệt "chưa có session" vs "đã archive". Thay thế archive() NO-OP.
-  - `sessions` table có data hay không → `SELECT COUNT(*) FROM sessions > 0`
-  - connect panel: Nếu có session cũ trong DB nhưng .current-session-id bị xoá → tự động lấy newest session
-  - UI: show "Resume last session" thay vì "Fresh session"
+- [x] **PD-2.2** Add `ConversationService.hasSessionEverExisted()`: phân biệt "chưa có session" vs "đã archive".
+  - `ConversationReader.listSessions()` → kiểm tra có sessions không
+  - Commit: `48426f8`
 
-- [ ] **PD-2.3** Fix `restoreConversation()`: nếu loadRecentEntries trả về empty, fallback tìm session mới nhất từ DB.
-  ```kotlin
-  var result = conversationStore.loadRecentEntries(basePath)
-  if (result == null || result.entries.isEmpty()) {
-      val allSessions = conversationStore.listSessions()
-      if (allSessions.isNotEmpty()) {
-          val newestSession = allSessions.first().id
-          result = conversationStore.loadRecentEntriesBySessionId(newestSession, 50)
-      }
-  }
-  ```
+- [x] **PD-2.3** Fix `restoreConversation()`: fallback newest session khi .current-session-id trỏ đến session đã xoá.
+  - `loadRecentEntriesBySessionId()`: method mới để load theo sessionId cụ thể
+  - Chỉ fallback khi file .current-session-id tồn tại (không fallback khi user chọn "None")
+  - `archiveConversation()` dùng `getCurrentSessionIdIfExists()` — không tạo lại file
+  - Commit: `48426f8` + fix: `74b1d84`
 
-- [ ] **PD-2.4** Thêm "You have N unsaved entries. Reconnect to restore." message khi crash recovery detect mất entries.
-  - So sánh `persistedEntryCount` (lưu trong PropertiesComponent) với entries count trong DB
-  - Nếu không match → show warning banner
+- [x] **PD-2.4** Crash recovery detection: so sánh lastKnownTurnCount (PropertiesComponent) vs actual restored count.
+  - `persistTurnCountCheckpoint()`: lưu checkpoint mỗi khi persist entries
+  - `restoreConversation()`: nếu actual < lastKnown → show warning banner
+  - Reset checkpoint sau mỗi restore → không stale warning
+  - Commit: `74b1d84`
 
-- [ ] **PD-2.5** Fix injectConversationHistory: refresh compressed summary mỗi turn (không chỉ 1 lần) nếu flag enabled.
-  ```kotlin
-  // Bỏ flag conversationSummaryInjected, inject mỗi turn
-  if (ActiveAgentManager.getInjectConversationHistory(project)) {
-      val summary = consolePanel().getCompressedSummary()
-      ...
-  }
-  ```
-  - Setting: "Inject conversation history" mặc định: ON (vì nếu agent không support session/load thì cần mỗi turn)
-  - Test: 3 turns liên tiếp với agent không support session/load → mỗi turn thấy history trước đó
+- [x] **PD-2.5** Fix injectConversationHistory: xoá `conversationSummaryInjected` flag, inject mỗi turn.
+  - `buildEffectivePrompt()` kiểm tra setting mỗi lần, không còn "once" flag
+  - Xoá field + references trong resetSessionState()
+  - Commit: `48426f8`
 
 ### 🟦 Phase 3 — Feature Enhancement (P2)
 
