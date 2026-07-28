@@ -102,6 +102,12 @@ immediately `transport.stop()` which interrupts the pending future. The
 |-----------|-----------|-----------|-------|
 | connect (cold start) | ~3-8s | ~3-8s | Depends on agent startup |
 | connect (warm, cached) | ~500ms | ~500ms | |
-| disconnect | ~5s (waitFor) | ~500ms | SIGKILL + 500ms reap |
-| disconnect→connect race | NPE possible | safe | Local var capture |
-| process kill | 5s SIGTERM + 5s fallback | SIGKILL + 500ms | Immediate |
+| disconnect (process kill) | ~5s (SIGTERM wait) | ~500ms | SIGKILL + 500ms reap |
+| disconnect (EDT unblock) | ~5s (blocked pool) | ~50ms | Pooled thread, EDT free |
+| disconnect→connect race | NPE possible | Safe + clear error | Local var + sync |
+| retry backoff abort | up to 2s (Thread.sleep) | up to 500ms | 500ms increment check |
+| session export wait | 10s | 3s | 3s timeout |
+
+### Build Status
+
+`./gradlew :plugin-core:build` — 0 errors, 0 warnings (verified 2026-07-28)
