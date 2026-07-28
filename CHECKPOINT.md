@@ -658,3 +658,313 @@ User scrolls to bottom
 6. **is_mcp có 3 trạng thái**: NULL = chưa biết, 1 = confirmed MCP, 0 = confirmed non-MCP. Schema V3 đã thay đổi từ NOT NULL thành nullable.
 
 7. **`pendingSave` CompletableFuture chain**: Đảm bảo tuần tự giữa các async writes. `updateSessionTitle()` được chain sau `appendEntriesAsync()` để tránh UPDATE-before-INSERT race.
+
+---
+
+## 16. PHÂN TÍCH VẤN ĐỀ — ISSUES & GAPS
+
+### 16.1. [BUG] `disconnectFromAgent()` không lưu turn cuối — mất history khi user disconnect giữa chừng
+
+**Mô tả**: `disconnectFromAgent()` (ChatToolWindowContent.kt:528) gọi `consolePanel.clear()` + `chatSessionInitialized = false` nhưng KHÔNG gọi `appendNewEntries()` trước khi clear. Nếu user đang streaming và disconnect, tất cả entries từ lần persist cuối (max 30s trước) → mất.
+
+**Impact**: Cao. User mất toàn bộ progress của turn hiện tại khi disconnect.
+
+**Code path**:
+```
+disconnectFromAgent()
+  → consolePanel.clear()          // Xoá in-memory entries
+  → resetSessionState()           // Reset orchestrator
+  → KHÔNG có appendNewEntries()   // ❌ entries chưa persist bị mất
+```
+
+### 16.2. [BUG] `resetSession()` (Clear and Restart) gọi `archiveConversation()` trước `resetCurrentSessionId()` nhưng entries đã bị xoá khỏi panel
+
+**Mô tả**: 
+```
+resetSession()
+  → consolePanel.clear()          // entries trong panel bị xoá
+  → archiveConversation()         // memory mining đọc entries NHƯNG entries = rỗng!
+  → resetCurrentSessionId()       // xoá .current-session-id
+```
+
+`archiveConversation()` gọi `chatConsolePanel.getEntries()` SAU KHI `consolePanel.clear()`. Entry list đã rỗng → memory mining không thể mine gì. Cũng không gọi `appendNewEntries()` nên turn cuối mất luôn.
+
+**Impact**: Cao. Data loss + memory mining không hoạt động.
+
+### 16.3. [ISSUE] `clearChatHistory()` xoá text/thinking/nudge events NHƯNG giữ tool_call_events → DB inconsistent
+
+**Mô tả**: `AcpConnectPanel.kt:648`:
+```sql
+DELETE FROM text_events
+DELETE FROM thinking_events
+DELETE FROM nudge_events
+DELETE FROM events WHERE event_type IN ('text', 'thinking', 'nudge')
+```
+Không xoá `tool_call_events` và `sub_agent_events`. Các tool call events vẫn còn trong DB nhưng turn_id của chúng trỏ đến turns đã bị orphan (vì không có FK check từ events → turns? — CÓ FK nhưng ON DELETE CASCADE, nhưng events chính nó không bị xoá vì FK cascade là 1 chiều: xoá turn → xoá events, không phải xoá events → xoá turn). Thực tế event row KHÔNG bị xoá → tool_call_events vẫn tồn tại với event_id, nhưng turn_id của events trỏ đến turn đã mất prompt_text (turns không bị xoá) nhưng các text_events + thinking_events của turn đó đã bị xoá → turn bị hỏng, không load được đúng nữa.
+
+**Impact**: Medium. DB inconsistent state, có thể gây crash khi `ConversationReader.loadTurnEntries()` tìm event không thấy.
+
+### 16.4. [ISSUE] `clearStatisticsHistory()` xoá tool_call_events bằng DELETE FROM tay — không dùng ConversationWriter
+
+**Mô tả**: `AcpConnectPanel.kt:618` xoá trực tiếp bằng JDBC connection, không dùng `ConversationWriter.deleteAllHistory()`. Bỏ qua cơ chế transaction an toàn của Writer, và không gọi `notifyHistoryChanged()` → UI không refresh.
+
+### 16.5. [BUG] `ConversationService.archive()` là NO-OP — cản trở phân biệt "đã archive" vs "chưa bao giờ có session"
+
+**Mô tả**:
+```java
+public void archive() {
+    // Intentional no-op: the session ID file must survive for restoreConversation() to read.
+}
+```
+Hiện tại không có cách nào biết session đã được archive hay chưa. `.current-session-id` vẫn tồn tại và chỉ bị xoá khi `resetCurrentSessionId()` gọi. Điều này gây khó khăn cho:
+- Session combo trên Connect panel: không biết session nào là "current active" vs "archived"
+- Logic "auto-resume latest" có thể resume sai session
+
+### 16.6. [ISSUE] `restoreConversation()` không kiểm tra sessionId tồn tại trong DB
+
+**Mô tả**:
+```
+restoreConversation()
+  → loadRecentEntries(basePath)
+    → getCurrentSessionId(basePath)      // Đọc/tạo UUID
+    → reader.loadRecentEntries(sessionId, 50)  // Query DB với sessionId
+```
+
+Nếu `.current-session-id` chứa UUID cũ nhưng session đó không còn trong DB (đã bị xoá bởi deleteAllHistory), `loadRecentEntries` trả về empty → UI hiển thị empty chat. Điều này OK, nhưng không có fallback attempt để tìm session mới nhất từ DB. User thấy màn hình trống dù có session cũ trong DB.
+
+### 16.7. [ISSUE] Không có cơ chế merge giữa "history trong SQLite" và "in-memory entry list" khi crash recovery
+
+**Mô tả**: Khi plugin crash:
+1. Một số entries đã được persist (nhờ throttle save 30s)
+2. Một số entries mới nhất chưa kịp persist (trong khoảng 30s cuối)
+3. Khi restart, restoreConversation() đọc từ DB → chỉ thấy entries đã persist
+4. Crash recovery: UI hiển thị entries cũ nhưng KHÔNG có dấu hiệu gì cho user biết rằng đã mất N entries cuối
+
+**Impact**: Trung bình. User không biết mình đã mất dữ liệu.
+
+### 16.8. [ISSUE] CompressedSummary chỉ inject ở turn ĐẦU TIÊN, KHÔNG refresh cho các turn tiếp theo
+
+**Mô tả**: `conversationSummaryInjected` flag:
+```kotlin
+if (!conversationSummaryInjected && ActiveAgentManager.getInjectConversationHistory(project)) {
+    conversationSummaryInjected = true
+    val summary = consolePanel().getCompressedSummary()
+    ...
+}
+```
+Summary chỉ được inject 1 lần, ở turn đầu tiên của session. Nếu người dùng tiếp tục nhiều turn, agent KHÔNG được thấy nội dung các turn sau.
+
+Agent vốn đã có session/load (ACP) để restore history riêng, nhưng fallback này là dành cho agent KHÔNG support session/load. Với agent không support session/load, mỗi turn là "quên" hết context → cần inject summary mỗi turn, không phải chỉ 1 lần.
+
+**Impact**: Thấp (vì hầu hết agent có session/load), nhưng logic sai với mục đích ban đầu.
+
+### 16.9. [ISSUE] `query_conversation_history` MCP tool — khả năng agent đọc lịch sử
+
+**Mô tả**: Hiện tại agent có thể gọi `query_conversation_history` (MCP tool) để query DB. Nhưng tool này chỉ trả về `TurnSummary` dạng text với giới hạn maxChars (8000). Với session dài, agent không thể đọc được toàn bộ lịch sử — chỉ thấy N turns gần nhất.
+
+**File**: `ConversationQuery.java` — không có MCP tool wrapper trong code base (có thể ở external MCP server). Nhưng `QueryParams` hỗ trợ đầy đủ params: turnId, sessionId, lastN, userMessage, assistantText, toolName, etc.
+
+### 16.10. [BUG] `ConversationWriter.updateSessionTitle()` tạo connection mới mỗi lần gọi, không dùng connection từ database
+
+**Mô tả**: 
+```java
+public void updateSessionTitle(@NotNull String sessionId, @NotNull String title) {
+    try (Connection conn = database.getConnection()) {   // Tạo connection mới!
+        ...
+    }
+}
+```
+Không `synchronized(database)` và không dùng `database.connection` field mà tự tạo connection từ `getConnection()`. Có thể dùng sai connection (race condition với main connection đang dùng).
+
+### 16.11. [ISSUE] ToolCallsWebPanel chỉ load history cho session hiện tại, không thể xem tool calls từ session cũ
+
+**Mô tả**:
+```kotlin
+val sessionId = service.getCurrentSessionId(project.basePath)
+val entries = service.loadToolCallHistory(HISTORY_PAGE_SIZE, beforeEventId, sessionId)
+```
+Dùng sessionId hiện tại để lọc. User không thể xem tool calls từ sessions trước đó qua ToolCallsWebPanel. Các tool calls cũ chỉ có thể xem qua PromptsPanel (nếu tìm được).
+
+### 16.12. [ISSUE] Không kiểm soát kích thước DB — conversation.db có thể phình to vô hạn
+
+**Mô tả**: SQLite file không có retention policy. `deleteSessionsOlderThan(int days)` tồn tại trong `ConversationWriter` nhưng không có UI/schedule để tự động chạy. User phải vào AcpConnectPanel → Data History → Clear Session History để xoá tay.
+
+### 16.13. [ISSUE] `SessionStoreV2.listSessionsFromJsonlIndex()` chỉ dùng cho legacy — không có phương thức `listSessions()` tổng quát cho UI
+
+**Mô tả**: `ChatHistoryConfigurable` vẫn dùng `scanConversations()` đọc từ JSONL filesystem để hiển thị danh sách session. Trong khi `ConversationService.listSessions()` có thể query trực tiếp từ SQLite. Hai nguồn dữ liệu có thể khác nhau nếu JSONL backup đã migrate. UI settings hiển thị danh sách từ JSONL → không chính xác sau migration.
+
+### 16.14. [ISSUE] `clearToolStatistics()` xoá tool_call_events rows nhưng không xoá hook_executions tương ứng
+
+**Mô tả**: `AcpConnectPanel.kt:618`:
+```sql
+DELETE FROM tool_call_events
+DELETE FROM events WHERE event_type = 'tool_call'
+```
+Các `hook_executions` rows có `tool_event_id` trỏ đến event_id trong events bị xoá → orphan rows trong hook_executions. Không có ON DELETE CASCADE từ tool_event_id vì hook_executions không định nghĩa FK constraint.
+
+### 16.15. [BUG] `applySessionChoice(SessionChoice.None)` gọi `resetCurrentSessionId()` NHƯNG buildAndShowChatPanel() sẽ archive trước khi restore
+
+**Mô tả**: Khi user chọn "None (fresh session)" và connect:
+1. `applySessionChoice(None)` → `resetCurrentSessionId()` → xoá .current-session-id
+2. `onConnect()` → `buildAndShowChatPanel()`
+3. `buildAndShowChatPanel()` → `archiveConversation()` → `getCurrentSessionId()` → tạo UUID MỚI
+4. `restoreConversation()` → `loadRecentEntries(newUuid)` → tất nhiên là empty
+
+**Vấn đề**: Step 3 tạo session mới, step 4 không tìm thấy history → OK cho mục đích "fresh session". Nhưng archiveConversation() được gọi với session ID vừa tạo (empty) — memory mining có thể bỏ qua. Không có hại, nhưng logic hơi lộn xộn. Quan trọng hơn: `archiveConversation()` chạy TRƯỚC khi restore → waste computation.
+
+---
+
+## 17. KẾ HOẠCH CẢI THIỆN (ROADMAP)
+
+### 🟥 Phase 1 — Critical Bug Fixes (P0)
+
+Các bug gây mất dữ liệu hoặc DB inconsistent — cần sửa ngay.
+
+- [ ] **PD-1.1** Fix `disconnectFromAgent()`: gọi `appendNewEntries()` trước `consolePanel.clear()` để persist turn cuối.
+  - File: `ChatToolWindowContent.kt:528`
+  - Thêm: `appendNewEntries()` trước `consolePanel.clear()`
+  - Nhưng cần chạy async → `awaitPendingSave()` trước khi clear
+  - Test: disconnect khi đang streaming → entries phải có trong DB sau khi reconnect
+
+- [ ] **PD-1.2** Fix `resetSession()`: gọi `appendNewEntries()` trước `consolePanel.clear()`, và chuyển `archiveConversation()` ra trước clear.
+  - File: `ChatToolWindowContent.kt:3713`
+  - Thứ tự mới:
+    1. `appendNewEntries()` + `awaitPendingSave(3000)`
+    2. `archiveConversation()` (mine entries từ panel entries — còn đầy đủ)
+    3. `consolePanel.clear()`
+    4. `resetSessionState()`
+    5. `resetCurrentSessionId()`
+  - Test: Clear and Restart → turn cuối phải có trong DB
+
+- [ ] **PD-1.3** Fix `clearChatHistory()`: xoá tất cả events subtype, không bỏ sót tool_call_events, sub_agent_events, hook_executions. Dùng `ConversationWriter.deleteAllHistory()` hoặc transaction atomic.
+  - File: `AcpConnectPanel.kt:648`
+  - Dùng `ConversationService.deleteAllHistory()` thay vì JDBC tay
+  - Test: clear chat history → DB không còn row nào trong events + subtypes
+
+- [ ] **PD-1.4** Fix `ConversationWriter.updateSessionTitle()`: dùng `synchronized(database)` và connection từ database field, không tự tạo connection mới.
+  - File: `ConversationWriter.java:updateSessionTitle()`
+  - Wrap trong `synchronized(database)` block
+  - Dùng `database.getConnection()` không đóng
+  - Test: concurrent appendEntries + updateSessionTitle → không race condition
+
+- [ ] **PD-1.5** Fix `clearToolStatistics()`: xoá cả hook_executions tương ứng, dùng transaction atomic.
+  - File: `AcpConnectPanel.kt:618`
+  - Thêm: `DELETE FROM hook_executions WHERE tool_event_id IN (SELECT event_id FROM tool_call_events)`
+  - Hoặc dùng conversationWriter.deleteAllHistory() với filter
+  - Test: clear tool stats → hook_executions không còn orphan rows
+
+### 🟨 Phase 2 — Data Consistency & UX (P1)
+
+- [ ] **PD-2.1** Add DB retention policy: auto-delete sessions older than N days (configurable). Schedule chạy background khi plugin idle.
+  - File mới: `session/db/DbRetentionService.kt`
+  - Setting: "Auto-delete sessions older than X days" (default: 0 = disabled)
+  - Sử dụng `ConversationWriter.deleteSessionsOlderThan()`
+  - Chạy: khi plugin dispose, hoặc mỗi 24h nếu plugin chạy dài
+
+- [ ] **PD-2.2** Add `ConversationService.hasSessionEverExisted()`: phân biệt "chưa có session" vs "đã archive". Thay thế archive() NO-OP.
+  - `sessions` table có data hay không → `SELECT COUNT(*) FROM sessions > 0`
+  - connect panel: Nếu có session cũ trong DB nhưng .current-session-id bị xoá → tự động lấy newest session
+  - UI: show "Resume last session" thay vì "Fresh session"
+
+- [ ] **PD-2.3** Fix `restoreConversation()`: nếu loadRecentEntries trả về empty, fallback tìm session mới nhất từ DB.
+  ```kotlin
+  var result = conversationStore.loadRecentEntries(basePath)
+  if (result == null || result.entries.isEmpty()) {
+      val allSessions = conversationStore.listSessions()
+      if (allSessions.isNotEmpty()) {
+          val newestSession = allSessions.first().id
+          result = conversationStore.loadRecentEntriesBySessionId(newestSession, 50)
+      }
+  }
+  ```
+
+- [ ] **PD-2.4** Thêm "You have N unsaved entries. Reconnect to restore." message khi crash recovery detect mất entries.
+  - So sánh `persistedEntryCount` (lưu trong PropertiesComponent) với entries count trong DB
+  - Nếu không match → show warning banner
+
+- [ ] **PD-2.5** Fix injectConversationHistory: refresh compressed summary mỗi turn (không chỉ 1 lần) nếu flag enabled.
+  ```kotlin
+  // Bỏ flag conversationSummaryInjected, inject mỗi turn
+  if (ActiveAgentManager.getInjectConversationHistory(project)) {
+      val summary = consolePanel().getCompressedSummary()
+      ...
+  }
+  ```
+  - Setting: "Inject conversation history" mặc định: ON (vì nếu agent không support session/load thì cần mỗi turn)
+  - Test: 3 turns liên tiếp với agent không support session/load → mỗi turn thấy history trước đó
+
+### 🟦 Phase 3 — Feature Enhancement (P2)
+
+- [ ] **PD-3.1** ToolCallsWebPanel: thêm filter/session selector để xem tool calls từ sessions cũ.
+  - Dropdown session selector trên ToolCallsWebPanel
+  - Mặc định: session hiện tại
+  - Có thể switch sang session khác
+
+- [ ] **PD-3.2** ChatHistoryConfigurable: chuyển từ JSONL scan sang SQLite query cho danh sách session.
+  ```kotlin
+  val sessions = ConversationService.getInstance(project).listSessions()
+  ```
+  - Bỏ `scanFromIndex()` và `scanFromDirectory()`
+  - Dùng `SessionRecord` từ ConversationService
+
+- [ ] **PD-3.3** Add `query_conversation_history` MCP tool hỗ trợ SQL text search với weighted ranking (full-text search).
+  - Hiện tại chỉ LIKE pattern matching, không có FTS
+  - SQLite có sẵn FTS5 extension → tạo virtual table cho events content
+  - Cần migration v7 để tạo FTS index
+
+- [ ] **PD-3.4** Thêm verbose mode cho ConversationQuery: show execution plan, row count, query time. Dùng cho debug.
+  - `EXPLAIN QUERY PLAN` trước query
+  - Log query duration
+
+- [ ] **PD-3.5** Auto-compact DB: `PRAGMA auto_vacuum = INCREMENTAL` + periodic `PRAGMA incremental_vacuum(N)`. Tránh phình to.
+  - Set khi tạo DB
+  - Chạy sau khi xoá nhiều rows (clearAllHistory, deleteSessionsOlderThan)
+
+### 🟩 Phase 4 — Testing & Hardening (P3)
+
+- [ ] **PD-4.1** Unit test: ConversationWriter test với in-memory SQLite — verify tất cả EntryData subtypes
+- [ ] **PD-4.2** Unit test: ConversationReader test — verify loadEntries, loadRecentEntries, loadTurnEntries
+- [ ] **PD-4.3** Unit test: ConversationReplayer test — verify loadAndSplit, loadNextBatch, edge cases (0 entries, 1 turn, many turns)
+- [ ] **PD-4.4** Integration test: restoreConversation flow — simulate disconnect → reconnect → history restored
+- [ ] **PD-4.5** Integration test: race condition — concurrent appendEntries + deleteAllHistory
+- [ ] **PD-4.6** Performance test: load 10,000 entries → measure restore time, memory usage
+- [ ] **PD-4.7** Test: cross-session turn ID collision — simulate 2 sessions with same turnId
+- [ ] **PD-4.8** Test: DB corrupt recovery — simulate SQLite corruption → verify graceful fallback
+
+### 📋 Phase 5 — Monitoring & Observability (P3)
+
+- [ ] **PD-5.1** Thêm metrics: conversation.db size, number of sessions, total turns, total events
+- [ ] **PD-5.2** Thêm log: mỗi appendNewEntries log số entries persisted + sessionId
+- [ ] **PD-5.3** Thêm health check: DB connection pool status, WAL file size
+- [ ] **PD-5.4** Thêm warning: khi conversation.db > 100MB, suggest clear old sessions
+
+---
+
+## 18. ƯU TIÊN TRIỂN KHAI
+
+### Sprint 1 (Critical Fixes — 3 days)
+```
+PD-1.1 → PD-1.2 → PD-1.3 → PD-1.4 → PD-1.5
+```
+Sửa các bug P0 gây mất dữ liệu, DB inconsistent.
+
+### Sprint 2 (Data Consistency — 3 days)
+```
+PD-2.1 → PD-2.2 → PD-2.3 → PD-2.4 → PD-2.5
+```
+Cải thiện UX, recovery, và auto-retention.
+
+### Sprint 3 (Feature Enhancement — 4 days)
+```
+PD-3.1 → PD-3.2 → PD-3.3 → PD-3.4 → PD-3.5
+```
+
+### Sprint 4 (Testing — 3 days)
+```
+PD-4.1 → PD-4.2 → PD-4.3 → PD-4.4 → PD-4.5 → PD-4.6 → PD-4.7 → PD-4.8
+```
+
+### Sprint 5 (Observability — 2 days)
+```
+PD-5.1 → PD-5.2 → PD-5.3 → PD-5.4
+```
