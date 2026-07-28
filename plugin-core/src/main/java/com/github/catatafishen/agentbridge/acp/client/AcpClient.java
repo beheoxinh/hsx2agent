@@ -2305,21 +2305,19 @@ public abstract class AcpClient extends AbstractAgentClient {
         for (int i = descendants.size() - 1; i >= 0; i--) {
             descendants.get(i).destroyForcibly();
         }
+        handle.destroyForcibly();
 
-        handle.destroy();
+        // Don't wait — session/close was already sent via ACP before this point.
+        // The agent has received the protocol-level notification and a SIGKILL
+        // guarantees the process is released. Waiting here blocked the shared
+        // pooled thread for 5 seconds, starving other background tasks and
+        // making the IDE feel frozen after a disconnect.
+        // We wait briefly to reap the zombie, but give up fast.
+        if (!process.isAlive()) return;
         try {
-            if (!process.waitFor(STOP_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                for (int i = descendants.size() - 1; i >= 0; i--) {
-                    descendants.get(i).destroyForcibly();
-                }
-                handle.destroyForcibly();
-            }
+            process.waitFor(500, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            for (int i = descendants.size() - 1; i >= 0; i--) {
-                descendants.get(i).destroyForcibly();
-            }
-            handle.destroyForcibly();
         }
     }
 }
