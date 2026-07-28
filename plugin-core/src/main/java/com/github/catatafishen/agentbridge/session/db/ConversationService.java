@@ -42,7 +42,7 @@ public final class ConversationService implements Disposable {
     private static final Logger LOG = Logger.getInstance(ConversationService.class);
     private static final String DB_INIT_FAILED = "ConversationDatabase initialization failed: ";
 
-    private static final String CURRENT_SESSION_FILE = ".current-session-id";
+    static final String CURRENT_SESSION_FILE = ".current-session-id";
     private static final int MAX_SESSION_NAME_LENGTH = 60;
 
     private final Project project;
@@ -418,6 +418,30 @@ public final class ConversationService implements Disposable {
                 transientSessionId = UUID.randomUUID().toString();
             }
             return transientSessionId;
+        }
+    }
+
+    /**
+     * Returns the current active session UUID if the {@code .current-session-id} file exists,
+     * or {@code null} if no session file has been persisted yet.
+     *
+     * <p>Unlike {@link #getCurrentSessionId}, this method does NOT create the file when missing.
+     * Use this in flows that must distinguish "no file" from "file exists":
+     * <ul>
+     *   <li>{@code archiveConversation()} — avoid recreating the file after user chose "Fresh Session"</li>
+     *   <li>{@code restoreConversation()} — detect whether a session was explicitly discarded</li>
+     * </ul>
+     */
+    @Nullable
+    public String getCurrentSessionIdIfExists(@Nullable String basePath) {
+        File idFile = currentSessionIdFile(basePath);
+        if (!idFile.exists()) return null;
+        try {
+            String id = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
+            return id.isEmpty() ? null : id;
+        } catch (IOException e) {
+            LOG.warn("Could not read current-session-id", e);
+            return null;
         }
     }
 

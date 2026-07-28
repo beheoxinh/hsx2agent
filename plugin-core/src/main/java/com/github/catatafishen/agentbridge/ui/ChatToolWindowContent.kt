@@ -421,6 +421,8 @@ class ChatToolWindowContent(
         setSendingState(false)  // Ensure send button is enabled
         notifyWebServerConnected()
         checkGitAndPromptInit()
+        // Start periodic DB retention (idempotent — safe to call on reconnect)
+        com.github.catatafishen.agentbridge.session.db.DbRetentionService.getInstance(project).startPeriodic()
     }
 
     private fun checkGitAndPromptInit() {
@@ -3489,6 +3491,8 @@ class ChatToolWindowContent(
         }
     }
 
+    private val PREF_LAST_PERSISTED_TURN_COUNT = "agentbridge.lastPersistedTurnCount"
+
     /**
      * Appends any entries written since the last persist to disk (append-only, no overwrite).
      * Tracks [persistedEntryCount] so only genuinely new entries are flushed each call.
@@ -3504,6 +3508,19 @@ class ChatToolWindowContent(
             lastIncrementalSaveMs = System.currentTimeMillis()
             conversationStore.appendEntriesAsync(project.basePath, newEntries)
             persistedEntryCount = allEntries.size
+            persistTurnCountCheckpoint()
+        }
+    }
+
+    /**
+     * Persists a checkpoint of the current turn count so crash recovery can detect
+     * whether entries were lost between the last save and the crash.
+     */
+    private fun persistTurnCountCheckpoint() {
+        val promptCount = conversationReplayer.totalPromptCount()
+        if (promptCount > 0) {
+            com.intellij.ide.util.PropertiesComponent.getInstance(project)
+                .setValue(PREF_LAST_PERSISTED_TURN_COUNT, promptCount, 0)
         }
     }
 
@@ -3525,6 +3542,7 @@ class ChatToolWindowContent(
         conversationStore.appendEntriesAsync(project.basePath, newEntries)
         conversationStore.awaitPendingSave(3000)
         persistedEntryCount = allEntries.size
+        persistTurnCountCheckpoint()
     }
 
     /**
@@ -3562,13 +3580,22 @@ class ChatToolWindowContent(
         LiveToolCallService.getInstance(project).clear()
         ApplicationManager.getApplication().executeOnPooledThread {
             V1ToV2Migrator.migrateIfNeeded(project.basePath)
+            // Check if .current-session-id existed BEFORE we do anything.
+            // If it was explicitly deleted by resetCurrentSessionId() (user chose "Fresh Session"),
+            // do NOT fallback to an unrelated old session.
+            val sessionIdFile = java.io.File(
+                com.github.catatafishen.agentbridge.session.exporters.ExportUtils.sessionsDir(project),
+                ConversationService.CURRENT_SESSION_FILE
+            )
+            val hadSessionIdFile = sessionIdFile.exists()
             // Try loading from .current-session-id first.
             var result = conversationStore.loadRecentEntries(project.basePath)
             var entries = result?.entries() ?: emptyList()
             var hasMoreOnDisk = result?.hasMoreOnDisk() ?: false
-            // Fallback: if the session file is gone (e.g. fresh connect after "None" choice),
-            // but sessions exist in the DB, restore the newest session automatically.
-            if (entries.isEmpty()) {
+            // Fallback: only when the session file exists but references a now-deleted session
+            // (e.g. crash recovery after deleteAllHistory). Do NOT fallback when the file was
+            // explicitly deleted — that means the user chose "None (fresh session)".
+            if (entries.isEmpty() && hadSessionIdFile) {
                 val allSessions = conversationStore.listSessions()
                 if (allSessions.isNotEmpty()) {
                     val newestSession = allSessions.first().id
@@ -3579,11 +3606,29 @@ class ChatToolWindowContent(
                     }
                 }
             }
+            // Detect crash recovery: compare the last checkpointed turn count (from PropertiesComponent,
+            // which survives process crashes) with the actual count in the restored session.
+            // If fewer turns were recovered than expected, the user had unsaved entries.
+            val lastKnownTurnCount = com.intellij.ide.util.PropertiesComponent.getInstance(project)
+                .getInt(PREF_LAST_PERSISTED_TURN_COUNT, 0)
+            val actualPromptCount = conversationReplayer.totalPromptCount()
+
             ApplicationManager.getApplication().invokeLater {
                 if (entries.isNotEmpty()) {
                     restoreEntries(entries, hasMoreOnDisk)
                     updateSessionInfo()
                 }
+                // Show crash recovery warning if data was lost
+                if (lastKnownTurnCount > 0 && actualPromptCount < lastKnownTurnCount) {
+                    val lost = lastKnownTurnCount - actualPromptCount
+                    val msg = if (lost == 1) "1 turn may have been lost in the last session due to an unexpected shutdown."
+                    else "$lost turns may have been lost in the last session due to an unexpected shutdown."
+                    if (::statusBanner.isInitialized) statusBanner?.showWarning(msg)
+                }
+                // Reset checkpoint so subsequent sessions don't show stale warnings
+                com.intellij.ide.util.PropertiesComponent.getInstance(project)
+                    .setValue(PREF_LAST_PERSISTED_TURN_COUNT, 0, 0)
+
                 onComplete()
             }
         }
@@ -3839,10 +3884,16 @@ class ChatToolWindowContent(
             if (entries.isNotEmpty()) {
                 val tracker = com.github.catatafishen.agentbridge.memory.mining.MiningTracker.getInstance(project)
                 tracker.startTurnMining()
-                val sessionId = conversationStore.getCurrentSessionId(project.basePath)
-                val miner = com.github.catatafishen.agentbridge.memory.mining.TurnMiner(project)
-                miner.mineTurn(entries, sessionId, agentManager.activeProfile.displayName)
-                    .whenComplete { _, _ -> tracker.stop() }
+                // Use getCurrentSessionIdIfExists to avoid recreating the .current-session-id file
+                // that was deleted by resetCurrentSessionId() (user chose "Fresh Session").
+                val sessionId = conversationStore.getCurrentSessionIdIfExists(project.basePath)
+                if (sessionId != null) {
+                    val miner = com.github.catatafishen.agentbridge.memory.mining.TurnMiner(project)
+                    miner.mineTurn(entries, sessionId, agentManager.activeProfile.displayName)
+                        .whenComplete { _, _ -> tracker.stop() }
+                } else {
+                    tracker.stop()
+                }
             }
         }
         conversationStore.archive()

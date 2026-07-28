@@ -115,6 +115,16 @@ class ChatHistoryConfigurable(private val project: Project) :
                     )
             }
         }
+        group("Auto-Retention") {
+            row("Auto-delete sessions older than:") {
+                spinner(0..365, 7)
+                    .comment("Days to keep sessions (0 = disabled). Sessions older than this will be automatically purged on IDE startup and every 24 hours while the plugin runs.")
+                    .bindIntValue(
+                        { com.github.catatafishen.agentbridge.session.db.DbRetentionService.getRetentionDays(project) },
+                        { com.github.catatafishen.agentbridge.session.db.DbRetentionService.setRetentionDays(project, it) }
+                    )
+            }
+        }
         group("Unified Database History") {
             row {
                 button("Clear All History") {
