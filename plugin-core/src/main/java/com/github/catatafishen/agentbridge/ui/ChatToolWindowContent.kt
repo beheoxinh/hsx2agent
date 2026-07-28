@@ -970,7 +970,6 @@ class ChatToolWindowContent(
         agentManager.addSwitchListener {
             conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
             promptOrchestrator.currentSessionId = null
-            promptOrchestrator.conversationSummaryInjected = false
             ApplicationManager.getApplication().invokeLater {
                 copilotBanner?.triggerCheck()
             }
@@ -3493,20 +3492,30 @@ class ChatToolWindowContent(
     /**
      * Appends any entries written since the last persist to disk (append-only, no overwrite).
      * Tracks [persistedEntryCount] so only genuinely new entries are flushed each call.
+     *
+     * Fire-and-forget: schedules an async write on a pooled thread. Does NOT block EDT.
+     * For synchronous flush (disconnect, reset), use [flushNewEntriesSync] instead.
      */
     private fun appendNewEntries() {
         ApplicationManager.getApplication().invokeLater {
-            flushNewEntriesSync()
+            val allEntries = conversationReplayer.deferredEntries() + chatConsolePanel.getEntries()
+            val newEntries = allEntries.drop(persistedEntryCount)
+            if (newEntries.isEmpty()) return@invokeLater
+            lastIncrementalSaveMs = System.currentTimeMillis()
+            conversationStore.appendEntriesAsync(project.basePath, newEntries)
+            persistedEntryCount = allEntries.size
         }
     }
 
     /**
-     * Synchronously collects and persists all un-persisted entries without EDT scheduling.
-     * Blocks until the async write completes (up to 3s timeout).
-     * Designed for infrequent operations (disconnect, reset) where we must guarantee
-     * data is saved before clearing in-memory state.
+     * Synchronously collects, persists, and WAITS (up to 3s) for all un-persisted entries.
+     * Blocks the current thread until the write completes or timeout elapses.
      *
-     * Safe to call from EDT — the write is async (pooled thread), only the wait is synchronous.
+     * Intended ONLY for infrequent operations (disconnect, reset) where we MUST guarantee
+     * data is on disk before clearing in-memory state. Do NOT call from normal turn flow.
+     *
+     * Safe to call from EDT — [awaitPendingSave] catches all exceptions internally
+     * and never propagates, so a timeout does not crash the UI.
      */
     private fun flushNewEntriesSync() {
         val allEntries = conversationReplayer.deferredEntries() + chatConsolePanel.getEntries()
@@ -3553,9 +3562,23 @@ class ChatToolWindowContent(
         LiveToolCallService.getInstance(project).clear()
         ApplicationManager.getApplication().executeOnPooledThread {
             V1ToV2Migrator.migrateIfNeeded(project.basePath)
-            val result = conversationStore.loadRecentEntries(project.basePath)
-            val entries = result?.entries() ?: emptyList()
-            val hasMoreOnDisk = result?.hasMoreOnDisk() ?: false
+            // Try loading from .current-session-id first.
+            var result = conversationStore.loadRecentEntries(project.basePath)
+            var entries = result?.entries() ?: emptyList()
+            var hasMoreOnDisk = result?.hasMoreOnDisk() ?: false
+            // Fallback: if the session file is gone (e.g. fresh connect after "None" choice),
+            // but sessions exist in the DB, restore the newest session automatically.
+            if (entries.isEmpty()) {
+                val allSessions = conversationStore.listSessions()
+                if (allSessions.isNotEmpty()) {
+                    val newestSession = allSessions.first().id
+                    val fallback = conversationStore.loadRecentEntriesBySessionId(newestSession)
+                    if (fallback != null) {
+                        entries = fallback.entries()
+                        hasMoreOnDisk = fallback.hasMoreOnDisk()
+                    }
+                }
+            }
             ApplicationManager.getApplication().invokeLater {
                 if (entries.isNotEmpty()) {
                     restoreEntries(entries, hasMoreOnDisk)
@@ -3719,7 +3742,6 @@ class ChatToolWindowContent(
     private fun resetSessionState() {
         if (!::promptOrchestrator.isInitialized) return
         promptOrchestrator.currentSessionId = null
-        promptOrchestrator.conversationSummaryInjected = false
         billing.billingCycleStartUsed = -1
         billing.resetLocalCounter()
         if (::processingTimerPanel.isInitialized) processingTimerPanel.resetSession()

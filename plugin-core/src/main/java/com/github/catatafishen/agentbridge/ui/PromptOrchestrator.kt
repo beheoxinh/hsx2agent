@@ -76,7 +76,6 @@ class PromptOrchestrator(
 
     internal var currentSessionId: String? = null
     private var lastInitialisedSessionId: String? = null
-    internal var conversationSummaryInjected: Boolean = false
     private var currentPromptThread: Thread? = null
 
     /**
@@ -439,8 +438,10 @@ class PromptOrchestrator(
 
     private fun buildEffectivePrompt(prompt: String, attachments: List<PromptAttachment>): String {
         var effective = PromptEnricher.enrich(prompt, attachments.isNotEmpty())
-        if (!conversationSummaryInjected && ActiveAgentManager.getInjectConversationHistory(project)) {
-            conversationSummaryInjected = true
+        // Inject compressed conversation history every turn when the setting is enabled.
+        // No `once` flag — agents without native session/load need history injected into
+        // every prompt to maintain conversational context across turns.
+        if (ActiveAgentManager.getInjectConversationHistory(project)) {
             val summary = consolePanel().getCompressedSummary()
             if (summary.isNotEmpty()) {
                 // If prompt starts with /, put summary after to preserve slash command detection

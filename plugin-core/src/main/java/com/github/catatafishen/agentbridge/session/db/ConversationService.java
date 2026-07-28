@@ -286,15 +286,32 @@ public final class ConversationService implements Disposable {
             String sessionId = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
             if (sessionId.isEmpty()) return null;
 
-            List<EntryData> entries = reader.loadRecentEntries(sessionId, 50);
-            if (entries.isEmpty()) return null;
-            boolean hasMore = reader.countTurns(sessionId) > 50;
-            return new RecentEntriesResult(entries, hasMore);
+            return loadRecentEntriesBySessionId(sessionId);
         } catch (IOException e) {
             LOG.warn("Could not read current-session-id", e);
             return null;
         } catch (Exception e) {
             LOG.warn("Failed to load recent entries from SQLite", e);
+            return null;
+        }
+    }
+
+    /**
+     * Loads the most recent entries for a specific session ID directly.
+     * Does NOT read .current-session-id — safe for restore fallback flows
+     * where the session file may have been deleted but the session exists in DB.
+     */
+    @Nullable
+    public RecentEntriesResult loadRecentEntriesBySessionId(@NotNull String sessionId) {
+        ConversationReader reader = getOrCreateReader();
+        if (reader == null) return null;
+        try {
+            List<EntryData> entries = reader.loadRecentEntries(sessionId, 50);
+            if (entries.isEmpty()) return null;
+            boolean hasMore = reader.countTurns(sessionId) > 50;
+            return new RecentEntriesResult(entries, hasMore);
+        } catch (Exception e) {
+            LOG.warn("Failed to load recent entries for session " + sessionId, e);
             return null;
         }
     }
@@ -439,6 +456,18 @@ public final class ConversationService implements Disposable {
         String name = promptText.replaceAll("\\s+", " ").trim();
         if (name.length() <= MAX_SESSION_NAME_LENGTH) return name;
         return name.substring(0, MAX_SESSION_NAME_LENGTH - 1) + "…";
+    }
+
+    /**
+     * Returns {@code true} if at least one session has ever been recorded in the
+     * conversation database. Used by the UI to distinguish "first-time user, no history"
+     * from "history exists but current session ID was deleted".
+     */
+    public boolean hasSessionEverExisted() {
+        ConversationReader reader = getOrCreateReader();
+        if (reader == null) return false;
+        List<ConversationReader.SessionRecord> dbSessions = reader.listSessions();
+        return !dbSessions.isEmpty();
     }
 
     /**
