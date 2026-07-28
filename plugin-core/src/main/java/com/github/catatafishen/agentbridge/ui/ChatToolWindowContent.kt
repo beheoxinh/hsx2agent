@@ -1782,7 +1782,8 @@ class ChatToolWindowContent(
                 val stagedDiff = runGitCommand(root, "diff", "--cached", "--name-status")
                 if (stagedDiff.isBlank()) return@executeOnPooledThread
 
-                val message = buildAutoCommitMessage(stagedDiff)
+                val statOutput = runGitCommand(root, "diff", "--cached", "--stat")
+                val message = buildAutoCommitMessage(stagedDiff, statOutput)
                 val commitResult = runGitCommand(root, "commit", "-m", message)
 
                 ApplicationManager.getApplication().invokeLater {
@@ -1833,41 +1834,40 @@ class ChatToolWindowContent(
         return output
     }
 
-    private fun buildAutoCommitMessage(stagedDiff: String): String {
-        val agentText = consolePanel.getLastResponseText().trim()
-        val suggestion = if (agentText.isNotBlank()) {
-            extractCommitSuggestion(agentText)
-        } else null
-
+    private fun buildAutoCommitMessage(stagedDiff: String, statOutput: String): String {
         val type = detectCommitType(stagedDiff)
-        return if (suggestion != null && suggestion.isNotEmpty()) {
-            val msg = "$type: $suggestion"
-            if (msg.length <= 100) msg else "${msg.take(97)}..."
-        } else {
-            "$type: ${buildFileSummary(stagedDiff)}"
-        }
+        val scope = extractScope(stagedDiff)
+        val summary = buildStatSummary(statOutput)
+        val prefix = if (scope != null) "$type($scope)" else type
+        return "$prefix: $summary"
     }
 
-    private fun extractCommitSuggestion(text: String): String? {
-        val cleaned = text
-            .replace(Regex("<thinking>.*?</thinking>", RegexOption.DOT_MATCHES_ALL), "")
-            .trim()
-        val para = cleaned.substringBefore("\n\n").trim()
-        val plain = para
-            .replace(Regex("^#+\\s*", RegexOption.MULTILINE), "")
-            .replace(Regex("[*_]{1,2}"), "")
-            .trim()
-        val content = if (plain.length <= 200) plain
-        else plain.split(Regex("(?<=\\.)\\s")).first().trim()
+    /**
+     * Parses `git diff --stat` output into "N files changed, +A, -B" or
+     * "N file changed, +A lines".
+     */
+    private fun buildStatSummary(statOutput: String): String {
+        if (statOutput.isBlank()) return "auto-commit"
+        val last = statOutput.lines().lastOrNull { it.isNotBlank() } ?: return "auto-commit"
+        // stat format example: " 5 files changed, 120 insertions(+), 34 deletions(-)"
+        return last.trim()
+    }
 
-        return content
-            .removePrefix("I've ").removePrefix("I have ")
-            .removePrefix("Here's ").removePrefix("This ")
-            .removePrefix("Now we ").removePrefix("Now ")
-            .replaceFirstChar { it.lowercase() }
-            .removeSuffix(".")
-            .trim()
-            .takeIf { it.length in 10..200 }
+    /**
+     * Scans the staged diff for a common module/area prefix to use as a conventional
+     * commit scope (e.g. "feat(api): ..."). Returns null when no single scope dominates.
+     */
+    private fun extractScope(stagedDiff: String): String? {
+        val paths = stagedDiff.lines().filter { it.isNotBlank() }.map { it.drop(1).trim() }
+        if (paths.isEmpty()) return null
+        val scopes = paths.mapNotNull { p ->
+            // Take the first directory component
+            val parts = p.split("/")
+            if (parts.size >= 2) parts[0] else null
+        }.filter { it.isNotEmpty() && it != "src" }
+        // Only return a scope when all non-src paths share the same first directory
+        val distinct = scopes.distinct()
+        return if (distinct.size == 1) distinct[0] else null
     }
 
     private fun detectCommitType(stagedDiff: String): String {
@@ -1887,24 +1887,6 @@ class ChatToolWindowContent(
         if (lines.any { it.startsWith("M") }) return if (hasTestChanges && !hasSourceChanges) "test" else "fix"
         if (lines.any { it.startsWith("R") }) return "refactor"
         return "chore"
-    }
-
-    private fun buildFileSummary(stagedDiff: String): String {
-        val files = mutableMapOf<Char, MutableList<String>>()
-        for (line in stagedDiff.lines().filter { it.isNotBlank() }) {
-            files.computeIfAbsent(line.first()) { mutableListOf() }.add(line.drop(1).trim())
-        }
-        val allNames = files.values.flatten()
-        val parts = mutableListOf<String>()
-        when {
-            allNames.size <= 2 -> parts.add(allNames.joinToString(", ") { it.substringAfterLast("/") })
-            allNames.size <= 5 -> {
-                parts.add(allNames.first().substringAfterLast("/"))
-                parts.add("and ${allNames.size - 1} others")
-            }
-            else -> parts.add("${allNames.size} files")
-        }
-        return parts.joinToString(" ")
     }
 
     private fun restoreUnhandledNudgeIfNeeded() {

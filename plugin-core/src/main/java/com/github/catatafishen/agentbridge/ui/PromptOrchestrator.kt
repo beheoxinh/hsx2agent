@@ -9,6 +9,8 @@ import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.CodeChangeTracker
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.*
+import com.github.catatafishen.agentbridge.settings.GitPolicy
+import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -277,7 +279,7 @@ class PromptOrchestrator(
 
             val modelId = prepareModelAndTurnState(selectedModelId, isAutoCommit, isContinue)
             val attachments = contextManager.buildPromptAttachments(contextItems.ifEmpty { null })
-            val effectivePrompt = buildEffectivePrompt(prompt, attachments)
+            val effectivePrompt = buildEffectivePrompt(prompt, attachments, isAutoCommit)
             turnEffectivePrompt = effectivePrompt
             turnAttachments = attachments
             addContextEntries(attachments, contextItems)
@@ -435,7 +437,11 @@ class PromptOrchestrator(
         }
     }
 
-    private fun buildEffectivePrompt(prompt: String, attachments: List<PromptAttachment>): String {
+    private fun buildEffectivePrompt(
+        prompt: String,
+        attachments: List<PromptAttachment>,
+        isAutoCommit: Boolean = false,
+    ): String {
         var effective = PromptEnricher.enrich(prompt, attachments.isNotEmpty())
         if (!conversationSummaryInjected && ActiveAgentManager.getInjectConversationHistory(project)) {
             conversationSummaryInjected = true
@@ -449,7 +455,34 @@ class PromptOrchestrator(
                 }
             }
         }
+        effective = appendAutoCommitInstruction(effective, isAutoCommit)
         return effective
+    }
+
+    /**
+     * Appends a clear instruction block telling the agent whether it should
+     * auto-commit changes or leave them for the user. Respects Git Policy (SAFE
+     * mode blocks git write tools entirely) and the Auto-commit toggle.
+     */
+    private fun appendAutoCommitInstruction(prompt: String, isAutoCommit: Boolean): String {
+        val settings = McpServerSettings.getInstance(project)
+        val gitPolicy = GitPolicy.fromName(settings.gitPolicy)
+        val gitCommitDisabled = settings.disabledToolIds.contains("git_commit")
+
+        return when {
+            // SAFE policy: git write tools are disabled — agent cannot commit
+            gitPolicy == GitPolicy.SAFE || gitCommitDisabled -> {
+                "$prompt\n\n## Git Policy\nGit write tools (git_commit, git_stage, etc.) are DISABLED by policy. Do NOT attempt to use them."
+            }
+            // Auto-commit ON: agent should commit on its own
+            isAutoCommit -> {
+                "$prompt\n\n## Auto Commit\nAuto-commit is ENABLED. When you finish making changes, run `git_commit` with a descriptive conventional commit message summarizing what changed and why. Do NOT ask the user for permission or confirmation."
+            }
+            // Auto-commit OFF: agent must NOT commit
+            else -> {
+                "$prompt\n\n## Auto Commit\nAuto-commit is DISABLED. Do NOT call `git_commit`. Leave all changes unstaged for the user to review and commit manually."
+            }
+        }
     }
 
     private fun dispatchPromptWithRetry(
