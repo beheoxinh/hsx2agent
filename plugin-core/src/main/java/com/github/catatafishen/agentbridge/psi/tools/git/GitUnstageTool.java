@@ -58,6 +58,8 @@ public final class GitUnstageTool extends GitTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        flushAndSave();
+
         String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
         String ambiError = requireUnambiguousRepo(repoParam, "git_unstage");
         if (ambiError != null) return ambiError;
