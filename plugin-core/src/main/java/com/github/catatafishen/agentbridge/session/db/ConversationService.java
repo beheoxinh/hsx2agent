@@ -422,6 +422,56 @@ public final class ConversationService implements Disposable {
     }
 
     /**
+     * Sets the {@code .current-session-id} file to the given session UUID.
+     * Uses the same path resolution as {@link #getCurrentSessionId} so callers
+     * never accidentally write to a different directory.
+     */
+    public void setCurrentSessionId(@Nullable String basePath, @NotNull String sessionId) {
+        File idFile = currentSessionIdFile(basePath);
+        try {
+            //noinspection ResultOfMethodCallIgnored
+            idFile.getParentFile().mkdirs();
+            Files.writeString(idFile.toPath(), sessionId, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException e) {
+            LOG.warn("Could not set current-session-id to " + sessionId, e);
+        }
+    }
+
+    /**
+     * Returns the session ID stored in the checkpoint, or {@code null} if no
+     * checkpoint was recorded. Used by crash recovery to ensure the warning
+     * only fires when restoring the same session that had the checkpoint.
+     */
+    @Nullable
+    public static String getCheckpointSessionId(@NotNull Project project) {
+        return com.intellij.ide.util.PropertiesComponent.getInstance(project)
+            .getValue("agentbridge.lastPersistedSessionId");
+    }
+
+    /**
+     * Stores both the turn count and the session ID in the checkpoint so crash
+     * recovery can verify it is restoring the same session before warning.
+     */
+    public static void setCheckpoint(@NotNull Project project, int turnCount, @NotNull String sessionId) {
+        com.intellij.ide.util.PropertiesComponent.getInstance(project)
+            .setValue("agentbridge.lastPersistedTurnCount", turnCount, 0);
+        com.intellij.ide.util.PropertiesComponent.getInstance(project)
+            .setValue("agentbridge.lastPersistedSessionId", sessionId, null);
+    }
+
+    /**
+     * Resets the crash-recovery checkpoint so a subsequent restore does not
+     * show a stale warning. Called after successful restore and on fresh session.
+     */
+    public static void resetCheckpoint(@NotNull Project project) {
+        com.intellij.ide.util.PropertiesComponent.getInstance(project)
+            .setValue("agentbridge.lastPersistedTurnCount", 0, 0);
+        com.intellij.ide.util.PropertiesComponent.getInstance(project)
+            .setValue("agentbridge.lastPersistedSessionId", null, null);
+    }
+
+    /**
      * Returns the current active session UUID if the {@code .current-session-id} file exists,
      * or {@code null} if no session file has been persisted yet.
      *

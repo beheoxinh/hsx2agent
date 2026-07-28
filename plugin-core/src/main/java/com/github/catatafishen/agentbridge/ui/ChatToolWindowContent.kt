@@ -3523,14 +3523,17 @@ class ChatToolWindowContent(
     }
 
     /**
-     * Persists a checkpoint of the current turn count so crash recovery can detect
-     * whether entries were lost between the last save and the crash.
+     * Persists a checkpoint of the current turn count AND session ID so crash recovery
+     * can detect whether entries were lost AND only show the warning when restoring
+     * the exact same session that had the checkpoint.
      */
     private fun persistTurnCountCheckpoint() {
         val promptCount = conversationReplayer.totalPromptCount()
-        if (promptCount > 0) {
-            com.intellij.ide.util.PropertiesComponent.getInstance(project)
-                .setValue(PREF_LAST_PERSISTED_TURN_COUNT, promptCount, 0)
+        val sessionId = conversationStore.getCurrentSessionIdIfExists(project.basePath)
+        if (promptCount > 0 && sessionId != null) {
+            com.github.catatafishen.agentbridge.session.db.ConversationService.setCheckpoint(
+                project, promptCount, sessionId
+            )
         }
     }
 
@@ -3636,34 +3639,40 @@ class ChatToolWindowContent(
                     }
                 }
             }
-            // Detect crash recovery: compare the last checkpointed turn count (from PropertiesComponent,
-            // which survives process crashes) with the actual count in the restored session.
-            // If fewer turns were recovered than expected, the user had unsaved entries.
-            // Read the checkpoint BEFORE invokeLater — PropertiesComponent is thread-safe
-            // and the value must not change between read and the UI callback.
+            // Detect crash recovery: compare the last checkpointed turn count AND session ID
+            // (from PropertiesComponent, which survives process crashes) with the actual
+            // count in the restored session. Only warn when both the session ID AND the
+            // turn count match — prevents false positives when switching sessions.
             val lastKnownTurnCount = com.intellij.ide.util.PropertiesComponent.getInstance(project)
                 .getInt(PREF_LAST_PERSISTED_TURN_COUNT, 0)
+            // Read the saved session ID from the new static helper
+            val lastKnownSessionId = com.github.catatafishen.agentbridge.session.db.ConversationService
+                .getCheckpointSessionId(project)
 
             ApplicationManager.getApplication().invokeLater {
                 if (entries.isNotEmpty()) {
                     restoreEntries(entries, hasMoreOnDisk)
                     updateSessionInfo()
                 }
-                // Crash recovery detection: compare last checkpoint (survives crash via
-                // PropertiesComponent) with the PROPERLY restored turn count.
-                // IMPORTANT: this must run AFTER restoreEntries() above, which populates
-                // conversationReplayer.totalPromptCount(). Computing it earlier would
-                // always return 0 and falsely trigger the warning on every session restore.
+                // Only show crash recovery warning if BOTH conditions hold:
+                // 1. A checkpoint exists (lastKnownTurnCount > 0)
+                // 2. The restored session is the SAME as the checkpoint session
+                // 3. Fewer turns were restored than checkpointed (actual data loss)
+                // This prevents false warnings when:
+                //   - User resets session and starts fresh (no session file → lastKnownSessionId == null)
+                //   - User switches to a different session via combo (session IDs differ)
+                //   - User reconnects after "clear and restart" (different session)
                 val restoredPromptCount = conversationReplayer.totalPromptCount()
-                if (lastKnownTurnCount > 0 && restoredPromptCount < lastKnownTurnCount) {
+                val restoredSessionId = conversationStore.getCurrentSessionIdIfExists(project.basePath)
+                val isSameSession = lastKnownSessionId != null && restoredSessionId == lastKnownSessionId
+                if (lastKnownTurnCount > 0 && isSameSession && restoredPromptCount < lastKnownTurnCount) {
                     val lost = lastKnownTurnCount - restoredPromptCount
                     val msg = if (lost == 1) "1 turn may have been lost in the last session due to an unexpected shutdown."
                     else "$lost turns may have been lost in the last session due to an unexpected shutdown."
                     if (statusBanner != null) statusBanner?.showWarning(msg)
                 }
                 // Reset checkpoint so subsequent sessions don't show stale warnings
-                com.intellij.ide.util.PropertiesComponent.getInstance(project)
-                    .setValue(PREF_LAST_PERSISTED_TURN_COUNT, 0, 0)
+                com.github.catatafishen.agentbridge.session.db.ConversationService.resetCheckpoint(project)
 
                 onComplete()
             }
@@ -3859,6 +3868,9 @@ class ChatToolWindowContent(
         // This is separate from archive() because archive() must NOT delete the ID during
         // agent switches — doExport still needs the session ID for subsequent export steps.
         conversationStore.resetCurrentSessionId(project.basePath)
+        // Reset crash-recovery checkpoint so a subsequent restore does not falsely warn
+        // about lost turns from the previous session.
+        com.github.catatafishen.agentbridge.session.db.ConversationService.resetCheckpoint(project)
     }
 
     fun resetSessionKeepingHistory() {

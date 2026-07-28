@@ -1597,15 +1597,11 @@ class AcpConnectPanel(
     }
 
     private fun switchCurrentSession(sessionId: String) {
-        val basePath = project.basePath ?: return
-        val sessionsDir = java.io.File(basePath, ".agent-work/sessions")
-        val currentIdFile = java.io.File(sessionsDir, ".current-session-id")
-        try {
-            sessionsDir.mkdirs()
-            currentIdFile.writeText(sessionId)
-        } catch (e: Exception) {
-            statusBanner.showError("Failed to switch session: ${e.message}")
-        }
+        // Use ConversationService.setCurrentSessionId() which writes to the SAME
+        // path as getCurrentSessionId() reads from, preventing the path mismatch
+        // that previously caused history loss when resuming a session.
+        val service = ConversationService.getInstance(project)
+        service.setCurrentSessionId(project.basePath, sessionId)
     }
 
     // ── Public API for AgenticCopilotToolWindowContent ──

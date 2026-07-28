@@ -911,6 +911,24 @@ Các bug gây mất dữ liệu hoặc DB inconsistent — cần sửa ngay.
   - Xoá field + references trong resetSessionState()
   - Commit: `48426f8`
 
+### 🟥 NEW Critical Bugs (Found 2026-07-29 — P0)
+
+- [x] **PD-2.6** Fix path mismatch: `AcpConnectPanel.switchCurrentSession()` hardcoded `.agent-work/sessions/` while all other code uses `ExportUtils.sessionsDir(project)` = `.agentbridge/sessions/`.
+  - **Root Cause**: `switchCurrentSession()` wrote `.current-session-id` to `{project}/.agent-work/sessions/`, but `ConversationService.getCurrentSessionId()` and `loadRecentEntries()` read from `{project}/.agentbridge/sessions/` (or configured storage root). File in wrong directory → session combo selection had NO EFFECT.
+  - **Impact**: After `resetCurrentSessionId()` + session selection → `.agent-work/sessions/.current-session-id` written but never read → history appeared blank. The "turns may have been lost" warning also fired falsely when the wrong session was restored.
+  - **Fix**: Replaced `switchCurrentSession()` body with `conversationStore.setCurrentSessionId()` which uses the SAME `currentSessionIdFile()` path as all other code.
+  - **File**: `AcpConnectPanel.kt:1599-1605`
+
+- [x] **PD-2.7** Fix crash recovery checkpoint not namespaced by session ID → false positive warning on session switch.
+  - **Root Cause**: `PREF_LAST_PERSISTED_TURN_COUNT` stored turn count only, without session ID. When restoring a different session, the old checkpoint's turn count triggered "N turns may have been lost" even though the new session was intentionally empty.
+  - **Impact**: After reset + new connect → warning "4 turns may have been lost" although no data actually lost.
+  - **Fix**: 
+    1. Added `ConversationService.setCheckpoint(project, turnCount, sessionId)` + `getCheckpointSessionId(project)` + `resetCheckpoint(project)` static helpers — store BOTH turn count and session ID.
+    2. `restoreConversation()` now checks `isSameSession = lastKnownSessionId == restoredSessionId` before showing warning.
+    3. `resetSession()` calls `resetCheckpoint()` to clear stale checkpoint.
+    4. `persistTurnCountCheckpoint()` uses new `setCheckpoint()` instead of raw PropertiesComponent.
+  - **Files**: `ConversationService.java:447-472`, `ChatToolWindowContent.kt:3530-3538`, `ChatToolWindowContent.kt:3646-3675`, `ChatToolWindowContent.kt:3871-3873`
+
 ### 🟦 Phase 3 — Feature Enhancement (P2)
 
 - [ ] **PD-3.1** ToolCallsWebPanel: thêm filter/session selector để xem tool calls từ sessions cũ.
@@ -948,6 +966,16 @@ Các bug gây mất dữ liệu hoặc DB inconsistent — cần sửa ngay.
 - [ ] **PD-4.6** Performance test: load 10,000 entries → measure restore time, memory usage
 - [ ] **PD-4.7** Test: cross-session turn ID collision — simulate 2 sessions with same turnId
 - [ ] **PD-4.8** Test: DB corrupt recovery — simulate SQLite corruption → verify graceful fallback
+- [ ] **PD-4.9** (P0) Test path mismatch: verify switchCurrentSession() writes to same path as getCurrentSessionId() reads from
+- [ ] **PD-4.10** (P0) Test crash recovery namespace: verify warning only fires when same session ID restored
+- [ ] **PD-4.11** (P0) Test resetSession cleanup: verify checkpoint cleared on fresh session
+
+### 📋 Phase 5 — Monitoring & Observability (P3)
+
+- [ ] **PD-5.1** Thêm metrics: conversation.db size, number of sessions, total turns, total events
+- [ ] **PD-5.2** Thêm log: mỗi appendNewEntries log số entries persisted + sessionId
+- [ ] **PD-5.3** Thêm health check: DB connection pool status, WAL file size
+- [ ] **PD-5.4** Thêm warning: khi conversation.db > 100MB, suggest clear old sessions
 
 ### 📋 Phase 5 — Monitoring & Observability (P3)
 
