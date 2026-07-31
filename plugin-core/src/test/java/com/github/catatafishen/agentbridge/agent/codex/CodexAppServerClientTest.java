@@ -90,6 +90,27 @@ class CodexAppServerClientTest {
         assertEquals(inner.toString(), invokeExtractTurnErrorMessage(turn));
     }
 
+    // ── decorateConfigError (package-private static) ───────────────────
+
+    @Test
+    void decorateConfigError_nullReturnsEmpty() {
+        assertEquals("", CodexAppServerClient.decorateConfigError(null));
+    }
+
+    @Test
+    void decorateConfigError_plainMessageUnchanged() {
+        String msg = "some random error";
+        assertEquals(msg, CodexAppServerClient.decorateConfigError(msg));
+    }
+
+    @Test
+    void decorateConfigError_configLoadFailureGetsHint() {
+        String msg = "JSON-RPC error: failed to load configuration: /home/alienware/.codex/config.toml:53:4";
+        String decorated = CodexAppServerClient.decorateConfigError(msg);
+        assertTrue(decorated.startsWith(msg));
+        assertTrue(decorated.contains("codex doctor"));
+    }
+
     // ── parseModelEntry (private static) ────────────────────────────────
 
     @Test

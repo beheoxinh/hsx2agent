@@ -625,8 +625,25 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             Thread.currentThread().interrupt();
             throw new AgentException("thread/start interrupted", ie, true);
         } catch (Exception e) {
-            throw new AgentException("thread/start failed: " + e.getMessage(), e, true);
+            throw new AgentException("thread/start failed: " + decorateConfigError(e.getMessage()), e, true);
         }
+    }
+
+    /**
+     * Detects Codex config-file load failures (e.g. invalid TOML in
+     * {@code ~/.codex/config.toml}) and appends actionable guidance, since the
+     * raw Codex error ("failed to load configuration: ...:53:4: unexpected key
+     * or value") gives no hint about how to resolve it.
+     */
+    static String decorateConfigError(@Nullable String raw) {
+        if (raw == null) return "";
+        String lower = raw.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("failed to load configuration")) {
+            String hint = " — Codex could not parse its config file (likely ~/.codex/config.toml or "
+                + "config.local.toml). Fix the TOML syntax at the reported line, or run 'codex doctor'.";
+            return raw + hint;
+        }
+        return raw;
     }
 
     @NotNull
