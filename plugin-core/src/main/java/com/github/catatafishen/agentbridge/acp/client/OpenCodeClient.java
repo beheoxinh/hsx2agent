@@ -146,23 +146,142 @@ public final class OpenCodeClient extends AcpClient {
 
     @Override
     protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
-        Map<String, String> env = new java.util.HashMap<>(buildPermissionConfig());
-        // MISE_CD tells mise which directory to use as its "current directory" for
-        // resolving tasks and config. Without it, the mise shim inherits CWD from
-        // ProcessBuilder (the project dir), crashes if the project has no mise.toml:
-        //   "mise ERROR no tasks defined in /path/to/project"
-        // Setting MISE_CD to the user home lets mise find ~/.config/mise/config.toml.
-        String home = System.getProperty("user.home");
-        if (home != null && !home.isEmpty()) {
-            env.put("MISE_CD", home);
-        }
-        return env;
+        // NOTE: MISE_CD is deliberately NOT set here. The original workaround set
+        // MISE_CD=$HOME to redirect the mise shim away from the project dir when the
+        // project had no mise.toml (mise ERROR no tasks defined in <project>). That
+        // fix masked the real bug: the plugin was launching the MISE BINARY (via a
+        // mise shim symlink) instead of the real opencode binary. Now that
+        // normalizeResolvedBinaryPath() resolves mise shims to the real opencode
+        // binary, MISE_CD is unnecessary and would only pollute the environment for
+        // any mise call opencode makes internally (causing "no tasks defined in ~").
+        return buildPermissionConfig();
     }
 
     @Override
     protected @NotNull String normalizeResolvedBinaryPath(@NotNull String resolvedPath, @NotNull String cwd) {
         String bundled = resolveBundledUnixOpenCodePath(resolvedPath);
-        return bundled != null ? bundled : resolvedPath;
+        if (bundled != null) return bundled;
+        String miseReal = resolveMiseShimOpenCodePath(resolvedPath);
+        return miseReal != null ? miseReal : resolvedPath;
+    }
+
+    /**
+     * Resolves a mise shim/symlink (or the mise binary itself) to the REAL opencode binary.
+     *
+     * <p>When opencode is installed via mise, the PATH contains entries like
+     * {@code ~/.local/share/mise/shims/opencode} (a symlink to {@code mise}) and the
+     * {@code ~/.local/bin/opencode} wrapper script. The plugin's binary detection can
+     * resolve the shim's canonical path to {@code mise} itself, whose version number
+     * (e.g. {@code 2026.6.1}) outranks opencode's real version (e.g. {@code 1.18.4}),
+     * so detection picks {@code mise} as the opencode binary. Launching {@code mise acp}
+     * then fails with {@code "mise ERROR no tasks defined"} because mise interprets
+     * {@code acp} as a task name, not a subcommand.</p>
+     *
+     * <p>This method detects when the resolved path points at the mise binary (via a
+     * shim symlink, the mise install binary, or the {@code mise} name) and asks mise for
+     * the real opencode binary path via {@code mise which opencode}.</p>
+     *
+     * @param resolvedPath the binary path resolved by the detection layer
+     * @return the real opencode binary path, or {@code null} if the resolved path is
+     *         not a mise shim/binary (i.e. already a real opencode binary)
+     */
+    @Nullable
+    static String resolveMiseShimOpenCodePath(@Nullable String resolvedPath) {
+        if (resolvedPath == null || resolvedPath.isBlank() || SystemInfo.isWindows) {
+            return null;
+        }
+        Path path;
+        try {
+            path = Path.of(resolvedPath);
+        } catch (Exception e) {
+            return null;
+        }
+
+        String fileName = path.getFileName() == null ? "" : path.getFileName().toString();
+
+        // A real opencode binary (the actual executable) is not a mise shim — return as-is.
+        // The real binary is named "opencode" and its canonical parent is under a
+        // versioned install dir, not the mise shims directory. If the path is named
+        // "opencode" but is a symlink to the mise binary (mise shim), it must still be
+        // resolved — so only return early for a regular file named "opencode".
+        if ("opencode".equals(fileName) && !Files.isSymbolicLink(path)) {
+            return null;
+        }
+
+        // Check whether the resolved path is a symlink to the mise binary, OR is the
+        // mise binary itself. Both must be rewritten to the real opencode binary.
+        boolean isMise = "mise".equals(fileName) || "mise.exe".equals(fileName);
+        if (!isMise) {
+            try {
+                if (Files.isSymbolicLink(path)) {
+                    Path real = path.toRealPath();
+                    String realName = real.getFileName() == null ? "" : real.getFileName().toString();
+                    isMise = "mise".equals(realName) || "mise.exe".equals(realName);
+                }
+            } catch (IOException e) {
+                LOG.debug("resolveMiseShimOpenCodePath: could not resolve symlink " + resolvedPath, e);
+            }
+        }
+
+        if (!isMise) {
+            return null;
+        }
+
+        // The resolved path is a mise shim/binary — ask mise where opencode really is.
+        // Try a few likely mise binary locations, then fall back to the PATH.
+        String home = System.getProperty("user.home");
+        List<String> miseCandidates = new ArrayList<>();
+        if (home != null && !home.isEmpty()) {
+            miseCandidates.add(home + "/.local/bin/mise");
+            miseCandidates.add(home + "/.local/share/mise/mise");
+            miseCandidates.add(home + "/.config/mise/mise");
+        }
+        miseCandidates.add("/usr/local/bin/mise");
+        miseCandidates.add("/opt/mise/bin/mise");
+
+        for (String misePath : miseCandidates) {
+            if (!new java.io.File(misePath).canExecute()) continue;
+            String real = runMiseWhich(misePath);
+            if (real != null) {
+                LOG.info("OpenCodeClient: resolved mise shim " + resolvedPath
+                    + " to real binary " + real);
+                return real;
+            }
+            break;
+        }
+        return null;
+    }
+
+    /**
+     * Runs {@code mise which opencode} with the given mise binary and returns the
+     * absolute path to the real opencode binary, or {@code null} on failure.
+     */
+    @Nullable
+    private static String runMiseWhich(@NotNull String misePath) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(misePath, "which", "opencode");
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            StringBuilder output = new StringBuilder();
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append('\n');
+                }
+            }
+            if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                return null;
+            }
+            if (process.exitValue() != 0) return null;
+            String real = output.toString().trim();
+            if (!real.contains("/")) return null;
+            return real;
+        } catch (Exception e) {
+            LOG.debug("runMiseWhich failed for " + misePath, e);
+            return null;
+        }
     }
 
     /**

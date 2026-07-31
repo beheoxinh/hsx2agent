@@ -929,6 +929,19 @@ Các bug gây mất dữ liệu hoặc DB inconsistent — cần sửa ngay.
     4. `persistTurnCountCheckpoint()` uses new `setCheckpoint()` instead of raw PropertiesComponent.
   - **Files**: `ConversationService.java:447-472`, `ChatToolWindowContent.kt:3530-3538`, `ChatToolWindowContent.kt:3646-3675`, `ChatToolWindowContent.kt:3871-3873`
 
+### 🟥 NEW Critical Bug (Found 2026-08-01 — P0)
+
+- [x] **PD-2.8** Fix OpenCode connect failure: plugin launches `mise acp` instead of the real opencode binary when opencode is installed via mise.
+  - **Root Cause**: Mise shims symlink to the mise binary. `AgentDetectionService` / `BinaryDetector.findAllBinaryPaths()` deduplicates by canonical path, so the shim `~/.local/share/mise/shims/opencode` becomes `~/.local/bin/mise` (the mise binary). Version detection then runs `mise --version` which returns mise's own version (`2026.6.1`) which outranks opencode's real version (`1.18.4`). Detection picks the mise binary as opencode → launches `mise acp` → mise interprets `acp` as a task name → `mise ERROR no tasks defined in ~` → process exits.
+  - **Log evidence** (PhpStorm): `Launching OpenCode: /home/alienware/.local/bin/mise acp` + `[opencode stderr] mise ERROR no tasks defined in ~`.
+  - **Impact**: Cannot connect to OpenCode when installed via mise. The `MISE_CD=$HOME` workaround (commit `77244a2`) masked the symptom but made it worse (error points to `~`).
+  - **Fix**:
+    1. Added `OpenCodeClient.resolveMiseShimOpenCodePath()` — detects when the resolved path is the mise binary (via shim symlink or the mise name) and resolves the real opencode binary via `mise which opencode`.
+    2. `normalizeResolvedBinaryPath()` now calls `resolveMiseShimOpenCodePath()` after the existing npm-launcher resolution.
+    3. Removed the `MISE_CD=$HOME` workaround from `buildEnvironment()` — it was a band-aid that polluted the environment and caused the `~` variant of the error.
+  - **Tests**: Added 4 tests to `OpenCodeUnixBinaryDetectionTest` (shim symlink, mise binary path, real binary pass-through, null input).
+  - **Files**: `OpenCodeClient.java:147-285`, `OpenCodeUnixBinaryDetectionTest.java:59-111`
+
 ### 🟦 Phase 3 — Feature Enhancement (P2)
 
 - [ ] **PD-3.1** ToolCallsWebPanel: thêm filter/session selector để xem tool calls từ sessions cũ.
