@@ -1,8 +1,8 @@
 plugins {
     id("java")
-    id("org.sonarqube") version "7.3.0.8198"
-    id("org.jetbrains.kotlin.jvm") version "2.3.20" apply false
-    id("org.jetbrains.intellij.platform") version "2.16.0" apply false
+    id("org.sonarqube") version "7.3.1.8318"
+    id("org.jetbrains.kotlin.jvm") version "2.4.10" apply false
+    id("org.jetbrains.intellij.platform") version "2.18.1" apply false
     idea
 }
 
