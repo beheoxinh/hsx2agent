@@ -40,7 +40,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.regex.Pattern;
 
 /**
  * Pi CLI driver that runs {@code pi --mode rpc} as a long-lived subprocess and
@@ -355,7 +354,7 @@ public final class PiCliClient extends AbstractAgentClient {
      * directory is unreadable or the files are absent, so callers fall back to plugin
      * config.
      */
-    private static List<Model> readModelsFromDisk() {
+    static List<Model> readModelsFromDisk() {
         List<Model> result = new ArrayList<>();
         Path root = resolveConfigDir();
         if (root == null || !Files.isDirectory(root)) return result;
@@ -369,7 +368,7 @@ public final class PiCliClient extends AbstractAgentClient {
      *         else {@code ~/.pi/agent}.
      */
     @Nullable
-    private static Path resolveConfigDir() {
+    static Path resolveConfigDir() {
         String override = System.getenv("PI_CODING_AGENT_DIR");
         if (override != null && !override.isBlank()) return Path.of(override);
         String home = System.getProperty("user.home");
@@ -377,21 +376,20 @@ public final class PiCliClient extends AbstractAgentClient {
         return Path.of(home, ".pi", "agent");
     }
 
-    private static void addModelsFromJson(@NotNull Path file, @NotNull List<Model> out) {
+    static void addModelsFromJson(@NotNull Path file, @NotNull List<Model> out) {
         if (!Files.isReadable(file)) return;
         try {
             JsonObject root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
-            // models-store.json: { "<provider>": { "models": [ ... ] } }
-            if (root.has("models") && root.get("models").isJsonObject()) {
-                for (Map.Entry<String, JsonElement> provEntry : root.getAsJsonObject("models").entrySet()) {
-                    addProviderModels(provEntry.getValue(), out);
-                }
-            }
             // models.json: { "providers": { "<id>": { "models": [ ... ] } } }
             if (root.has("providers") && root.get("providers").isJsonObject()) {
                 for (Map.Entry<String, JsonElement> provEntry : root.getAsJsonObject("providers").entrySet()) {
                     addProviderModels(provEntry.getValue(), out);
                 }
+            }
+            // models-store.json: { "<provider>": { "models": [ ... ], "checkedAt": ... } }
+            // Entries without a "models" array (e.g. the "providers" wrapper above) are skipped.
+            for (Map.Entry<String, JsonElement> provEntry : root.entrySet()) {
+                addProviderModels(provEntry.getValue(), out);
             }
         } catch (Exception e) {
             LOG.warn("[pi] failed to parse model file " + file, e);
@@ -412,82 +410,6 @@ public final class PiCliClient extends AbstractAgentClient {
             String desc = optionalString(o, "description");
             out.add(new Model(id, name, desc, o));
         }
-    }
-
-    /**
-     * The Pi model pattern language supports provider-scoped selection
-     * (e.g. {@code 9router/Hsx2Coder}). The plugin's session/new flow passes a bare
-     * model ID that Pi may not accept; default to the full "provider/model" form when
-     * the UI selection already carries it, otherwise keep the raw ID.
-     */
-    @NotNull
-    private static String modelSelectionKey(@NotNull String modelId, @NotNull String currentModelId) {
-        if (modelId.indexOf('/') >= 0) return modelId;
-        String current = currentModelId;
-        if (current == null || !current.contains("/")) return modelId;
-        // Re-scope a bare ID to the provider of the current selection so it survives the
-        // session/new round-trip.
-        return current.substring(0, current.lastIndexOf('/') + 1) + modelId;
-    }
-
-    /**
-     * Checks a candidate model ID against the pattern in {@code settings.json}
-     * {@code enabledModels} (e.g. {@code 9router/*}).
-     */
-    private static boolean isModelEnabled(@NotNull String id, @NotNull List<String> patterns) {
-        if (patterns.isEmpty()) return true;
-        for (String p : patterns) {
-            String pattern = p;
-            boolean negate = false;
-            if (pattern.startsWith("!")) {
-                negate = true;
-                pattern = pattern.substring(1);
-            }
-            boolean matches = pattern.equals(id)
-                || pattern.equals("*")
-                || pattern.endsWith("/*") && id.startsWith(pattern.substring(0, pattern.length() - 1))
-                || Pattern.compile("^" + Pattern.quote(pattern).replace("\\*", ".*") + "$").matcher(id).matches();
-            if (matches) return !negate;
-        }
-        return false;
-    }
-
-    /**
-     * The Pi model pattern language supports provider-scoped selection
-     * (e.g. {@code 9router/Hsx2Coder}). The plugin's session/new flow passes a bare
-     * model ID that Pi may not accept; default to the full "provider/model" form when
-     * the UI selection already carries it, otherwise keep the raw ID.
-     */
-    @NotNull
-    private static String modelSelectionKey(@NotNull String modelId, @NotNull String currentModelId) {
-        if (modelId.indexOf('/') >= 0) return modelId;
-        String current = currentModelId;
-        if (current == null || !current.contains("/")) return modelId;
-        // Re-scope a bare ID to the provider of the current selection so it survives the
-        // session/new round-trip.
-        return current.substring(0, current.lastIndexOf('/') + 1) + modelId;
-    }
-
-    /**
-     * Checks a candidate model ID against the pattern in {@code settings.json}
-     * {@code enabledModels} (e.g. {@code 9router/*}).
-     */
-    private static boolean isModelEnabled(@NotNull String id, @NotNull List<String> patterns) {
-        if (patterns.isEmpty()) return true;
-        for (String p : patterns) {
-            String pattern = p;
-            boolean negate = false;
-            if (pattern.startsWith("!")) {
-                negate = true;
-                pattern = pattern.substring(1);
-            }
-            boolean matches = pattern.equals(id)
-                || pattern.equals("*")
-                || pattern.endsWith("/*") && id.startsWith(pattern.substring(0, pattern.length() - 1))
-                || Pattern.compile("^" + Pattern.quote(pattern).replace("\\*", ".*") + "$").matcher(id).matches();
-            if (matches) return !negate;
-        }
-        return false;
     }
 
     @Override
