@@ -83,6 +83,9 @@ public final class PiCliClient extends AbstractAgentClient {
     private final int mcpPort;
 
     private final AtomicBoolean started = new AtomicBoolean(false);
+    /** Set once the subprocess has ever launched successfully; distinguishes a dead
+     *  process (auto-restart) from "never started" (connect first). */
+    private final AtomicBoolean startedOnce = new AtomicBoolean(false);
     private final AtomicReference<Process> process = new AtomicReference<>();
     private final AtomicReference<Thread> readerThread = new AtomicReference<>();
     private volatile java.io.OutputStream stdin;
@@ -185,6 +188,7 @@ public final class PiCliClient extends AbstractAgentClient {
         process.set(proc);
         stdin = proc.getOutputStream();
         started.set(true);
+        startedOnce.set(true);
         synthSessionId = null;
 
         Thread stderrThread = new Thread(() -> drainStderr(proc), "pi-rpc-stderr-" + proc.pid());
@@ -251,8 +255,20 @@ public final class PiCliClient extends AbstractAgentClient {
     }
 
     @Override
-    public PromptResponse sendPrompt(PromptRequest request, Consumer<SessionUpdate> onUpdate) throws IOException, InterruptedException {
-        if (!isConnected()) throw new IOException(MSG_NOT_STARTED);
+    public PromptResponse sendPrompt(PromptRequest request, Consumer<SessionUpdate> onUpdate) throws Exception {
+        if (!isConnected()) {
+            // The subprocess died at some point (crash / killed / provider exit) but the
+            // manager still holds this client. Throw an IOException whose message matches
+            // PromptErrorClassifier's process-crash pattern so handlePromptError restarts
+            // the agent (restartFresh) instead of leaving the user stuck with a dead pipe.
+            // "not started yet" (fresh client) keeps the plain message — the manager will
+            // start() it on next access.
+            if (startedOnce.get()) {
+                throw new IOException(
+                    "Pi process exited unexpectedly — restarting the agent");
+            }
+            throw new IOException(MSG_NOT_STARTED);
+        }
 
         String message = extractText(request.prompt());
         if (message.isBlank()) {
@@ -308,11 +324,17 @@ public final class PiCliClient extends AbstractAgentClient {
         return readModelsFromDisk();
     }
 
+    @Override
+    public boolean supportsModelGrouping() {
+        // Model display names are provider-qualified ("Provider/Model"); enable the
+        // collapsible grouped picker so custom providers and the Pi catalog stay apart.
+        return true;
+    }
+
     /**
-     * Parses the {@code models.json} (custom providers) and {@code models-store.json}
-     * (catalog) files Pi keeps in its config directory. Returns an empty list when the
-     * directory is unreadable or the files are absent, so callers fall back to plugin
-     * config.
+     * Reads Pi's on-disk model catalog ({@code models.json} custom providers and
+     * {@code models-store.json} catalog). Returns an empty list when the directory is
+     * unreadable or the files are absent, so callers fall back to plugin config.
      */
     static List<Model> readModelsFromDisk() {
         List<Model> result = new ArrayList<>();
@@ -336,27 +358,35 @@ public final class PiCliClient extends AbstractAgentClient {
         return Path.of(home, ".pi", "agent");
     }
 
+    /**
+     * Parses a Pi model file. Both {@code models.json} (custom providers) and
+     * {@code models-store.json} (catalog) have the shape
+     * {@code { "providers": { "<provider>": { "models": [...] } } }} or
+     * {@code { "<provider>": { "models": [...] } }}. Each model is emitted with a
+     * provider-qualified display name ({@code "<Provider>/<Model>"}) so the model
+     * picker groups custom providers separately from the default Pi catalog.
+     */
     static void addModelsFromJson(@NotNull Path file, @NotNull List<Model> out) {
         if (!Files.isReadable(file)) return;
         try {
             JsonObject root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
-            // models.json: { "providers": { "<id>": { "models": [ ... ] } } }
-            if (root.has("providers") && root.get("providers").isJsonObject()) {
-                for (Map.Entry<String, JsonElement> provEntry : root.getAsJsonObject("providers").entrySet()) {
-                    addProviderModels(provEntry.getValue(), out);
-                }
-            }
-            // models-store.json: { "<provider>": { "models": [ ... ], "checkedAt": ... } }
-            // Entries without a "models" array (e.g. the "providers" wrapper above) are skipped.
             for (Map.Entry<String, JsonElement> provEntry : root.entrySet()) {
-                addProviderModels(provEntry.getValue(), out);
+                JsonElement node = provEntry.getValue();
+                if ("providers".equals(provEntry.getKey()) && node.isJsonObject()) {
+                    // models.json custom providers: unwrap the "providers" wrapper.
+                    for (Map.Entry<String, JsonElement> custom : node.getAsJsonObject().entrySet()) {
+                        addProviderModels(custom.getKey(), custom.getValue(), out);
+                    }
+                } else {
+                    addProviderModels(provEntry.getKey(), node, out);
+                }
             }
         } catch (Exception e) {
             LOG.warn("[pi] failed to parse model file " + file, e);
         }
     }
 
-    private static void addProviderModels(@NotNull JsonElement providerNode, @NotNull List<Model> out) {
+    private static void addProviderModels(@NotNull String provider, @NotNull JsonElement providerNode, @NotNull List<Model> out) {
         if (!providerNode.isJsonObject() || !providerNode.getAsJsonObject().has("models")) return;
         JsonElement models = providerNode.getAsJsonObject().get("models");
         if (!models.isJsonArray()) return;
@@ -368,7 +398,11 @@ public final class PiCliClient extends AbstractAgentClient {
             String name = optionalString(o, "name");
             if (name == null || name.isBlank()) name = id;
             String desc = optionalString(o, "description");
-            out.add(new Model(id, name, desc, o));
+            // Qualify the display name with the provider so the picker can group models
+            // from Pi's custom providers and built-in catalog separately. The model id is
+            // left untouched — Pi's set_model/--model protocol uses the raw id.
+            String displayName = name.contains("/") ? name : provider + "/" + name;
+            out.add(new Model(id, displayName, desc, o));
         }
     }
 
@@ -415,10 +449,9 @@ public final class PiCliClient extends AbstractAgentClient {
                 Thread.currentThread().interrupt();
             }
             String tail = lastStderrLine();
-            String reason = exitCode == 0
-                ? "Pi subprocess exited mid-turn"
-                : "Pi subprocess exited (code " + exitCode + ")"
-                  + (tail != null ? ": " + tail : "");
+            String reason = "Pi process exited unexpectedly"
+                + (exitCode != 0 && exitCode != -1 ? " (code " + exitCode + ")" : "")
+                + (tail != null ? ": " + tail : "");
 
             // Mark the client as not connected so the next prompt triggers a fresh start
             // instead of writing into a dead pipe.

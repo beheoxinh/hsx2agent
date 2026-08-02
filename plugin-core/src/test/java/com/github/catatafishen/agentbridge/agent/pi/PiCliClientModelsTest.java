@@ -47,7 +47,7 @@ class PiCliClientModelsTest {
 
         assertEquals(2, out.size());
         assertEquals("Hsx2Coder", out.get(0).id());
-        assertEquals("9Router Hsx2Coder", out.get(0).name());
+        assertEquals("9router/9Router Hsx2Coder", out.get(0).name());
         assertEquals("OpenCode", out.get(1).id());
         assertNotNull(out.get(0)._meta());
     }
@@ -77,7 +77,8 @@ class PiCliClientModelsTest {
 
         assertEquals(3, out.size());
         assertEquals("anthropic/claude-sonnet-4.5", out.get(0).id());
-        assertEquals("gemini-2.5-pro", out.get(2).id());
+        assertEquals("openrouter/Claude Sonnet 4.5", out.get(0).name());
+        assertEquals("google-vertex/Gemini 2.5 Pro", out.get(2).name());
     }
 
     @Test
