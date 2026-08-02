@@ -9,6 +9,7 @@ import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
+import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.settings.AcpClientBinaryResolver;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
@@ -790,12 +791,19 @@ public final class PiCliClient extends AbstractAgentClient {
 
     @Nullable
     private String resolveBinary() {
-        AcpClientBinaryResolver resolver = new AcpClientBinaryResolver(PROFILE_ID, profile.getBinaryName());
-        String resolved = resolver.resolve();
-        if (resolved != null && !resolved.contains("/") && !resolved.contains("\\")) {
-            resolved = BinaryDetector.findBinaryPath(resolved);
+        // Prefer `command -v` resolution: it returns the real binary first on PATH
+        // (e.g. the mise-installed npm pi). The version-comparing resolver can pick a
+        // mise *shim* — a symlink to the mise binary itself — whose `--version` is
+        // mise's own version and therefore wins the comparison, launching the wrong
+        // process (`mise --mode rpc` exits code 2).
+        String customPath = AgentProfileManager.getInstance().loadBinaryPath(PROFILE_ID);
+        if (customPath != null && !customPath.isEmpty()) {
+            return customPath;
         }
-        return resolved;
+        String detected = BinaryDetector.findBinaryPath(profile.getBinaryName());
+        if (detected != null) return detected;
+        AcpClientBinaryResolver resolver = new AcpClientBinaryResolver(PROFILE_ID, profile.getBinaryName());
+        return resolver.resolve();
     }
 
     private void drainStderr(@NotNull Process proc) {
