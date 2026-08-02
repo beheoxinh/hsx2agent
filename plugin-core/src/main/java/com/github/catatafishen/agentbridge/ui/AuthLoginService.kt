@@ -43,17 +43,6 @@ class AuthLoginService(private val project: Project) {
     /** Returns null if the active agent is installed and authenticated, or an error description. */
     fun copilotSetupDiagnostics(): String? {
         val agentManager = ActiveAgentManager.getInstance(project)
-        // Pi delegates auth to provider API keys (env vars set from custom-provider config).
-        // When the user has at least one valid custom provider, suppress the generic auth banner —
-        // there is no CLI-level sign-in to perform and the credentials live in piCustomProviders.xml.
-        if (agentManager.activeProfileId == com.github.catatafishen.agentbridge.agent.pi.PiCliClient.PROFILE_ID) {
-            val hasCustomProvider = com.github.catatafishen.agentbridge.agent.pi.PiCustomProvidersService
-                .getInstance().providers.any { it.validate() == null }
-            if (hasCustomProvider) {
-                pendingAuthError = null
-                return null
-            }
-        }
         return try {
             val authCheck = agentManager.checkAuthentication()
             // checkAuthentication() returns null both when the agent is verified-OK AND

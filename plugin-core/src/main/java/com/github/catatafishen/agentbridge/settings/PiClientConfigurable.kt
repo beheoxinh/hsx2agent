@@ -26,6 +26,9 @@ import java.nio.file.Path
  * Mirrors [OpenCodeClientConfigurable]: binary auto-detect, custom path, bubble color,
  * and session history limit. A "Refresh model definitions" hook is reserved for when the
  * extension-based MCP bridge lands — Pi caches model metadata under its config dir.
+ *
+ * Pi providers/models are configured directly inside Pi (settings.json, models.json,
+ * custom-provider extensions), not through the plugin.
  */
 @Suppress("unused")
 class PiClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
@@ -35,7 +38,6 @@ class PiClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
     private val statusLabel = JBLabel()
     private val refreshResultLabel = JBLabel()
     private val genericSettings = GenericSettings(AGENT_ID)
-    private val customProvidersPanel = PiCustomProvidersPanel()
 
     override fun getId(): String = ID
 
@@ -100,35 +102,6 @@ class PiClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
                 )
             cell(refreshResultLabel)
         }
-        separator()
-        group("Custom providers") {
-            row {
-                comment(
-                    "Register OpenAI-compatible (or Anthropic/Google/etc.) endpoints that Pi otherwise " +
-                        "doesn't know about — e.g. local proxies like 9Router or LM Studio. AgentBridge " +
-                        "writes a TypeScript extension on launch that calls <code>pi.registerProvider()</code> " +
-                        "for each entry and exports the API key into Pi's environment."
-                )
-            }
-            row {
-                cell(customProvidersPanel)
-                    .align(AlignX.FILL)
-                    .resizableColumn()
-            }
-        }
-    }
-
-    override fun isModified(): Boolean = super<BoundConfigurable>.isModified() || customProvidersPanel.isModified()
-
-    override fun apply() {
-        super<BoundConfigurable>.apply()
-        customProvidersPanel.apply()
-    }
-
-    override fun reset() {
-        super<BoundConfigurable>.reset()
-        customProvidersPanel.reset()
-        refreshStatusAsync()
     }
 
     private fun refreshModelDefinitions() {

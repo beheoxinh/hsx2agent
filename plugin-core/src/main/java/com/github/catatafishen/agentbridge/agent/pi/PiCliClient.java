@@ -29,7 +29,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -150,10 +149,6 @@ public final class PiCliClient extends AbstractAgentClient {
                 .getEnabledExternalMcpServers();
         Path bridgePath = new PiMcpBridgeGenerator(project).generate(mcpUrl, externalServers, BuildInfo.getVersion());
 
-        List<PiCustomProvidersService.Entry> customProviders =
-            PiCustomProvidersService.getInstance().getProviders();
-        Path providersPath = new PiProviderExtensionGenerator(project).generate(customProviders);
-
         List<String> cmd = new ArrayList<>();
         cmd.add(binary);
         cmd.add("--mode");
@@ -168,21 +163,7 @@ public final class PiCliClient extends AbstractAgentClient {
             // the agent does not silently bypass IDE permissions / hooks.
             cmd.add("--no-builtin-tools");
         }
-        if (providersPath != null) {
-            cmd.add("--extension");
-            cmd.add(providersPath.toString());
-        }
         String modelId = currentModelId;
-        if ((modelId == null || modelId.isBlank()) && !customProviders.isEmpty()) {
-            // Auto-select the first valid custom provider model so Pi starts with a usable default
-            for (PiCustomProvidersService.Entry p : customProviders) {
-                if (p.validate() == null) {
-                    modelId = p.modelId;
-                    currentModelId = modelId;
-                    break;
-                }
-            }
-        }
         if (profile.isSupportsModelFlag() && modelId != null && !modelId.isBlank()) {
             cmd.add("--model");
             cmd.add(modelId);
@@ -197,10 +178,6 @@ public final class PiCliClient extends AbstractAgentClient {
             env.putIfAbsent(e.getKey(), e.getValue());
         }
         if (mcpUrl != null) env.put("AGENTBRIDGE_MCP_URL", mcpUrl);
-        // Export each custom-provider API key as the env var its registered config reads.
-        for (Map.Entry<String, String> e : PiProviderExtensionGenerator.buildEnv(customProviders).entrySet()) {
-            env.put(e.getKey(), e.getValue());
-        }
         env.put("CI", "true"); // ensure non-interactive behaviour from the subprocess
         env.putIfAbsent("PI_OFFLINE", "0");
 
@@ -325,27 +302,10 @@ public final class PiCliClient extends AbstractAgentClient {
 
     @Override
     public List<Model> getAvailableModels() {
-        // Prefer Pi's real on-disk model catalog (models.json / models-store.json).
-        // The Pi CLI merges plugin custom providers AND Pi's own config, so without
-        // this the UI shows nothing when models are configured directly in Pi
-        // (e.g. ~/.pi/agent/models.json) rather than through the plugin.
-        List<Model> fromDisk = readModelsFromDisk();
-        if (!fromDisk.isEmpty()) {
-            return fromDisk;
-        }
-        List<PiCustomProvidersService.Entry> providers =
-            PiCustomProvidersService.getInstance().getProviders();
-        if (providers.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<Model> models = new ArrayList<>();
-        for (PiCustomProvidersService.Entry p : providers) {
-            if (p.validate() != null) continue;
-            String label = (p.displayName != null && !p.displayName.isBlank() ? p.displayName : p.id)
-                + " (" + (p.modelName != null && !p.modelName.isBlank() ? p.modelName : p.modelId) + ")";
-            models.add(new Model(p.modelId, label, null, null));
-        }
-        return models;
+        // Load models from Pi's real on-disk catalog (models.json / models-store.json).
+        // Pi is configured directly (providers registered in ~/.pi/agent or via the
+        // custom-provider mechanism of Pi itself), not through the plugin.
+        return readModelsFromDisk();
     }
 
     /**
